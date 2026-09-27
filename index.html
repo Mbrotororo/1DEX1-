@@ -6,20 +6,19 @@
     <title>HolyWorld 50x50</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     
-    <!-- Подключаем Firebase SDK v10 (модульный) -->
+    <!-- Подключаем Firebase SDK v10 с твоими ключами -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getFirestore, doc, getDoc, setDoc, updateDoc, increment, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-        // Твои конфиги Firebase
         const firebaseConfig = {
-            apiKey: "AIzaSyAnCn-FqQrrK3mlpBW30...", // Твои ключи
+            apiKey: "AIzaSyAnCn-FqQrrKR3mlpBW3OoyR8eGp5vwrzw",
             authDomain: "dex1-ae37e.firebaseapp.com",
             projectId: "dex1-ae37e",
-            storageBucket: "dex1-ae37e.appspot.com",
+            storageBucket: "dex1-ae37e.firebasestorage.app",
             messagingSenderId: "495382054246",
-            appId: "1:495382054246:web:4d25767b...",
-            measurementId: "G-1BEWF9SQN0"
+            appId: "1:495382054246:web:1e1b63e0d034ee687e34a7",
+            measurementId: "G-ESTRJM0JJB"
         };
 
         const app = initializeApp(firebaseConfig);
@@ -67,10 +66,8 @@
             playSound('click');
         }
 
-        // Ссылка на документ со статистикой в Firestore (коллекция "settings", документ "stats")
         const statsRef = doc(db, "settings", "stats");
 
-        // Инициализация документа статистики, если его нет
         async function initStats() {
             const snap = await getDoc(statsRef);
             if (!snap.exists()) {
@@ -79,7 +76,6 @@
         }
         initStats();
 
-        // Слушаем изменения в реальном времени из Firebase
         onSnapshot(statsRef, (docSnap) => {
             if (docSnap.exists()) {
                 let data = docSnap.data();
@@ -137,7 +133,6 @@
             }
         }
 
-        // Регистрация игрока и запись в Firestore
         window.registerPlayer = async function() {
             let nickInput = document.getElementById("nickname");
             let nick = nickInput.value.trim();
@@ -164,7 +159,6 @@
             nickInput.disabled = true;
 
             try {
-                // Проверяем лимиты перед обновлением
                 const snap = await getDoc(statsRef);
                 let data = snap.data();
                 if (selectedClass === 'Пехота' && data.infantry >= maxInfantry) {
@@ -182,11 +176,9 @@
                     return;
                 }
 
-                // Увеличиваем счетчик выбранного класса в базе
                 let updateField = selectedClass === 'Пехота' ? { infantry: increment(1) } : { cavalry: increment(1) };
                 await updateDoc(statsRef, updateField);
 
-                // Сохраняем игрока в отдельную коллекцию "players"
                 let tgUser = tg.initDataUnsafe?.user?.username ? "@" + tg.initDataUnsafe.user.username : 
                              (tg.initDataUnsafe?.user?.first_name || "Скрытый юзер");
 
