@@ -5,6 +5,234 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>HolyWorld 50x50</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    
+    <!-- Подключаем Firebase SDK v10 (модульный) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, increment, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // Твои конфиги Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyAnCn-FqQrrK3mlpBW30...", // Твои ключи
+            authDomain: "dex1-ae37e.firebaseapp.com",
+            projectId: "dex1-ae37e",
+            storageBucket: "dex1-ae37e.appspot.com",
+            messagingSenderId: "495382054246",
+            appId: "1:495382054246:web:4d25767b...",
+            measurementId: "G-1BEWF9SQN0"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        let tg = window.Telegram.WebApp;
+        tg.expand();
+
+        // --- МУЗЫКА ---
+        let bgMusic = document.getElementById('bg-music');
+        let musicIcon = document.getElementById('music-icon');
+        let isPlaying = false;
+        bgMusic.volume = 0.4;
+
+        window.toggleMusic = function() {
+            if (isPlaying) { bgMusic.pause(); musicIcon.style.opacity = "0.3"; isPlaying = false; } 
+            else { bgMusic.play().then(() => { musicIcon.style.opacity = "1"; isPlaying = true; }).catch(e => console.log(e)); }
+        }
+        document.body.addEventListener('click', function() {
+            if (!isPlaying) { bgMusic.play().then(() => { musicIcon.style.opacity = "1"; isPlaying = true; }).catch(() => {}); }
+        }, { once: true });
+
+        // --- ЛОГИКА СЧЕТЧИКОВ И БАЗЫ ДАННЫХ ---
+        let maxPlayers = 100;
+        let maxInfantry = 60;
+        let maxCavalry = 40;
+
+        let selectedClass = ""; 
+        let finalPayload = {}; 
+
+        window.playSound = function(type) {
+            let sound = document.getElementById(`snd-${type}`);
+            if(sound) { sound.currentTime = 0; sound.play().catch(e => {}); }
+        }
+
+        window.showCustomAlert = function(text) {
+            document.getElementById('modal-text').innerText = text;
+            document.getElementById('custom-modal-overlay').classList.add('active');
+            playSound('error');
+            if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
+        }
+
+        window.closeModal = function() {
+            document.getElementById('custom-modal-overlay').classList.remove('active');
+            playSound('click');
+        }
+
+        // Ссылка на документ со статистикой в Firestore (коллекция "settings", документ "stats")
+        const statsRef = doc(db, "settings", "stats");
+
+        // Инициализация документа статистики, если его нет
+        async function initStats() {
+            const snap = await getDoc(statsRef);
+            if (!snap.exists()) {
+                await setDoc(statsRef, { infantry: 0, cavalry: 0 });
+            }
+        }
+        initStats();
+
+        // Слушаем изменения в реальном времени из Firebase
+        onSnapshot(statsRef, (docSnap) => {
+            if (docSnap.exists()) {
+                let data = docSnap.data();
+                let currentInfantry = data.infantry || 0;
+                let currentCavalry = data.cavalry || 0;
+                let currentPlayers = currentInfantry + currentCavalry;
+
+                document.getElementById('count-text').innerText = currentPlayers + " / " + maxPlayers;
+                let percent = (currentPlayers / maxPlayers) * 100;
+                let bar = document.getElementById('progress-bar');
+                bar.style.width = percent + "%";
+
+                document.getElementById('infantry-slots').innerText = (maxInfantry - currentInfantry) + " мест";
+                document.getElementById('cavalry-slots').innerText = (maxCavalry - currentCavalry) + " мест";
+
+                if (currentInfantry >= maxInfantry) {
+                    document.getElementById('card-infantry').style.opacity = "0.4";
+                }
+                if (currentCavalry >= maxCavalry) {
+                    document.getElementById('card-cavalry').style.opacity = "0.4";
+                }
+
+                if (currentPlayers >= maxPlayers) {
+                    document.getElementById('status-text').innerText = "НАБОР ЗАКРЫТ";
+                    bar.classList.add('full');
+                    document.getElementById('reg-block').style.display = "none";
+                    document.getElementById('main-desc').innerText = "К сожалению, все места заняты.";
+                }
+            }
+        });
+
+        window.selectClass = function(className, cardId) {
+            selectedClass = className;
+            document.getElementById("card-infantry").classList.remove("active");
+            document.getElementById("card-cavalry").classList.remove("active");
+            document.getElementById(cardId).classList.add("active");
+            playSound('click');
+            if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+        }
+
+        function createExplosion() {
+            const colors = ['#55FF55', '#55FFFF', '#FFFF55', '#FFFFFF'];
+            for (let i = 0; i < 40; i++) {
+                let p = document.createElement('div');
+                p.className = 'particle';
+                p.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                p.style.color = p.style.backgroundColor; 
+                let angle = Math.random() * Math.PI * 2;
+                let distance = 80 + Math.random() * 150;
+                p.style.setProperty('--tx', `${Math.cos(angle) * distance}px`);
+                p.style.setProperty('--ty', `${Math.sin(angle) * distance}px`);
+                p.style.left = '50%'; p.style.top = '50%';
+                document.body.appendChild(p);
+                setTimeout(() => p.remove(), 1000); 
+            }
+        }
+
+        // Регистрация игрока и запись в Firestore
+        window.registerPlayer = async function() {
+            let nickInput = document.getElementById("nickname");
+            let nick = nickInput.value.trim();
+            let joinBtn = document.getElementById("join-btn");
+            
+            if (selectedClass === "") {
+                showCustomAlert("Пожалуйста, выберите ваш класс (Пехота или Конница)!");
+                return;
+            }
+
+            if (nick.length < 3) {
+                playSound('error');
+                if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
+                nickInput.classList.add("error-shake");
+                setTimeout(() => nickInput.classList.remove("error-shake"), 400);
+                return;
+            }
+            
+            playSound('click');
+            if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
+            
+            joinBtn.innerText = "ПОДКЛЮЧЕНИЕ...";
+            joinBtn.disabled = true;
+            nickInput.disabled = true;
+
+            try {
+                // Проверяем лимиты перед обновлением
+                const snap = await getDoc(statsRef);
+                let data = snap.data();
+                if (selectedClass === 'Пехота' && data.infantry >= maxInfantry) {
+                    showCustomAlert("Пехота полностью заполнена!");
+                    joinBtn.innerText = "ПРИСОЕДИНИТЬСЯ";
+                    joinBtn.disabled = false;
+                    nickInput.disabled = false;
+                    return;
+                }
+                if (selectedClass === 'Конница' && data.cavalry >= maxCavalry) {
+                    showCustomAlert("Конница полностью заполнена!");
+                    joinBtn.innerText = "ПРИСОЕДИНИТЬСЯ";
+                    joinBtn.disabled = false;
+                    nickInput.disabled = false;
+                    return;
+                }
+
+                // Увеличиваем счетчик выбранного класса в базе
+                let updateField = selectedClass === 'Пехота' ? { infantry: increment(1) } : { cavalry: increment(1) };
+                await updateDoc(statsRef, updateField);
+
+                // Сохраняем игрока в отдельную коллекцию "players"
+                let tgUser = tg.initDataUnsafe?.user?.username ? "@" + tg.initDataUnsafe.user.username : 
+                             (tg.initDataUnsafe?.user?.first_name || "Скрытый юзер");
+
+                await setDoc(doc(db, "players", nick), {
+                    nick: nick,
+                    role: selectedClass,
+                    tg_user: tgUser,
+                    registeredAt: new Date().toISOString()
+                });
+
+                document.getElementById("final-nick-display").innerText = nick;
+
+                finalPayload = {
+                    nick: nick,
+                    role: selectedClass,
+                    tg_user: tgUser
+                };
+                
+                document.getElementById("reg-block").style.display = "none";
+                document.getElementById("main-desc").style.display = "none";
+                
+                let discordBlock = document.getElementById("discord-block");
+                discordBlock.style.display = "block";
+                discordBlock.classList.add("fade-in");
+                
+                playSound('success');
+                createExplosion();
+                if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+
+            } catch (error) {
+                console.error("Ошибка при регистрации:", error);
+                showCustomAlert("Произошла ошибка связи с базой данных.");
+                joinBtn.innerText = "ПРИСОЕДИНИТЬСЯ";
+                joinBtn.disabled = false;
+                nickInput.disabled = false;
+            }
+        }
+
+        window.sendDataToBot = function() {
+            tg.openLink('https://discord.gg/wxt6rUnRK');
+            setTimeout(() => {
+                tg.sendData(JSON.stringify(finalPayload));
+            }, 500);
+        }
+    </script>
+
     <style>
         * {
             font-family: 'Arial Black', Impact, sans-serif;
@@ -24,7 +252,6 @@
             background-color: #050505;
         }
 
-        /* Кнопка Музыки (Справа, не сталкивается с краем) */
         .music-btn {
             position: fixed;
             top: 30px;
@@ -56,7 +283,6 @@
             transform: scale(0.9);
         }
 
-        /* --- Твой Майнкрафт фон --- */
         .bg {
             position: fixed;
             top: -5%; left: -5%; width: 110vw; height: 110vh;
@@ -86,7 +312,6 @@
             min-height: 100vh;
         }
 
-        /* --- Выбор Класса (Пехота: 60, Конница: 40) --- */
         .class-selector {
             display: flex;
             gap: 15px;
@@ -129,7 +354,6 @@
             color: #333;
         }
 
-        /* --- Плашка для ника без DEX --- */
         .final-nick-box {
             background: linear-gradient(45deg, #1a1a1a, #333);
             border: 2px solid #fff;
@@ -203,7 +427,6 @@
         .particle { position: fixed; width: 12px; height: 12px; pointer-events: none; z-index: 100; animation: pop 1s cubic-bezier(0.1, 0.8, 0.3, 1) forwards; }
         @keyframes pop { 0% { transform: translate(-50%, -50%) scale(1); opacity: 1; } 100% { transform: translate(var(--tx), var(--ty)) scale(0) rotate(180deg); opacity: 0; } }
 
-        /* --- КРАСИВОЕ МОДАЛЬНОЕ ОКНО --- */
         .custom-modal-overlay {
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
             background: rgba(0, 0, 0, 0.8); backdrop-filter: blur(8px);
@@ -237,7 +460,6 @@
     <audio id="snd-error" src="error.mp3" preload="auto"></audio>
     <audio id="snd-success" src="success.mp3" preload="auto"></audio>
 
-    <!-- Кнопка Музыки -->
     <button class="music-btn" id="music-toggle" onclick="toggleMusic()">
         <svg id="music-icon" viewBox="0 0 576 512" style="opacity: 0.3;">
             <path d="M301.1 34.8C312.6 40 320 51.4 320 64V448c0 12.6-7.4 24-18.9 29.2s-25 3.1-34.4-5.3L131.8 352H64c-35.3 0-64-28.7-64-64V224c0-35.3 28.7-64 64-64h67.8L266.7 40.1c9.4-8.4 22.9-10.4 34.4-5.3zM425 167c-9.4-9.4-24.6-9.4-33.9 0s-9.4 24.6 0 33.9c23.2 23.2 23.2 61.3 0 84.5-9.4 9.4-9.4 24.6 0 33.9s24.6 9.4 33.9 0c42-42 42-110.1 0-152.1zm84.5-84.5c-9.4-9.4-24.6-9.4-33.9 0s-9.4 24.6 0 33.9c70.1 70.1 70.1 184 0 254.1-9.4 9.4-9.4 24.6 0 33.9s24.6 9.4 33.9 0c88.8-88.8 88.8-233 0-321.8z"/>
@@ -258,8 +480,6 @@
         <p id="main-desc" class="description">Историческая битва 50×50. Запишись, чтобы получить доступ.</p>
 
         <div id="reg-block" style="width: 100%; display: flex; flex-direction: column; align-items: center;">
-            
-            <!-- Выбор класса (Пехота: 60, Конница: 40) -->
             <div class="class-selector">
                 <div class="class-card" id="card-infantry" onclick="selectClass('Пехота', 'card-infantry')">
                     Пехота
@@ -282,10 +502,7 @@
             <p style="color: #ccc; font-size: 15px; margin-bottom: 10px;">
                 Ваш боевой позывной зафиксирован:
             </p>
-            
-            <!-- Плашка с чистым ником без DEX -->
             <div class="final-nick-box" id="final-nick-display"></div>
-
             <p style="color: #ccc; font-size: 15px; margin-bottom: 25px;">
                 Обязательно перейдите в Discord, чтобы подтвердить участие.
             </p>
@@ -302,7 +519,6 @@
         </div>
     </div>
 
-    <!-- Красивое модальное окно -->
     <div class="custom-modal-overlay" id="custom-modal-overlay">
         <div class="custom-modal">
             <h3 id="modal-title">ВНИМАНИЕ</h3>
@@ -312,184 +528,6 @@
     </div>
 
     <script>
-        let tg = window.Telegram.WebApp;
-        tg.expand();
-
-        // --- МУЗЫКА ---
-        let bgMusic = document.getElementById('bg-music');
-        let musicIcon = document.getElementById('music-icon');
-        let isPlaying = false;
-        bgMusic.volume = 0.4;
-
-        function toggleMusic() {
-            if (isPlaying) { bgMusic.pause(); musicIcon.style.opacity = "0.3"; isPlaying = false; } 
-            else { bgMusic.play().then(() => { musicIcon.style.opacity = "1"; isPlaying = true; }).catch(e => console.log(e)); }
-        }
-        document.body.addEventListener('click', function() {
-            if (!isPlaying) { bgMusic.play().then(() => { musicIcon.style.opacity = "1"; isPlaying = true; }).catch(() => {}); }
-        }, { once: true });
-
-        // --- ОБНУЛЕНИЕ ИГРОКОВ ---
-        let maxPlayers = 100;
-        let maxInfantry = 60;
-        let maxCavalry = 40;
-
-        let currentInfantry = 0;
-        let currentCavalry = 0;
-        let currentPlayers = 0;
-        
-        localStorage.setItem('hw_infantry_count', 0);
-        localStorage.setItem('hw_cavalry_count', 0);
-
-        let selectedClass = ""; 
-        let finalPayload = {}; 
-
-        function playSound(type) {
-            let sound = document.getElementById(`snd-${type}`);
-            if(sound) { sound.currentTime = 0; sound.play().catch(e => {}); }
-        }
-
-        function showCustomAlert(text) {
-            document.getElementById('modal-text').innerText = text;
-            document.getElementById('custom-modal-overlay').classList.add('active');
-            playSound('error');
-            if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
-        }
-
-        function closeModal() {
-            document.getElementById('custom-modal-overlay').classList.remove('active');
-            playSound('click');
-        }
-
-        function updateProgress() {
-            currentPlayers = currentInfantry + currentCavalry;
-            document.getElementById('count-text').innerText = currentPlayers + " / " + maxPlayers;
-            let percent = (currentPlayers / maxPlayers) * 100;
-            let bar = document.getElementById('progress-bar');
-            bar.style.width = percent + "%";
-
-            document.getElementById('infantry-slots').innerText = (maxInfantry - currentInfantry) + " мест";
-            document.getElementById('cavalry-slots').innerText = (maxCavalry - currentCavalry) + " мест";
-
-            if (currentInfantry >= maxInfantry) {
-                document.getElementById('card-infantry').style.opacity = "0.4";
-            }
-            if (currentCavalry >= maxCavalry) {
-                document.getElementById('card-cavalry').style.opacity = "0.4";
-            }
-
-            if (currentPlayers >= maxPlayers) {
-                document.getElementById('status-text').innerText = "НАБОР ЗАКРЫТ";
-                bar.classList.add('full');
-                document.getElementById('reg-block').style.display = "none";
-                document.getElementById('main-desc').innerText = "К сожалению, все места заняты.";
-            }
-        }
-        updateProgress();
-
-        function selectClass(className, cardId) {
-            if (className === 'Пехота' && currentInfantry >= maxInfantry) {
-                showCustomAlert("Пехота полностью заполнена!");
-                return;
-            }
-            if (className === 'Конница' && currentCavalry >= maxCavalry) {
-                showCustomAlert("Конница полностью заполнена!");
-                return;
-            }
-
-            selectedClass = className;
-            document.getElementById("card-infantry").classList.remove("active");
-            document.getElementById("card-cavalry").classList.remove("active");
-            document.getElementById(cardId).classList.add("active");
-            playSound('click');
-            if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
-        }
-
-        function createExplosion() {
-            const colors = ['#55FF55', '#55FFFF', '#FFFF55', '#FFFFFF'];
-            for (let i = 0; i < 40; i++) {
-                let p = document.createElement('div');
-                p.className = 'particle';
-                p.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
-                p.style.color = p.style.backgroundColor; 
-                let angle = Math.random() * Math.PI * 2;
-                let distance = 80 + Math.random() * 150;
-                p.style.setProperty('--tx', `${Math.cos(angle) * distance}px`);
-                p.style.setProperty('--ty', `${Math.sin(angle) * distance}px`);
-                p.style.left = '50%'; p.style.top = '50%';
-                document.body.appendChild(p);
-                setTimeout(() => p.remove(), 1000); 
-            }
-        }
-
-        function registerPlayer() {
-            let nickInput = document.getElementById("nickname");
-            let nick = nickInput.value;
-            let joinBtn = document.getElementById("join-btn");
-            
-            if (selectedClass === "") {
-                showCustomAlert("Пожалуйста, выберите ваш класс (Пехота или Конница)!");
-                return;
-            }
-
-            if (nick.length < 3) {
-                playSound('error');
-                if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
-                nickInput.classList.add("error-shake");
-                setTimeout(() => nickInput.classList.remove("error-shake"), 400);
-                return;
-            }
-            
-            playSound('click');
-            if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
-            
-            joinBtn.innerText = "ПОДКЛЮЧЕНИЕ...";
-            joinBtn.disabled = true;
-            nickInput.disabled = true;
-
-            setTimeout(() => {
-                if (selectedClass === 'Пехота' && currentInfantry < maxInfantry) {
-                    currentInfantry++;
-                    localStorage.setItem('hw_infantry_count', currentInfantry);
-                } else if (selectedClass === 'Конница' && currentCavalry < maxCavalry) {
-                    currentCavalry++;
-                    localStorage.setItem('hw_cavalry_count', currentCavalry);
-                }
-                updateProgress();
-                
-                let finalNick = nick;
-                document.getElementById("final-nick-display").innerText = finalNick;
-
-                let tgUser = tg.initDataUnsafe?.user?.username ? "@" + tg.initDataUnsafe.user.username : 
-                             (tg.initDataUnsafe?.user?.first_name || "Скрытый юзер");
-
-                finalPayload = {
-                    nick: finalNick,
-                    role: selectedClass,
-                    tg_user: tgUser
-                };
-                
-                document.getElementById("reg-block").style.display = "none";
-                document.getElementById("main-desc").style.display = "none";
-                
-                let discordBlock = document.getElementById("discord-block");
-                discordBlock.style.display = "block";
-                discordBlock.classList.add("fade-in");
-                
-                playSound('success');
-                createExplosion();
-                if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error'); // исправлено ниже в коде логики на success, но оставим корректным
-            }, 1200);
-        }
-
-        function sendDataToBot() {
-            tg.openLink('https://discord.gg/wxt6rUnRK');
-            setTimeout(() => {
-                tg.sendData(JSON.stringify(finalPayload));
-            }, 500);
-        }
-
-        // --- ПАРАЛЛАКС И СКРОЛЛ ---
         document.addEventListener('mousemove', (e) => {
             let x = (window.innerWidth / 2 - e.pageX) / 40;
             let y = (window.innerHeight / 2 - e.pageY) / 40;
