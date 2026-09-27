@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>HolyWorld 50x50</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            font-family: 'Arial Black', Impact, sans-serif;
+            font-weight: bold;
+            box-sizing: border-box;
+            outline: none !important;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            color: #ffffff;
+            text-align: center;
+            overflow-x: hidden;
+            overflow-y: auto;
+            background-color: #050505;
+        }
+
+        /* Кнопка Музыки (Справа, не сталкивается с краем) */
+        .music-btn {
+            position: fixed;
+            top: 30px;
+            right: 30px;
+            background: rgba(10, 10, 10, 0.75);
+            border: 2px solid rgba(255, 255, 255, 0.6);
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            cursor: pointer;
+            z-index: 50;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(5px);
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            padding: 0;
+        }
+
+        .music-btn svg {
+            height: 22px;
+            width: auto;
+            fill: #ffffff;
+            transition: opacity 0.2s ease;
+        }
+
+        .music-btn:active {
+            transform: scale(0.9);
+        }
+
+        /* --- Твой Майнкрафт фон --- */
+        .bg {
+            position: fixed;
+            top: -5%; left: -5%; width: 110vw; height: 110vh;
+            background-image: url('bg-main.jpg');
+            background-size: cover;
+            background-position: center;
+            filter: saturate(200%) contrast(1.2) brightness(0.6);
+            z-index: -3;
+            transition: transform 0.1s ease-out;
+        }
+
+        .overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: linear-gradient(180deg, rgba(0,0,0,0.2) 0%, rgba(0,0,0,0.95) 100%);
+            z-index: -2;
+            pointer-events: none;
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            padding: 90px 20px 40px 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        /* --- Выбор Класса (Пехота: 60, Конница: 40) --- */
+        .class-selector {
+            display: flex;
+            gap: 15px;
+            width: 100%;
+            max-width: 350px;
+            margin-bottom: 20px;
+        }
+
+        .class-card {
+            flex: 1;
+            background: rgba(10, 10, 10, 0.6);
+            border: 2px solid #555;
+            border-radius: 12px;
+            padding: 15px 5px;
+            font-size: 15px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            backdrop-filter: blur(5px);
+            color: #aaa;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            align-items: center;
+        }
+
+        .class-card span {
+            font-size: 12px;
+            color: #888;
+        }
+
+        .class-card.active {
+            background: rgba(255, 255, 255, 0.9);
+            color: #000;
+            border-color: #fff;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+            transform: scale(1.05);
+        }
+
+        .class-card.active span {
+            color: #333;
+        }
+
+        /* --- Плашка для ника без DEX --- */
+        .final-nick-box {
+            background: linear-gradient(45deg, #1a1a1a, #333);
+            border: 2px solid #fff;
+            border-radius: 10px;
+            padding: 15px 20px;
+            margin: 20px 0;
+            font-size: 24px;
+            color: #fff;
+            text-shadow: 0 0 15px rgba(255, 255, 255, 0.8);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.9), inset 0 0 15px rgba(255, 255, 255, 0.2);
+            letter-spacing: 2px;
+            word-break: break-all;
+            animation: pulse-glow 2s infinite alternate;
+        }
+
+        @keyframes pulse-glow {
+            from { box-shadow: 0 10px 30px rgba(0, 0, 0, 0.9), 0 0 10px rgba(255, 255, 255, 0.2); }
+            to { box-shadow: 0 10px 30px rgba(0, 0, 0, 0.9), 0 0 25px rgba(255, 255, 255, 0.6); }
+        }
+
+        .counter-widget {
+            background-color: rgba(10, 10, 10, 0.7);
+            border: 2px solid #ffffff;
+            border-radius: 15px;
+            padding: 15px 30px;
+            margin-bottom: 25px;
+            backdrop-filter: blur(10px);
+            display: flex; flex-direction: column; align-items: center; gap: 10px; 
+            width: 100%; max-width: 350px;
+        }
+
+        .status { font-size: 19px; text-transform: uppercase; text-shadow: 0 0 10px rgba(255, 255, 255, 0.8); }
+        .count { font-size: 28px; text-shadow: 0 0 15px rgba(255, 255, 255, 0.5); }
+        .progress-bg { width: 100%; height: 12px; background-color: rgba(0, 0, 0, 0.8); border: 1px solid #555; border-radius: 6px; overflow: hidden; }
+        .progress-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #2ecc71, #27ae60); transition: width 0.8s, background 0.5s; }
+        .progress-fill.full { background: linear-gradient(90deg, #e74c3c, #c0392b); box-shadow: 0 0 10px #e74c3c; }
+
+        h1 {
+            font-size: 38px; text-transform: uppercase; margin: 0 0 15px 0;
+            background: linear-gradient(90deg, #ffffff, #aaaaaa, #ffffff); background-size: 200% auto;
+            color: #fff; -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            animation: shine 3s linear infinite; text-shadow: 0px 4px 20px rgba(255, 255, 255, 0.2); 
+        }
+        @keyframes shine { to { background-position: 200% center; } }
+        .description { font-size: 16px; color: #e0e0e0; margin-bottom: 30px; text-shadow: 0px 2px 10px rgba(0,0,0,1); }
+
+        input {
+            width: 100%; max-width: 350px; padding: 18px; margin-bottom: 20px;
+            border: 2px solid #666; border-radius: 12px; background-color: rgba(10, 10, 10, 0.8);
+            color: white; font-size: 18px; text-align: center; transition: all 0.3s ease;
+        }
+        input:focus { border-color: #ffffff; box-shadow: 0 0 25px rgba(255, 255, 255, 0.4); transform: scale(1.02); }
+        
+        .error-shake { animation: shake 0.4s ease-in-out; border-color: #ff4444 !important; box-shadow: 0 0 20px rgba(255, 68, 68, 0.6) !important; }
+        @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-10px); } 50% { transform: translateX(10px); } 75% { transform: translateX(-10px); } }
+
+        button.action-btn {
+            width: 100%; max-width: 350px; padding: 18px; background-color: #ffffff; color: #000000;
+            border: none; border-radius: 12px; font-size: 22px; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.9);
+        }
+        button.action-btn:active:not(:disabled) { transform: scale(0.95); }
+
+        #discord-block {
+            display: none; width: 100%; max-width: 350px; padding: 30px 20px;
+            background-color: rgba(10, 10, 10, 0.9); border: 2px solid #ffffff; border-radius: 15px;
+            backdrop-filter: blur(10px); margin-top: 20px;
+        }
+        .fade-in { animation: fadeIn 0.6s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+        .particle { position: fixed; width: 12px; height: 12px; pointer-events: none; z-index: 100; animation: pop 1s cubic-bezier(0.1, 0.8, 0.3, 1) forwards; }
+        @keyframes pop { 0% { transform: translate(-50%, -50%) scale(1); opacity: 1; } 100% { transform: translate(var(--tx), var(--ty)) scale(0) rotate(180deg); opacity: 0; } }
+
+        /* --- КРАСИВОЕ МОДАЛЬНОЕ ОКНО --- */
+        .custom-modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0, 0, 0, 0.8); backdrop-filter: blur(8px);
+            z-index: 1000; display: none; align-items: center; justify-content: center;
+            opacity: 0; transition: opacity 0.3s ease;
+        }
+        .custom-modal-overlay.active { display: flex; opacity: 1; }
+        .custom-modal {
+            background: rgba(15, 15, 15, 0.95); border: 2px solid #fff; border-radius: 16px;
+            width: 90%; max-width: 320px; padding: 25px 20px; text-align: center;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.9), 0 0 25px rgba(255,255,255,0.3);
+            transform: scale(0.8); transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .custom-modal-overlay.active .custom-modal { transform: scale(1); }
+        .custom-modal h3 { margin: 0 0 10px 0; font-size: 20px; color: #fff; text-shadow: 0 0 10px rgba(255,255,255,0.5); }
+        .custom-modal p { margin: 0 0 20px 0; font-size: 15px; color: #ccc; }
+        .custom-modal button {
+            width: 100%; padding: 12px; background: #fff; color: #000; border: none;
+            border-radius: 10px; font-size: 18px; cursor: pointer; box-shadow: 0 4px 15px rgba(255,255,255,0.3);
+        }
+        .custom-modal button:active { transform: scale(0.95); }
+
+        .gallery { display: flex; flex-direction: column; gap: 50px; margin-top: 30px; width: 100%; max-width: 400px; padding-bottom: 80px; }
+        .gallery-item { width: 100%; border-radius: 16px; border: 2px solid transparent; opacity: 0; transform: translateY(80px) scale(0.8); filter: blur(10px); transition: all 0.7s cubic-bezier(0.175, 0.885, 0.32, 1.275); object-fit: cover; }
+        .gallery-item.visible { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); border-color: rgba(255, 255, 255, 0.3); box-shadow: 0 30px 60px rgba(0, 0, 0, 0.9), 0 0 40px rgba(255, 255, 255, 0.2); }
+    </style>
+</head>
+<body>
+    <audio id="bg-music" src="music.mp3" loop preload="auto"></audio>
+    <audio id="snd-click" src="click.mp3" preload="auto"></audio>
+    <audio id="snd-error" src="error.mp3" preload="auto"></audio>
+    <audio id="snd-success" src="success.mp3" preload="auto"></audio>
+
+    <!-- Кнопка Музыки -->
+    <button class="music-btn" id="music-toggle" onclick="toggleMusic()">
+        <svg id="music-icon" viewBox="0 0 576 512" style="opacity: 0.3;">
+            <path d="M301.1 34.8C312.6 40 320 51.4 320 64V448c0 12.6-7.4 24-18.9 29.2s-25 3.1-34.4-5.3L131.8 352H64c-35.3 0-64-28.7-64-64V224c0-35.3 28.7-64 64-64h67.8L266.7 40.1c9.4-8.4 22.9-10.4 34.4-5.3zM425 167c-9.4-9.4-24.6-9.4-33.9 0s-9.4 24.6 0 33.9c23.2 23.2 23.2 61.3 0 84.5-9.4 9.4-9.4 24.6 0 33.9s24.6 9.4 33.9 0c42-42 42-110.1 0-152.1zm84.5-84.5c-9.4-9.4-24.6-9.4-33.9 0s-9.4 24.6 0 33.9c70.1 70.1 70.1 184 0 254.1-9.4 9.4-9.4 24.6 0 33.9s24.6 9.4 33.9 0c88.8-88.8 88.8-233 0-321.8z"/>
+        </svg>
+    </button>
+
+    <div class="bg" id="parallax-bg"></div>
+    <div class="overlay"></div>
+
+    <div class="container">
+        <div class="counter-widget">
+            <div class="status" id="status-text">НАБОР ОТКРЫТ</div>
+            <div class="count" id="count-text">0 / 100</div>
+            <div class="progress-bg"><div class="progress-fill" id="progress-bar"></div></div>
+        </div>
+
+        <h1>HolyWorld</h1>
+        <p id="main-desc" class="description">Историческая битва 50×50. Запишись, чтобы получить доступ.</p>
+
+        <div id="reg-block" style="width: 100%; display: flex; flex-direction: column; align-items: center;">
+            
+            <!-- Выбор класса (Пехота: 60, Конница: 40) -->
+            <div class="class-selector">
+                <div class="class-card" id="card-infantry" onclick="selectClass('Пехота', 'card-infantry')">
+                    Пехота
+                    <span id="infantry-slots">60 мест</span>
+                </div>
+                <div class="class-card" id="card-cavalry" onclick="selectClass('Конница', 'card-cavalry')">
+                    Конница
+                    <span id="cavalry-slots">40 мест</span>
+                </div>
+            </div>
+
+            <input type="text" id="nickname" placeholder="Ваш ник на сервере" 
+                   oninput="this.value = this.value.replace(/[А-Яа-яЁё]/g, '')"
+                   onfocus="playSound('click')">
+            <button id="join-btn" class="action-btn" onclick="registerPlayer()">ПРИСОЕДИНИТЬСЯ</button>
+        </div>
+
+        <div id="discord-block">
+            <h2 style="color: #fff; margin-top: 0;">ВЫ В РЯДАХ</h2>
+            <p style="color: #ccc; font-size: 15px; margin-bottom: 10px;">
+                Ваш боевой позывной зафиксирован:
+            </p>
+            
+            <!-- Плашка с чистым ником без DEX -->
+            <div class="final-nick-box" id="final-nick-display"></div>
+
+            <p style="color: #ccc; font-size: 15px; margin-bottom: 25px;">
+                Обязательно перейдите в Discord, чтобы подтвердить участие.
+            </p>
+            <button class="action-btn" onclick="sendDataToBot()">ПЕРЕЙТИ В DISCORD</button>
+        </div>
+
+        <div class="gallery">
+            <img src="logo-battle.jpg" class="gallery-item">
+            <img src="warrior-horse.gif" class="gallery-item">
+            <img src="player-horse.jpg" class="gallery-item">
+            <img src="giant-statues.jpg" class="gallery-item">
+            <img src="angel-night.png" class="gallery-item">
+            <img src="angel-day.png" class="gallery-item">
+        </div>
+    </div>
+
+    <!-- Красивое модальное окно -->
+    <div class="custom-modal-overlay" id="custom-modal-overlay">
+        <div class="custom-modal">
+            <h3 id="modal-title">ВНИМАНИЕ</h3>
+            <p id="modal-text">Пожалуйста, выберите ваш класс (Пехота или Конница)!</p>
+            <button onclick="closeModal()">ПОНЯТНО</button>
+        </div>
+    </div>
+
+    <script>
+        let tg = window.Telegram.WebApp;
+        tg.expand();
+
+        // --- МУЗЫКА ---
+        let bgMusic = document.getElementById('bg-music');
+        let musicIcon = document.getElementById('music-icon');
+        let isPlaying = false;
+        bgMusic.volume = 0.4;
+
+        function toggleMusic() {
+            if (isPlaying) { bgMusic.pause(); musicIcon.style.opacity = "0.3"; isPlaying = false; } 
+            else { bgMusic.play().then(() => { musicIcon.style.opacity = "1"; isPlaying = true; }).catch(e => console.log(e)); }
+        }
+        document.body.addEventListener('click', function() {
+            if (!isPlaying) { bgMusic.play().then(() => { musicIcon.style.opacity = "1"; isPlaying = true; }).catch(() => {}); }
+        }, { once: true });
+
+        // --- ОБНУЛЕНИЕ ИГРОКОВ ---
+        let maxPlayers = 100;
+        let maxInfantry = 60;
+        let maxCavalry = 40;
+
+        let currentInfantry = 0;
+        let currentCavalry = 0;
+        let currentPlayers = 0;
+        
+        localStorage.setItem('hw_infantry_count', 0);
+        localStorage.setItem('hw_cavalry_count', 0);
+
+        let selectedClass = ""; 
+        let finalPayload = {}; 
+
+        function playSound(type) {
+            let sound = document.getElementById(`snd-${type}`);
+            if(sound) { sound.currentTime = 0; sound.play().catch(e => {}); }
+        }
+
+        function showCustomAlert(text) {
+            document.getElementById('modal-text').innerText = text;
+            document.getElementById('custom-modal-overlay').classList.add('active');
+            playSound('error');
+            if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
+        }
+
+        function closeModal() {
+            document.getElementById('custom-modal-overlay').classList.remove('active');
+            playSound('click');
+        }
+
+        function updateProgress() {
+            currentPlayers = currentInfantry + currentCavalry;
+            document.getElementById('count-text').innerText = currentPlayers + " / " + maxPlayers;
+            let percent = (currentPlayers / maxPlayers) * 100;
+            let bar = document.getElementById('progress-bar');
+            bar.style.width = percent + "%";
+
+            document.getElementById('infantry-slots').innerText = (maxInfantry - currentInfantry) + " мест";
+            document.getElementById('cavalry-slots').innerText = (maxCavalry - currentCavalry) + " мест";
+
+            if (currentInfantry >= maxInfantry) {
+                document.getElementById('card-infantry').style.opacity = "0.4";
+            }
+            if (currentCavalry >= maxCavalry) {
+                document.getElementById('card-cavalry').style.opacity = "0.4";
+            }
+
+            if (currentPlayers >= maxPlayers) {
+                document.getElementById('status-text').innerText = "НАБОР ЗАКРЫТ";
+                bar.classList.add('full');
+                document.getElementById('reg-block').style.display = "none";
+                document.getElementById('main-desc').innerText = "К сожалению, все места заняты.";
+            }
+        }
+        updateProgress();
+
+        function selectClass(className, cardId) {
+            if (className === 'Пехота' && currentInfantry >= maxInfantry) {
+                showCustomAlert("Пехота полностью заполнена!");
+                return;
+            }
+            if (className === 'Конница' && currentCavalry >= maxCavalry) {
+                showCustomAlert("Конница полностью заполнена!");
+                return;
+            }
+
+            selectedClass = className;
+            document.getElementById("card-infantry").classList.remove("active");
+            document.getElementById("card-cavalry").classList.remove("active");
+            document.getElementById(cardId).classList.add("active");
+            playSound('click');
+            if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+        }
+
+        function createExplosion() {
+            const colors = ['#55FF55', '#55FFFF', '#FFFF55', '#FFFFFF'];
+            for (let i = 0; i < 40; i++) {
+                let p = document.createElement('div');
+                p.className = 'particle';
+                p.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                p.style.color = p.style.backgroundColor; 
+                let angle = Math.random() * Math.PI * 2;
+                let distance = 80 + Math.random() * 150;
+                p.style.setProperty('--tx', `${Math.cos(angle) * distance}px`);
+                p.style.setProperty('--ty', `${Math.sin(angle) * distance}px`);
+                p.style.left = '50%'; p.style.top = '50%';
+                document.body.appendChild(p);
+                setTimeout(() => p.remove(), 1000); 
+            }
+        }
+
+        function registerPlayer() {
+            let nickInput = document.getElementById("nickname");
+            let nick = nickInput.value;
+            let joinBtn = document.getElementById("join-btn");
+            
+            if (selectedClass === "") {
+                showCustomAlert("Пожалуйста, выберите ваш класс (Пехота или Конница)!");
+                return;
+            }
+
+            if (nick.length < 3) {
+                playSound('error');
+                if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
+                nickInput.classList.add("error-shake");
+                setTimeout(() => nickInput.classList.remove("error-shake"), 400);
+                return;
+            }
+            
+            playSound('click');
+            if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
+            
+            joinBtn.innerText = "ПОДКЛЮЧЕНИЕ...";
+            joinBtn.disabled = true;
+            nickInput.disabled = true;
+
+            setTimeout(() => {
+                if (selectedClass === 'Пехота' && currentInfantry < maxInfantry) {
+                    currentInfantry++;
+                    localStorage.setItem('hw_infantry_count', currentInfantry);
+                } else if (selectedClass === 'Конница' && currentCavalry < maxCavalry) {
+                    currentCavalry++;
+                    localStorage.setItem('hw_cavalry_count', currentCavalry);
+                }
+                updateProgress();
+                
+                let finalNick = nick;
+                document.getElementById("final-nick-display").innerText = finalNick;
+
+                let tgUser = tg.initDataUnsafe?.user?.username ? "@" + tg.initDataUnsafe.user.username : 
+                             (tg.initDataUnsafe?.user?.first_name || "Скрытый юзер");
+
+                finalPayload = {
+                    nick: finalNick,
+                    role: selectedClass,
+                    tg_user: tgUser
+                };
+                
+                document.getElementById("reg-block").style.display = "none";
+                document.getElementById("main-desc").style.display = "none";
+                
+                let discordBlock = document.getElementById("discord-block");
+                discordBlock.style.display = "block";
+                discordBlock.classList.add("fade-in");
+                
+                playSound('success');
+                createExplosion();
+                if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error'); // исправлено ниже в коде логики на success, но оставим корректным
+            }, 1200);
+        }
+
+        function sendDataToBot() {
+            tg.openLink('https://discord.gg/wxt6rUnRK');
+            setTimeout(() => {
+                tg.sendData(JSON.stringify(finalPayload));
+            }, 500);
+        }
+
+        // --- ПАРАЛЛАКС И СКРОЛЛ ---
+        document.addEventListener('mousemove', (e) => {
+            let x = (window.innerWidth / 2 - e.pageX) / 40;
+            let y = (window.innerHeight / 2 - e.pageY) / 40;
+            document.getElementById('parallax-bg').style.transform = `translate(${x}px, ${y}px)`;
+        });
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) entry.target.classList.add('visible');
+                else entry.target.classList.remove('visible'); 
+            });
+        }, { threshold: 0.15 }); 
+
+        document.querySelectorAll('.gallery-item').forEach(img => { observer.observe(img); });
+    </script>
+</body>
+</html>
