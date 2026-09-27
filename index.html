@@ -76,6 +76,33 @@
         }
         initStats();
 
+        // Проверка: регистрировался ли этот пользователь ранее по Telegram ID
+        async function checkRegistration() {
+            const tgUser = tg.initDataUnsafe?.user;
+            // Если открыто в Телеграме и есть ID пользователя
+            if (tgUser && tgUser.id) {
+                const userDocRef = doc(db, "players", String(tgUser.id));
+                const userSnap = await getDoc(userDocRef);
+
+                if (userSnap.exists()) {
+                    let userData = userSnap.data();
+                    document.getElementById("final-nick-display").innerText = userData.nick;
+                    document.getElementById("reg-block").style.display = "none";
+                    document.getElementById("main-desc").style.display = "none";
+                    
+                    let discordBlock = document.getElementById("discord-block");
+                    discordBlock.style.display = "block";
+                    
+                    finalPayload = {
+                        nick: userData.nick,
+                        role: userData.role,
+                        tg_user: userData.tg_user
+                    };
+                }
+            }
+        }
+        checkRegistration();
+
         onSnapshot(statsRef, (docSnap) => {
             if (docSnap.exists()) {
                 let data = docSnap.data();
@@ -176,18 +203,22 @@
                     return;
                 }
 
-                let updateField = selectedClass === 'Пехота' ? { infantry: increment(1) } : { cavalry: increment(1) };
-                await updateDoc(statsRef, updateField);
+                // Получаем уникальный ID из Telegram (если зашли не с телефона, используем тестовый id)
+                let tgUserObj = tg.initDataUnsafe?.user;
+                let telegramId = tgUserObj?.id ? String(tgUserObj.id) : "test_user_" + Date.now();
+                let tgUser = tgUserObj?.username ? "@" + tgUserObj.username : 
+                             (tgUserObj?.first_name || "Скрытый юзер");
 
-                let tgUser = tg.initDataUnsafe?.user?.username ? "@" + tg.initDataUnsafe.user.username : 
-                             (tg.initDataUnsafe?.user?.first_name || "Скрытый юзер");
-
-                await setDoc(doc(db, "players", nick), {
+                // Сохраняем документ в Firestore, используя Telegram ID как ключ
+                await setDoc(doc(db, "players", telegramId), {
                     nick: nick,
                     role: selectedClass,
                     tg_user: tgUser,
                     registeredAt: new Date().toISOString()
                 });
+
+                let updateField = selectedClass === 'Пехота' ? { infantry: increment(1) } : { cavalry: increment(1) };
+                await updateDoc(statsRef, updateField);
 
                 document.getElementById("final-nick-display").innerText = nick;
 
