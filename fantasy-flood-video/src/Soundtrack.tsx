@@ -37,10 +37,14 @@ add(T.bannerIn + 0.98, 'random/orb', 0.8);
 add(T.titleWorldIn, 'random/pop', 0.7, 1.2);
 add(T.titleWorldIn + 0.35, 'random/pop', 0.9, 0.8);
 
+// свинка
+add(T.plants + 0.3, 'mob/pig/say1', 0.7);
+
 // --- 2. игрок ---
 add(T.playerFall - 0.1, 'random/bow', 0.8, 0.7);
 add(T.playerLand, 'damage/fallsmall', 1);
 add(T.playerLand + 0.02, 'step/grass1', 1);
+add(T.playerLand + 0.12, 'mob/pig/say2', 0.6, 1.15);
 add(T.nameIn, 'random/pop', 0.8, 1.4);
 add(T.nameIn + 0.2, 'random/orb', 0.8, 0.9);
 // машет рукой
@@ -78,6 +82,10 @@ add(13.5, 'liquid/water', 0.3, 1, DURATION_S - 13.5, 0.6);
 [8.7, 8.95, 9.2, 9.45, 9.7].forEach((at, i) => add(at, `liquid/swim${(i % 4) + 1}`, 0.3));
 // вода смывает цветы
 [8.75, 8.92, 9.1, 9.3, 9.5].forEach((at, i) => add(at, 'random/pop', 0.45, 1.2 + i * 0.12));
+// вода тушит факелы, свинка всплывает
+add(8.68, 'random/fizz', 0.45, 1.2);
+add(8.95, 'random/fizz', 0.4, 1.35);
+add(9.0, 'mob/pig/say3', 0.6, 1.1);
 // лодка
 add(T.boatIn, 'dig/wood2', 0.8);
 add(T.boatIn, 'random/pop', 0.6, 0.8);
@@ -93,6 +101,7 @@ add(11.7, 'ambient/underwater/enter2', 0.55);
 add(12.4, 'ambient/underwater/enter3', 0.5);
 [10.6, 11.2, 11.9, 12.5].forEach((at, i) => add(at, `block/bubble_column/bubble${(i % 3) + 1}`, 0.5));
 add(10.8, 'entity/boat/paddle_water2', 0.45);
+add(11.55, 'mob/pig/say1', 0.5, 1.05);
 add(11.9, 'entity/boat/paddle_water3', 0.45);
 add(T.titleAllIn, 'liquid/splash', 0.4, 0.9);
 add(T.titleAllIn, 'random/pop', 0.6, 0.8);
@@ -110,6 +119,7 @@ add(T.finale + 1.5, 'fireworks/launch1', 0.4, 0.95);
 add(T.finale + 2.15, 'fireworks/largeblast1', 0.55, 1.1);
 add(T.finale + 2.4, 'fireworks/twinkle1', 0.35, 1.1, DURATION_S - T.finale - 2.4, 0.4);
 add(14.3, 'entity/boat/paddle_water3', 0.35);
+add(14.75, 'mob/pig/say2', 0.5);
 add(15.2, 'entity/boat/paddle_water1', 0.35, 1, 0.8, 0.4);
 
 export const Soundtrack: React.FC = () => {

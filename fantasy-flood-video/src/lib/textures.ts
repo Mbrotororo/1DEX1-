@@ -299,6 +299,12 @@ export const createWorldTextures = () => {
 		redstone: oreTexture([240, 20, 20], 35),
 	};
 
+	// шкурка свинки
+	const pig = toTexture(S, S, (x, y) => {
+		const r = hash3(x, y, 19, 50);
+		return shade([240, 168, 164], r < 0.15 ? 0.92 : r > 0.85 ? 1.05 : 1);
+	});
+
 	const poppy = plantTexture(POPPY, PLANT_COLORS);
 	const dandelion = plantTexture(DANDELION, PLANT_COLORS);
 	const cornflower = plantTexture(CORNFLOWER, PLANT_COLORS);
@@ -411,6 +417,7 @@ export const createWorldTextures = () => {
 		dandelion,
 		cornflower,
 		tallGrass,
+		pig,
 		waterStill,
 		waterFlow,
 		glow,

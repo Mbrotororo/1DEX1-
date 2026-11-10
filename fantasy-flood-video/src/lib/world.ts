@@ -33,6 +33,12 @@ export type Plant = {kind: PlantKind; x: number; z: number; appearAt: number; wa
 
 // Где стоит игрок (центр клетки)
 export const PLAYER_POS = {x: 2.5, z: 2.5};
+// Где пасётся свинка и где стоят факелы у домика
+export const PIG_POS = {x: -1.5, z: 4.5};
+export const TORCHES: {x: number; z: number}[] = [
+	{x: 1.5, z: -1.5},
+	{x: 4.5, z: -1.5},
+];
 // Над этой точкой висит логотип и отсюда растекается вода
 export const SOURCE_POS = {x: 0, z: 0};
 
@@ -160,6 +166,8 @@ const buildWorld = () => {
 		if (x >= h.x0 - 1 && x <= h.x1 + 1 && z >= h.z0 - 1 && z <= h.z1 + 1) return false;
 		// место для игрока и лодки
 		if (Math.abs(x + 0.5 - PLAYER_POS.x) < 2.2 && Math.abs(z + 0.5 - PLAYER_POS.z) < 2.2) return false;
+		// место для свинки
+		if (Math.abs(x + 0.5 - PIG_POS.x) < 1.6 && Math.abs(z + 0.5 - PIG_POS.z) < 1.6) return false;
 		// место, куда бьёт луч
 		if (Math.abs(x + 0.5) < 1.2 && Math.abs(z + 0.5) < 1.2) return false;
 		return true;

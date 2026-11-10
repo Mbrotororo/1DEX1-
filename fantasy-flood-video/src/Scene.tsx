@@ -2,12 +2,14 @@ import {useThree} from '@react-three/fiber';
 import React, {useLayoutEffect, useMemo} from 'react';
 import * as THREE from 'three';
 import {useCurrentFrame} from 'remotion';
-import {actorAt} from './lib/actors';
+import {clamp01, prog} from './lib/anim';
+import {actorAt, pigAt} from './lib/actors';
 import {CAMERA_FOV, cameraAt} from './lib/camera';
 import type {WorldTextures} from './lib/textures';
 import {FPS, HEIGHT, T, WATER_MAX, WIDTH} from './lib/timeline';
-import {PLAYER_POS, SOURCE_POS} from './lib/world';
+import {PLAYER_POS, SOURCE_POS, TORCHES, waterArrival} from './lib/world';
 import {Blocks, Plants} from './scene/Blocks';
+import {BlobShadow, Pig, Rocket, Torch} from './scene/Critters';
 import {FantasyLogo, logoHeight} from './scene/FantasyLogo';
 import {Banner, Titles} from './scene/Hud';
 import {Bubbles, Burst} from './scene/Particles';
@@ -32,6 +34,7 @@ const LIGHT_DIR: [number, number, number] = [0.19, 0.86, 0.47];
 const DUST = ['#6aa43e', '#86603f', '#9c7a52', '#5a8f34'];
 const SPLASH = ['#3f76e4', '#6096f4', '#9ec4ff', '#ffffff'];
 const SPARKS = ['#9692ee', '#c9c6ff', '#ffffff'];
+const SMOKE = ['#8a8a8a', '#b0b0b0', '#5e5e5e'];
 // Салют в финале. Позиция задаётся в координатах кадра (-1..1 от центра),
 // чтобы вспышки не попадали на луну, баннер и надписи.
 const firework = (at: number, sx: number, sy: number, colors: string[], seed: number) => {
@@ -68,6 +71,7 @@ export const Scene: React.FC<{assets: Assets}> = ({assets}) => {
 	});
 
 	const actor = actorAt(t, cam.azimuth);
+	const pig = pigAt(t);
 	const landOrigin = useMemo<[number, number, number]>(() => [PLAYER_POS.x, 0.1, PLAYER_POS.z], []);
 	const strikeOrigin = useMemo<[number, number, number]>(() => [SOURCE_POS.x, 0.2, SOURCE_POS.z], []);
 	const logoOrigin = useMemo<[number, number, number]>(() => [SOURCE_POS.x, logoHeight(T.voxEnd), SOURCE_POS.z], []);
@@ -84,6 +88,56 @@ export const Scene: React.FC<{assets: Assets}> = ({assets}) => {
 			{/* мир */}
 			<Blocks t={t} tex={tex} />
 			<Plants t={t} tex={tex} />
+
+			{/* факелы у домика: вода их тушит */}
+			{TORCHES.map((torch, i) => {
+				const washAt = waterArrival(Math.floor(torch.x), Math.floor(torch.z)) + 0.1;
+				const lit = prog(t, T.house + 0.75 + i * 0.12, 0.25) * (1 - prog(t, washAt, 0.12));
+				return (
+					<React.Fragment key={i}>
+						<Torch
+							position={[torch.x, 0, torch.z]}
+							glow={tex.glow}
+							scale={lit}
+							flicker={Math.sin(t * 23 + i * 2) * 0.6 + Math.sin(t * 37 + i) * 0.4}
+						/>
+						<Burst t={t} at={washAt} origin={[torch.x, 0.9, torch.z]} count={10} seed={40 + i} colors={SMOKE} speed={[0.6, 1.8]} shape="up" gravity={1.5} drag={1} life={[0.5, 0.9]} size={[0.1, 0.2]} />
+					</React.Fragment>
+				);
+			})}
+
+			{/* свинка */}
+			{pig.scale > 0 ? (
+				<>
+					<Pig
+						skin={tex.pig}
+						position={pig.position}
+						rotationY={pig.rotationY}
+						scale={pig.scale}
+						legSwing={pig.legSwing}
+						headYaw={pig.headYaw}
+						tilt={pig.tilt}
+					/>
+					<BlobShadow
+						glow={tex.glow}
+						x={pig.position[0]}
+						z={pig.position[2]}
+						size={2.6}
+						opacity={pig.floating ? 0 : 0.5 * clamp01(pig.scale) * (1 - pig.position[1])}
+					/>
+				</>
+			) : null}
+
+			{/* тень под игроком: чем ближе к земле, тем плотнее */}
+			{actor.visible ? (
+				<BlobShadow
+					glow={tex.glow}
+					x={actor.position[0]}
+					z={actor.position[2]}
+					size={2.2 + actor.position[1] * 0.25}
+					opacity={0.55 * clamp01(1 - actor.position[1] / 14) * (1 - prog(t, T.waterStart + 0.2, 0.3))}
+				/>
+			) : null}
 
 			{/* игрок и лодка */}
 			{actor.boat.scale > 0 ? (
@@ -144,6 +198,9 @@ export const Scene: React.FC<{assets: Assets}> = ({assets}) => {
 			<Burst t={t} at={T.waterStart} origin={strikeOrigin} count={90} seed={14} colors={SPLASH} speed={[5, 15]} shape="up" gravity={-24} drag={0.4} life={[0.6, 1.35]} size={[0.14, 0.34]} spreadDelay={0.35} />
 			<Burst t={t} at={T.boatIn} origin={landOrigin} count={22} seed={15} colors={SPLASH} speed={[2, 5]} shape="ring" gravity={-9} life={[0.3, 0.6]} size={[0.08, 0.2]} />
 			<Burst t={t} at={T.finale} origin={finaleOrigin} count={60} seed={16} colors={SPARKS} speed={[6, 14]} shape="sphere" gravity={-2} drag={2.6} life={[0.5, 1.1]} size={[0.12, 0.28]} additive />
+			{FIREWORKS.map((f) => (
+				<Rocket key={`rocket-${f.seed}`} t={t} at={f.at} origin={f.origin} color={f.colors[0]} />
+			))}
 			{FIREWORKS.map((f) => (
 				<Burst key={f.seed} t={t} at={f.at} origin={f.origin} count={130} seed={f.seed} colors={f.colors} speed={[9, 21]} shape="sphere" gravity={-4} drag={2.4} life={[0.8, 1.6]} size={[0.2, 0.46]} additive />
 			))}

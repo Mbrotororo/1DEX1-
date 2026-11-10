@@ -1,6 +1,6 @@
 import {clamp01, easeInOutCubic, easeOutBack, lerp, prog, smooth, track} from './anim';
 import {T} from './timeline';
-import {PLAYER_POS, waterTopAt} from './world';
+import {PIG_POS, PLAYER_POS, waterArrival, waterTopAt} from './world';
 
 // Что делает игрок и лодка в каждый момент времени.
 // Углы в радианах. Рука вверх — поворот по X на -PI.
@@ -146,5 +146,52 @@ export const actorAt = (t: number, cameraAzimuth: number): ActorState => {
 		},
 		headTop: y + 32 * PX * scale * clamp01(squash),
 		scale,
+	};
+};
+
+// ---------------- свинка ----------------
+export type PigState = {
+	scale: number;
+	position: [number, number, number];
+	rotationY: number;
+	legSwing: number;
+	headYaw: number;
+	tilt: number;
+	floating: boolean;
+};
+
+export const pigAt = (t: number): PigState => {
+	const cellX = Math.floor(PIG_POS.x);
+	const cellZ = Math.floor(PIG_POS.z);
+	const arrival = waterArrival(cellX, cellZ);
+	const water = waterTopAt(cellX, cellZ, t);
+	const floating = t > arrival;
+
+	const appear = easeOutBack(prog(t, T.plants + 0.25, 0.3));
+	const grow = 1 + 0.35 * smooth(prog(t, T.riseStart, T.riseEnd - T.riseStart));
+
+	// пугается, когда игрок падает рядом, потом делает пару шагов к нему
+	const startle = Math.sin(prog(t, T.playerLand + 0.04, 0.32) * Math.PI) * 0.55;
+	const walk = smooth(prog(t, T.waveStart + 0.1, 1.0));
+	// во время потопа её относит в сторону
+	const drift = smooth(prog(t, T.riseStart, T.riseEnd - T.riseStart));
+	const x = PIG_POS.x + walk * 0.9 + drift * -0.2 + (floating ? Math.sin(t * 0.6) * 0.2 : 0);
+	const z = PIG_POS.z - walk * 0.45 - drift * 1.45 + (floating ? Math.cos(t * 0.5) * 0.2 : 0);
+
+	// на воде держится так, что над поверхностью торчит спина и голова
+	const afloat = water - 0.62 * grow + Math.sin(t * 2.7 + 1) * 0.07;
+	const splash = Math.sin(prog(t, arrival, 0.35) * Math.PI) * 0.5;
+	const y = floating ? Math.max(0, afloat) + splash : startle;
+
+	const walking = walk > 0 && walk < 1 ? 1 : 0;
+	const spin = floating ? (t - arrival) * 0.45 : 0;
+	return {
+		scale: appear * grow,
+		position: [x, y, z],
+		rotationY: 2.03 + spin + Math.sin(t * 0.8) * 0.12,
+		legSwing: floating ? t * 9 : walking * t * 14,
+		headYaw: Math.sin(t * 1.3 + 0.5) * 0.35,
+		tilt: floating ? Math.sin(t * 2.7) * 0.08 : -startle * 0.5,
+		floating,
 	};
 };

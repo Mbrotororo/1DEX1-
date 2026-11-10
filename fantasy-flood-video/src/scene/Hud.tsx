@@ -9,6 +9,9 @@ import {VoxelText} from './VoxelText';
 // При этом всё настоящее 3D — объёмные буквы стоят прямо перед камерой.
 
 const LOGO_H = 150;
+// Логотип сервера «выдавлен» в объём: стопка слоёв картинки друг за другом
+const LOGO_LAYERS = 28;
+const LOGO_STEP = 1.1;
 
 export const Banner: React.FC<{t: number; logo: THREE.Texture}> = ({t, logo}) => {
 	const img = logo.image as {width: number; height: number};
@@ -23,17 +26,26 @@ export const Banner: React.FC<{t: number; logo: THREE.Texture}> = ({t, logo}) =>
 	const drop = (1 - easeOutBounce(prog(t, T.bannerIn, 0.75))) * 320;
 	const y = 540 - 16 - LOGO_H / 2 + drop;
 	const sway = Math.sin(t * 1.5) * 0.035;
-	const turn = Math.sin(t * 1.1 + 1) * 0.22;
+	const turn = Math.sin(t * 1.1 + 1) * 0.42;
+	const nod = Math.sin(t * 0.8) * 0.12;
 	const pulse = 1 + Math.sin(t * 2.6) * 0.02;
 
 	return (
 		<group position={[0, y, 0]} visible={t >= T.bannerIn}>
-			<group position={[left + logoW / 2, 0, 0]} rotation={[0, turn, sway]} scale={pulse}>
-				{/* тень */}
-				<mesh position={[7, -7, -8]} renderOrder={20}>
-					<planeGeometry args={[logoW, LOGO_H]} />
-					<meshBasicMaterial map={logo} color="#000000" transparent opacity={0.4} depthWrite={false} />
-				</mesh>
+			<group position={[left + logoW / 2, 0, 0]} rotation={[nod, turn, sway]} scale={pulse}>
+				{/* боковина: тёмные слои позади лицевой стороны */}
+				{Array.from({length: LOGO_LAYERS}, (_, i) => (
+					<mesh key={i} position={[0, 0, -(i + 1) * LOGO_STEP]}>
+						<planeGeometry args={[logoW, LOGO_H]} />
+						<meshBasicMaterial
+							map={logo}
+							color={i === LOGO_LAYERS - 1 ? '#4a1c08' : '#7a3210'}
+							alphaTest={0.55}
+							side={THREE.DoubleSide}
+						/>
+					</mesh>
+				))}
+				{/* лицевая сторона */}
 				<mesh renderOrder={21}>
 					<planeGeometry args={[logoW, LOGO_H]} />
 					<meshBasicMaterial map={logo} transparent depthWrite={false} toneMapped={false} />
