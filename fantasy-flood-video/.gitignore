@@ -1,0 +1,5 @@
+node_modules/
+out/
+# Звуки Minecraft скачиваются с серверов Mojang командой `npm run sounds`
+public/sounds/
+.DS_Store
