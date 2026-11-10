@@ -37,6 +37,7 @@ export const SOUNDS = [
 	'random/orb',
 	'random/levelup',
 	'random/click',
+	'random/bow',
 	'damage/fallsmall',
 	'block/amethyst/place1',
 	'block/amethyst/place2',

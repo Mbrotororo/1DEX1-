@@ -133,7 +133,7 @@ export const Boat: React.FC<{
 }> = ({planks, position, rotationY, scale, tilt = [0, 0], row = 0}) => {
 	const mat = useMemo(() => new THREE.MeshLambertMaterial({map: planks}), [planks]);
 	const dark = useMemo(() => new THREE.MeshLambertMaterial({map: planks, color: '#9a8a78'}), [planks]);
-	const k = PLAYER_SCALE * 1.0 * scale;
+	const k = PLAYER_SCALE * scale;
 	const paddle = (side: 1 | -1) => {
 		const swing = Math.sin(row + (side === 1 ? 0 : Math.PI)) * 0.45;
 		return (

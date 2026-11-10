@@ -19,22 +19,22 @@ type CamKey = {
 // Путь камеры по ключевым точкам
 const KEYS: CamKey[] = [
 	// мир собирается: камера подлетает издалека
-	{t: 0.0, az: 18, el: 20, dist: 100, tx: 0, ty: -3, tz: 0, shift: 10},
-	{t: 2.3, az: 45, el: 27, dist: 52, tx: 0, ty: -1.5, tz: 0, shift: 10},
-	{t: 2.75, az: 45, el: 27, dist: 52, tx: 0, ty: -1.5, tz: 0, shift: 10},
+	{t: 0.0, az: 20, el: 22, dist: 63, tx: 0, ty: -2, tz: 0, shift: 10},
+	{t: 2.3, az: 45, el: 27, dist: 50, tx: 0, ty: -1.5, tz: 0, shift: 10},
+	{t: 2.75, az: 46, el: 27, dist: 50, tx: 0, ty: -1.5, tz: 0, shift: 10},
 	// крупный план игрока
 	{t: 3.45, az: 38, el: 9, dist: 11.5, tx: 2.5, ty: 1.75, tz: 2.5, shift: 0.6},
 	{t: 4.55, az: 32, el: 8, dist: 11, tx: 2.5, ty: 1.9, tz: 2.5, shift: 0.6},
 	// логотип FantasyVisual над островом
-	{t: 5.6, az: 45, el: 12, dist: 33, tx: 0, ty: 7.4, tz: 0, shift: 7},
-	{t: 7.6, az: 50, el: 11, dist: 32, tx: 0, ty: 7.6, tz: 0, shift: 7},
-	{t: 8.3, az: 51, el: 11, dist: 29, tx: 0, ty: 8, tz: 0, shift: 6.5},
+	{t: 5.35, az: 45, el: 12, dist: 33, tx: 0, ty: 8.2, tz: 0, shift: 7},
+	{t: 7.6, az: 50, el: 11, dist: 32, tx: 0, ty: 8.4, tz: 0, shift: 7},
+	{t: 8.3, az: 51, el: 11, dist: 29, tx: 0, ty: 9.2, tz: 0, shift: 6.5},
 	// вода растекается: смотрим сверху
 	{t: 9.1, az: 48, el: 34, dist: 42, tx: 0, ty: 4.6, tz: 0, shift: 8.5},
 	{t: 10.2, az: 52, el: 31, dist: 44, tx: 0, ty: 4.6, tz: 0, shift: 9},
 	// мир уходит под воду, финальный облёт
-	{t: 13.0, az: 74, el: 19, dist: 40, tx: 0, ty: 8.2, tz: 0, shift: 8.3},
-	{t: 16.0, az: 98, el: 17, dist: 38, tx: 0, ty: 8.6, tz: 0, shift: 8},
+	{t: 13.0, az: 74, el: 19, dist: 40, tx: 0, ty: 8.8, tz: 0, shift: 8.3},
+	{t: 16.0, az: 98, el: 17, dist: 38, tx: 0, ty: 9.2, tz: 0, shift: 8},
 ];
 
 const channel = (t: number, pickValue: (k: CamKey) => number) =>

@@ -6,11 +6,11 @@ export const HEIGHT = 1080;
 
 export const T = {
 	// 1. Мир собирается из блоков
-	islandStart: 0.25,
+	islandStart: 0.12,
 	trees: 1.55,
 	house: 1.7,
 	plants: 2.25,
-	bannerIn: 0.4,
+	bannerIn: 0.2,
 	titleWorldIn: 1.1,
 	titleWorldOut: 2.7,
 
@@ -23,8 +23,8 @@ export const T = {
 	armUp: 4.5,
 
 	// 3. Собирается логотип FantasyVisual
-	logoPlate: 5.0,
-	voxStart: 5.35,
+	logoPlate: 5.2,
+	voxStart: 5.5,
 	voxEnd: 6.95,
 	titleLogoIn: 5.9,
 	titleLogoOut: 8.05,

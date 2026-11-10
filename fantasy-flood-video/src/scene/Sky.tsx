@@ -42,9 +42,10 @@ export const Sky: React.FC<{t: number; tex: WorldTextures; cam: CameraState}> = 
 		() => new THREE.Vector3(-0.47, 0.2, -1).normalize().multiplyScalar(R * 0.9).applyQuaternion(ref.quaternion),
 		[ref],
 	);
-	const skyQuat = useMemo(() => new THREE.Quaternion(), []);
-	skyQuat.copy(cam.quaternion).multiply(ref.quaternion.clone().invert());
-	skyQuat.slerpQuaternions(new THREE.Quaternion(), skyQuat.clone(), FOLLOW);
+	// поворот камеры относительно опорного момента, применённый на 93%
+	// (каждый кадр — новый объект, иначе React Three Fiber не заметит изменения)
+	const turn = cam.quaternion.clone().multiply(ref.quaternion.clone().invert());
+	const skyQuat = new THREE.Quaternion().slerp(turn, FOLLOW);
 	return (
 		<>
 			<primitive object={tex.sky} attach="background" />

@@ -117,7 +117,7 @@ const dummy = new THREE.Object3D();
 export const logoHeight = (t: number) =>
 	track(t, [
 		[T.riseStart, 11.5],
-		[T.riseEnd, WATER_MAX + 5.0],
+		[T.riseEnd, WATER_MAX + 4.8],
 	]) +
 	Math.sin(t * 1.7) * 0.16;
 
@@ -159,7 +159,10 @@ export const FantasyLogo: React.FC<{
 
 	useLayoutEffect(() => {
 		const mesh = ref.current;
-		if (!mesh) return;
+		if (!mesh) {
+			settled.current = false;
+			return;
+		}
 		const done = t >= T.voxEnd + 0.1;
 		if (done && settled.current) return;
 		settled.current = done;

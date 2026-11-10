@@ -71,13 +71,15 @@ export const Scene: React.FC<{assets: Assets}> = ({assets}) => {
 	const landOrigin = useMemo<[number, number, number]>(() => [PLAYER_POS.x, 0.1, PLAYER_POS.z], []);
 	const strikeOrigin = useMemo<[number, number, number]>(() => [SOURCE_POS.x, 0.2, SOURCE_POS.z], []);
 	const logoOrigin = useMemo<[number, number, number]>(() => [SOURCE_POS.x, logoHeight(T.voxEnd), SOURCE_POS.z], []);
-	const finaleOrigin = useMemo<[number, number, number]>(() => [SOURCE_POS.x, WATER_MAX + 5.0, SOURCE_POS.z], []);
+	const finaleOrigin = useMemo<[number, number, number]>(() => [SOURCE_POS.x, WATER_MAX + 4.8, SOURCE_POS.z], []);
 
 	return (
 		<>
 			<Sky t={t} tex={tex} cam={cam} />
 			<ambientLight intensity={0.24 * Math.PI} />
 			<directionalLight position={LIGHT_DIR} intensity={0.88 * Math.PI} />
+			{/* мягкий свет «от камеры», чтобы игрок и логотип не темнели при облёте */}
+			<directionalLight position={[-cam.forward.x, -cam.forward.y, -cam.forward.z]} intensity={0.3 * Math.PI} />
 
 			{/* мир */}
 			<Blocks t={t} tex={tex} />
