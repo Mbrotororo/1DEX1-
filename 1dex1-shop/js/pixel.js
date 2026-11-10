@@ -7,16 +7,20 @@ export const GLYPHS = {
 	D: ['####.', '#...#', '#...#', '#...#', '#...#', '#...#', '####.'],
 	E: ['#####', '#....', '#....', '####.', '#....', '#....', '#####'],
 	X: ['#...#', '#...#', '.#.#.', '..#..', '.#.#.', '#...#', '#...#'],
+	S: ['.####', '#....', '#....', '.###.', '....#', '....#', '####.'],
+	H: ['#...#', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+	O: ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+	P: ['####.', '#...#', '#...#', '####.', '#....', '#....', '#....'],
 };
 
-// Список пикселей слова: [{x, y, row}] — y растёт вверх
+// Список пикселей слова: [{x, y, row}] — y растёт вверх. Пробел занимает 3 пикселя.
 export const wordPixels = (word) => {
 	const out = [];
 	let cursor = 0;
 	for (const ch of word) {
 		const rows = GLYPHS[ch];
 		if (!rows) {
-			cursor += 4;
+			cursor += 3;
 			continue;
 		}
 		rows.forEach((line, r) => {
@@ -28,6 +32,13 @@ export const wordPixels = (word) => {
 	}
 	return {pixels: out, width: cursor - 1, height: 7};
 };
+
+// Курсор-прицел, как в Minecraft: появляется над блоками, которые можно сломать
+const crosshairSvg =
+	'<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" shape-rendering="crispEdges">' +
+	'<path d="M13 4h6v9h9v6h-9v9h-6v-9H4v-6h9z" fill="#0c0914"/>' +
+	'<path d="M15 6h2v9h9v2h-9v9h-2v-9H6v-2h9z" fill="#fff"/></svg>';
+export const CROSSHAIR = `url("data:image/svg+xml,${encodeURIComponent(crosshairSvg)}") 16 16, crosshair`;
 
 // SVG из пиксельной карты. palette: {символ: цвет}, '.' — прозрачно
 export const pixelSvg = (rows, palette, cls = '') => {
@@ -68,26 +79,30 @@ const C = {
 	B: '#8f6a40',
 };
 
-// ---------- иконки достижений (9x9) ----------
+// ---------- иконки (9x9) ----------
 export const ICONS = {
+	// достижения
 	pick: ['..SSSSS..', '.S....wS.', '......bS.', '.....b.S.', '....b..S.', '...b.....', '..b......', '.b.......', 'b........'],
 	boom: ['r...g...r', '.r.ggg.r.', '..gGGGg..', '.ggGwGgg.', 'gGGwwwGGg', '.ggGwGgg.', '..gGGGg..', '.r.ggg.r.', 'r...g...r'],
-	heart: ['.........', '.ll...ll.', 'lLLl.lLLl', 'lLLLlLLLl', 'lLLLLLLLl', '.lLLLLLl.', '..lLLLl..', '...lLl...', '....l....'],
-	server: ['.ddddddd.', 'dSSSSSSSd', 'dS.l.g.Sd', 'dSSSSSSSd', '.ddddddd.', 'dSSSSSSSd', 'dS.l.g.Sd', 'dSSSSSSSd', '.ddddddd.'],
-	bulb: ['...ggg...', '..gGGGg..', '.gGGwGGg.', '.gGGGGGg.', '.gGGGGGg.', '..gGGGg..', '...SSS...', '...SSS...', '....S....'],
-	play: ['.........', '.rrrrrrr.', 'rrrwrrrrr', 'rrrwwrrrr', 'rrrwwwrrr', 'rrrwwrrrr', 'rrrwrrrrr', '.rrrrrrr.', '.........'],
-	plane: ['........p', '......ppP', '....ppPPP', '..ppPPPP.', 'ppPPqPPP.', '..pqqPP..', '...qqP...', '...qP....', '...q.....'],
-	bedrock: ['dsdSddsdd', 'sddsdSdds', 'ddSddsddS', 'sdddSddsd', 'dSdsdddSd', 'ddsddSdds', 'Sdddsdddd', 'dsdSddsdS', 'ddsdddSdd'],
-	eye: ['.........', '..PPPPP..', '.PwwwwwP.', 'PwwpppwwP', 'PwwpkpwwP', 'PwwpppwwP', '.PwwwwwP.', '..PPPPP..', '.........'],
-	lock: ['...ddd...', '..d...d..', '..d...d..', '.ddddddd.', '.dsssssd.', '.dssdssd.', '.dssdssd.', '.dsssssd.', '.ddddddd.'],
-	home: ['....p....', '...ppp...', '..ppppp..', '.ppppppp.', 'ppppppppp', '.pPPPPPp.', '.pPPkPPp.', '.pPPkPPp.', '.pppkppp.'],
+	cube: ['...PPP...', '.PPPPPPP.', 'PPPPPPPPP', 'pPPPPPPPq', 'pppPPPqqq', 'pppppqqqq', 'pppppqqqq', '.ppppqqq.', '...ppq...'],
 	chest: ['.........', '.qqqqqqq.', 'qpppppppq', 'qpppppppq', 'qqqqgqqqq', 'qpppgpppq', 'qpppppppq', 'qpppppppq', '.qqqqqqq.'],
+	home: ['....p....', '...ppp...', '..ppppp..', '.ppppppp.', 'ppppppppp', '.pPPPPPp.', '.pPPkPPp.', '.pPPkPPp.', '.pppkppp.'],
+	face: ['.ggggggg.', 'ggggggggg', 'ggkgggkgg', 'ggkgggkgg', 'ggggggggg', 'gkgggggkg', 'ggkkkkkgg', 'ggggggggg', '.ggggggg.'],
+	plane: ['........p', '......ppP', '....ppPPP', '..ppPPPP.', 'ppPPqPPP.', '..pqqPP..', '...qqP...', '...qP....', '...q.....'],
+	shovel: ['.......SS', '......SwS', '.....bSS.', '....b....', '...b.....', '.sb......', 'sSs......', 'sSSs.....', '.ss......'],
+	gem: ['....l....', '...lLl...', '..lLLLl..', '.lLLwLLl.', 'lLLwLLLLl', '.lLLLLLl.', '..lLLLl..', '...lLl...', '....l....'],
+	feather: ['......PPP', '.....PwwP', '....PwwP.', '...PwwP..', '..PwwP...', '.PwPP....', '.PP......', 'p........', '.........'],
+	// интерфейс
+	lock: ['...ddd...', '..d...d..', '..d...d..', '.ddddddd.', '.dsssssd.', '.dssdssd.', '.dssdssd.', '.dsssssd.', '.ddddddd.'],
 	trophy: ['ggggggggg', 'g.gGGGg.g', 'g.gGGGg.g', '.ggGGGgg.', '..gGGGg..', '...ggg...', '....g....', '...ggg...', '..ggggg..'],
+	user: ['...ppp...', '..pPPPp..', '..pPPPp..', '..pPPPp..', '...ppp...', '.ppppppp.', 'pPPPPPPPp', 'pPPPPPPPp', 'ppppppppp'],
+	coin: ['..ggggg..', '.gGGGGGg.', 'gGGhhhGGg', 'gGhGGGGGg', 'gGhGGGGGg', 'gGhGGGGGg', 'gGGhhhGGg', '.gGGGGGg.', '..ggggg..'],
+	play: ['.........', '.rrrrrrr.', 'rrrwrrrrr', 'rrrwwrrrr', 'rrrwwwrrr', 'rrrwwrrrr', 'rrrwrrrrr', '.rrrrrrr.', '.........'],
 };
 
 export const icon = (name, cls = 'pxi') => pixelSvg(ICONS[name] || ICONS.lock, C, cls);
 
-// ---------- обложки товаров (12x12), пока нет своих картинок ----------
+// ---------- обложки товаров (12x12), если у товара нет своей картинки ----------
 const MYSTERY = [
 	'qqqqqqqqqqqq',
 	'qPppppppppPq',
@@ -123,8 +138,6 @@ const TINTS = [
 	{p: '#b8ff3d', P: '#e2ffab', q: '#6fae12', g: '#f5f2ff'},
 	{p: '#ffc83d', P: '#ffe59a', q: '#b37d00', g: '#2a1a5c'},
 ];
-
-// У ресурс-паков цвета четырёх «текстур» меняются местами
 const GROUPS = [
 	['l', 'L', 'm'],
 	['p', 'P', 'q'],

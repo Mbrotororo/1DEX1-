@@ -1,7 +1,7 @@
-// 3D-сцена первого экрана: парящий остров, твой скин, сундук и логотип 1DEX1
-// из блоков. Блоки логотипа можно ломать кликом.
+// 3D-сцена первого экрана: вращающийся остров, твой скин, сундук и логотип 1DEX1
+// из блоков. Блоки логотипа ломаются кликом, парящие блоки можно перетаскивать.
 import * as THREE from '../vendor/three.module.min.js';
-import {wordPixels} from './pixel.js';
+import {CROSSHAIR, wordPixels} from './pixel.js';
 
 // ---------- маленькие помощники ----------
 const rng = (seed) => {
@@ -15,10 +15,7 @@ const rng = (seed) => {
 };
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const lerp = (a, b, k) => a + (b - a) * k;
-const easeOutBack = (x) => {
-	const k = clamp(x, 0, 1) - 1;
-	return 1 + 2.7 * k * k * k + 1.7 * k * k;
-};
+const easeOutCubic = (x) => 1 - Math.pow(1 - clamp(x, 0, 1), 3);
 
 // Пиксельная текстура 16x16, нарисованная кодом
 const pixelTexture = (paint, size = 16) => {
@@ -179,8 +176,15 @@ const VOXEL = 0.44;
 const WORD_Y = 4.4;
 // буквы толще одного блока, чтобы был виден объём
 const WORD_DEPTH = 1.8;
+// сломанный блок плавно вырастает заново через 3 секунды
+const RESPAWN = 3;
+const APPEAR = 0.7;
+// один оборот острова — около 40 секунд
+const ISLAND_SPEED = 0.16;
 
-export const initHero = (canvas, {onBreak = () => {}, reducedMotion = false} = {}) => {
+// on(событие, данные): 'break' — сломан блок, 'drag' — перенесён парящий блок,
+// 'treasure' — блок спрятан в сундук, 'tickle' — пять кликов по скину
+export const initHero = (canvas, {on = () => {}, reducedMotion = false} = {}) => {
 	let renderer;
 	try {
 		renderer = new THREE.WebGLRenderer({canvas, antialias: true, alpha: true, powerPreference: 'high-performance'});
@@ -202,9 +206,11 @@ export const initHero = (canvas, {onBreak = () => {}, reducedMotion = false} = {
 	rim.position.set(5, 2, -6);
 	scene.add(rim);
 
-	// всё, что реагирует на мышь, лежит в одной группе
+	// world наклоняется за курсором; island внутри него медленно вращается
 	const world = new THREE.Group();
 	scene.add(world);
+	const island = new THREE.Group();
+	world.add(island);
 
 	const box = new THREE.BoxGeometry(1, 1, 1);
 	const dummy = new THREE.Object3D();
@@ -230,39 +236,38 @@ export const initHero = (canvas, {onBreak = () => {}, reducedMotion = false} = {
 		dirt: lambert(tex.dirt),
 		stone: lambert(tex.stone),
 	};
-	const addBlocks = (list, material) => {
+	const addBlocks = (list, material, scale = 1) => {
 		const mesh = new THREE.InstancedMesh(box, material, list.length);
 		list.forEach((p, i) => {
 			dummy.position.set(p[0], p[1], p[2]);
 			dummy.rotation.set(0, 0, 0);
-			dummy.scale.setScalar(1);
+			dummy.scale.setScalar(scale);
 			dummy.updateMatrix();
 			mesh.setMatrixAt(i, dummy.matrix);
 		});
-		world.add(mesh);
+		island.add(mesh);
 		return mesh;
 	};
 	Object.keys(cells).forEach((k) => addBlocks(cells[k], blockMats[k]));
 
-	// --- дерево ---
+	// --- низкое деревце и пара блоков: остров вращается, поэтому всё на нём невысокое,
+	//     чтобы не закрывать скин ---
 	const logSide = lambert(tex.logSide);
 	const logTop = lambert(tex.logTop);
-	const tree = {x: -2, z: -2};
+	addBlocks([[-2, 0.5, -2]], [logSide, logSide, logTop, logTop, logSide, logSide]);
 	addBlocks(
-		[0, 1].map((y) => [tree.x, y + 0.5, tree.z]),
-		[logSide, logSide, logTop, logTop, logSide, logSide],
+		[
+			[-2, 1.5, -2],
+			[-3, 1.5, -2],
+			[-1, 1.5, -2],
+			[-2, 1.5, -3],
+			[-2, 1.5, -1],
+			[2, 0.5, -2],
+		],
+		lambert(tex.leaves),
 	);
-	const leaves = [];
-	for (let dy = 0; dy < 3; dy++) {
-		const rad = dy === 2 ? 0 : 1;
-		for (let dx = -rad; dx <= rad; dx++) {
-			for (let dz = -rad; dz <= rad; dz++) {
-				if (dy === 1 && Math.abs(dx) === 1 && Math.abs(dz) === 1 && rand() < 0.6) continue;
-				leaves.push([tree.x + dx, 1.5 + dy, tree.z + dz]);
-			}
-		}
-	}
-	addBlocks(leaves, lambert(tex.leaves));
+	addBlocks([[2.2, 0.35, 1.6]], lambert(tex.amethyst), 0.7);
+	addBlocks([[1.2, 0.3, -2.6]], lambert(tex.gold), 0.6);
 
 	// --- сундук магазина ---
 	const chestSide = lambert(tex.chestSide);
@@ -274,20 +279,19 @@ export const initHero = (canvas, {onBreak = () => {}, reducedMotion = false} = {
 		lambert(tex.chestFront),
 		chestSide,
 	]);
-	chest.position.set(-1.5, 0.41, 1.5);
+	chest.position.set(-1.6, 0.41, 1.5);
 	chest.rotation.y = 0.35;
-	world.add(chest);
+	island.add(chest);
 
-	// --- игрок со скином ---
+	// --- игрок со скином: стоит в центре, остров крутится под ним ---
 	const skin = new THREE.TextureLoader().load('img/skin.png');
 	skin.magFilter = THREE.NearestFilter;
 	skin.minFilter = THREE.NearestFilter;
 	skin.generateMipmaps = false;
 	skin.colorSpace = THREE.SRGBColorSpace;
 	const player = buildPlayer(skin);
-	const PLAYER_SCALE = 2.7 / 32;
-	player.root.scale.setScalar(PLAYER_SCALE);
-	player.root.position.set(0.5, 0, 1.1);
+	player.root.scale.setScalar(2.7 / 32);
+	player.root.position.set(0, 0, 0.2);
 	world.add(player.root);
 
 	// --- логотип 1DEX1 из блоков ---
@@ -327,25 +331,28 @@ export const initHero = (canvas, {onBreak = () => {}, reducedMotion = false} = {
 	world.add(debrisMesh);
 	let debrisCursor = 0;
 
-	// --- парящие блоки вокруг ---
+	// --- парящие блоки вокруг: их можно перетаскивать ---
 	const floatRand = rng(23);
 	const floatMats = [lambert(tex.amethyst), lambert(tex.lime), lambert(tex.gold)];
 	const floaters = [];
 	for (let i = 0; i < 14; i++) {
 		const mesh = new THREE.Mesh(box, floatMats[i % 3 === 0 ? 0 : i % 3 === 1 ? (i % 2 ? 1 : 0) : 2]);
-		mesh.scale.setScalar(0.6 + floatRand() * 1.1);
 		scene.add(mesh);
 		floaters.push({
 			mesh,
+			index: i,
 			base: new THREE.Vector3(),
+			size: 0.6 + floatRand() * 1.1,
 			far: floatRand(),
 			phase: floatRand() * 6.28,
 			speed: 0.2 + floatRand() * 0.4,
 			rx: (floatRand() - 0.5) * 0.5,
 			ry: (floatRand() - 0.5) * 0.6,
+			bob: 1, // 0 — блок держат в руке и он не качается
+			storedAt: -1, // когда блок спрятали в сундук
+			shown: true,
 		});
 	}
-	// Блоки расставляются по экрану так, чтобы не закрывать текст слева и логотип
 	// Свободные места на экране (координаты -1..1): [x0, x1, y0, y1]
 	const SLOTS_WIDE = [
 		[-0.95, -0.2, 0.56, 0.7], // над текстом
@@ -362,16 +369,21 @@ export const initHero = (canvas, {onBreak = () => {}, reducedMotion = false} = {
 		[-0.96, -0.62, 0.1, 0.5],
 		[0.62, 0.96, 0.1, 0.5],
 	];
-	const placeFloaters = (dist, wide) => {
+	let viewDist = 30;
+	let viewWide = true;
+	const slotPoint = new THREE.Vector2();
+	const placeFloater = (f, r) => {
+		const slots = viewWide ? SLOTS_WIDE : SLOTS_NARROW;
+		const [x0, x1, y0, y1] = slots[f.index % slots.length];
+		slotPoint.set(x0 + r() * (x1 - x0), y0 + r() * (y1 - y0));
+		const dir = new THREE.Vector3(slotPoint.x, slotPoint.y, 0.5).unproject(camera).sub(camera.position).normalize();
+		f.base.copy(camera.position).addScaledVector(dir, viewDist + 4 + f.far * 26);
+	};
+	const placeFloaters = () => {
 		const r = rng(101);
-		const slots = wide ? SLOTS_WIDE : SLOTS_NARROW;
-		const point = new THREE.Vector2();
-		floaters.forEach((f, i) => {
-			const [x0, x1, y0, y1] = slots[i % slots.length];
-			point.set(x0 + r() * (x1 - x0), y0 + r() * (y1 - y0));
-			f.mesh.visible = wide || i < 8;
-			const dir = new THREE.Vector3(point.x, point.y, 0.5).unproject(camera).sub(camera.position).normalize();
-			f.base.copy(camera.position).addScaledVector(dir, dist + 4 + f.far * 26);
+		floaters.forEach((f) => {
+			f.shown = viewWide || f.index < 8;
+			placeFloater(f, r);
 		});
 	};
 	scene.fog = new THREE.Fog(0x0e0a1c, 30, 80);
@@ -394,6 +406,7 @@ export const initHero = (canvas, {onBreak = () => {}, reducedMotion = false} = {
 	const viewDir = new THREE.Vector3(0.2, 0.2, 1).normalize();
 	let width = 1;
 	let height = 1;
+	let needsRender = true;
 	const frame = () => {
 		const wide = width >= 900;
 		const rect = wide ? {x0: 0.47, x1: 0.98, y0: 0.13, y1: 0.93} : {x0: 0.03, x1: 0.97, y0: 0.1, y1: 0.99};
@@ -423,7 +436,9 @@ export const initHero = (canvas, {onBreak = () => {}, reducedMotion = false} = {
 		// дымка: дальние блоки растворяются в фоне, сам остров остаётся чётким
 		scene.fog.near = dist + 7;
 		scene.fog.far = dist + 52;
-		placeFloaters(dist, wide);
+		viewDist = dist;
+		viewWide = wide;
+		placeFloaters();
 	};
 	const resize = () => {
 		const r = canvas.getBoundingClientRect();
@@ -435,16 +450,30 @@ export const initHero = (canvas, {onBreak = () => {}, reducedMotion = false} = {
 		needsRender = true;
 	};
 
-	// ---------- мышь: наклон сцены, наведение и ломание блоков ----------
+	// ---------- курсор: наклон сцены, прицел, ломание и перетаскивание блоков ----------
+	const zone = canvas.parentElement; // слушаем весь первый экран: текст лежит поверх канваса
 	const pointer = new THREE.Vector2(0.3, 0.1); // в координатах -1..1
 	let pointerInside = false;
 	let hovered = -1;
+	let hoverFloater = null;
+	let drag = null;
 	const raycaster = new THREE.Raycaster();
-	const pick = () => {
-		if (!pointerInside) return -1;
+	const dragPlane = new THREE.Plane();
+	const hitPoint = new THREE.Vector3();
+	const tmp = new THREE.Vector3();
+
+	const pickVoxel = () => {
 		raycaster.setFromCamera(pointer, camera);
 		const hit = raycaster.intersectObject(wordMesh, false)[0];
 		return hit && voxels[hit.instanceId].brokenAt < 0 ? hit.instanceId : -1;
+	};
+	const pickFloater = () => {
+		raycaster.setFromCamera(pointer, camera);
+		const hit = raycaster.intersectObjects(
+			floaters.filter((f) => f.shown && f.storedAt < 0).map((f) => f.mesh),
+			false,
+		)[0];
+		return hit ? floaters.find((f) => f.mesh === hit.object) : null;
 	};
 	const setPointer = (e) => {
 		const r = canvas.getBoundingClientRect();
@@ -452,18 +481,16 @@ export const initHero = (canvas, {onBreak = () => {}, reducedMotion = false} = {
 		pointerInside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
 		needsRender = true;
 	};
-	// слушаем весь первый экран: текст лежит поверх канваса
-	const zone = canvas.parentElement;
-	zone.addEventListener('pointermove', setPointer);
-	zone.addEventListener('pointerleave', () => {
-		pointerInside = false;
-		hovered = -1;
-		canvas.style.cursor = '';
-	});
+	const setCursor = (value) => {
+		if (zone.style.cursor !== value) zone.style.cursor = value;
+	};
 
 	let now = 0;
 	let jumpAt = -10;
+	let chestBumpAt = -10;
 	let broken = 0;
+	let tickles = 0;
+
 	const breakVoxel = (i) => {
 		const v = voxels[i];
 		v.brokenAt = now;
@@ -481,47 +508,116 @@ export const initHero = (canvas, {onBreak = () => {}, reducedMotion = false} = {
 			d.size = 0.1 + Math.random() * 0.12;
 		}
 		debrisMesh.instanceColor.needsUpdate = true;
-		onBreak(broken);
+		on('break', broken);
 	};
+
+	const releaseDrag = (e) => {
+		if (!drag) return;
+		const f = drag.f;
+		if (e && zone.hasPointerCapture?.(e.pointerId)) zone.releasePointerCapture(e.pointerId);
+		if (drag.moved > 12) {
+			on('drag');
+			// блок отпустили над сундуком — он прячется внутрь
+			chest.getWorldPosition(tmp).project(camera);
+			const dx = (pointer.x - tmp.x) * (width / height);
+			const dy = pointer.y - tmp.y;
+			if (Math.hypot(dx, dy) < 0.13) {
+				f.storedAt = now;
+				chestBumpAt = now;
+				on('treasure');
+			}
+		}
+		drag = null;
+	};
+
+	zone.addEventListener('pointermove', (e) => {
+		setPointer(e);
+		if (!drag) return;
+		drag.moved += Math.abs(e.movementX || 0) + Math.abs(e.movementY || 0);
+		raycaster.setFromCamera(pointer, camera);
+		if (raycaster.ray.intersectPlane(dragPlane, hitPoint)) drag.f.base.copy(hitPoint).add(drag.offset);
+	});
+	zone.addEventListener('pointerleave', () => {
+		if (drag) return;
+		pointerInside = false;
+		hovered = -1;
+		hoverFloater = null;
+		setCursor('');
+	});
 	let downAt = null;
 	zone.addEventListener('pointerdown', (e) => {
+		if (e.target.closest('a, button')) return;
 		downAt = [e.clientX, e.clientY];
 		setPointer(e);
+		if (pickVoxel() >= 0) return;
+		const f = pickFloater();
+		if (!f) return;
+		// блок двигается в плоскости, параллельной экрану
+		dragPlane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(tmp).clone(), f.mesh.position);
+		raycaster.setFromCamera(pointer, camera);
+		raycaster.ray.intersectPlane(dragPlane, hitPoint);
+		f.base.copy(f.mesh.position);
+		f.bob = 0;
+		drag = {f, offset: f.mesh.position.clone().sub(hitPoint), moved: 0};
+		zone.setPointerCapture?.(e.pointerId);
 	});
 	zone.addEventListener('pointerup', (e) => {
-		if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 8) return;
+		const wasDrag = drag && drag.moved > 12;
+		releaseDrag(e);
+		if (wasDrag || !downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 8) return;
 		// по кнопкам и ссылкам поверх сцены блоки не ломаем
 		if (e.target.closest('a, button')) return;
 		setPointer(e);
-		const i = pick();
-		if (i >= 0) breakVoxel(i);
+		const i = pickVoxel();
+		if (i >= 0) {
+			breakVoxel(i);
+		} else {
+			raycaster.setFromCamera(pointer, camera);
+			if (raycaster.intersectObject(player.root, true).length) {
+				jumpAt = now;
+				if (++tickles === 5) on('tickle');
+			}
+		}
 		if (e.pointerType !== 'mouse') pointerInside = false;
 	});
+	zone.addEventListener('pointercancel', (e) => releaseDrag(e));
+	// на телефоне палец на парящем блоке двигает блок, а не страницу
+	zone.addEventListener(
+		'touchstart',
+		(e) => {
+			const t = e.touches[0];
+			if (!t || e.target.closest('a, button')) return;
+			setPointer(t);
+			if (pickVoxel() < 0 && pickFloater()) e.preventDefault();
+		},
+		{passive: false},
+	);
 
 	// ---------- анимация ----------
-	const RESPAWN = 4.2;
 	const headWorld = new THREE.Vector3();
-	let tilt = {x: 0, y: 0};
-	let look = {yaw: 0, pitch: 0};
-	let needsRender = true;
+	const tilt = {x: 0, y: 0};
+	const look = {yaw: 0, pitch: 0};
 
 	const update = (dt) => {
 		const idle = reducedMotion ? 0 : now;
 
-		// сцена плавно поворачивается за курсором
+		// сцена плавно поворачивается за курсором, остров медленно вращается
 		const tx = pointerInside ? pointer.x : 0.15;
 		const ty = pointerInside ? pointer.y : 0;
 		const k = 1 - Math.exp(-dt * 4);
-		tilt.y = lerp(tilt.y, tx * 0.28 + Math.sin(idle * 0.35) * 0.06, k);
+		tilt.y = lerp(tilt.y, tx * 0.28, k);
 		tilt.x = lerp(tilt.x, -ty * 0.1, k);
 		world.rotation.set(tilt.x, tilt.y - 0.2, 0);
 		world.position.y = Math.sin(idle * 0.8) * 0.18;
+		island.rotation.y = idle * ISLAND_SPEED;
 
-		// наведение на блок
-		const h = pick();
-		if (h !== hovered) {
-			hovered = h;
-			canvas.style.cursor = h >= 0 ? 'pointer' : '';
+		// что под курсором: блок логотипа (прицел) или парящий блок (рука)
+		if (drag) {
+			setCursor('grabbing');
+		} else {
+			hovered = pointerInside ? pickVoxel() : -1;
+			hoverFloater = hovered < 0 && pointerInside ? pickFloater() : null;
+			setCursor(hovered >= 0 ? CROSSHAIR : hoverFloater ? 'grab' : '');
 		}
 
 		// блоки логотипа
@@ -529,8 +625,8 @@ export const initHero = (canvas, {onBreak = () => {}, reducedMotion = false} = {
 			const v = voxels[i];
 			if (v.brokenAt >= 0) {
 				const since = now - v.brokenAt;
-				if (since > RESPAWN + 0.4) v.brokenAt = -1;
-				v.scale = since < RESPAWN ? 0 : easeOutBack((since - RESPAWN) / 0.4);
+				if (since > RESPAWN + APPEAR) v.brokenAt = -1;
+				v.scale = since < RESPAWN ? 0 : easeOutCubic((since - RESPAWN) / APPEAR);
 			} else {
 				v.scale = 1;
 			}
@@ -563,7 +659,11 @@ export const initHero = (canvas, {onBreak = () => {}, reducedMotion = false} = {
 		}
 		debrisMesh.instanceMatrix.needsUpdate = true;
 
-		// игрок: дышит, машет рукой, подпрыгивает, когда ломают блок, и следит за курсором
+		// сундук подпрыгивает, когда в него прячут блок
+		const bump = clamp((now - chestBumpAt) / 0.35, 0, 1);
+		chest.scale.setScalar(1 + Math.sin(bump * Math.PI) * 0.25);
+
+		// игрок: дышит, машет рукой, подпрыгивает и следит головой за курсором
 		const p = player.parts;
 		const jump = clamp((now - jumpAt) / 0.42, 0, 1);
 		player.root.position.y = Math.sin(jump * Math.PI) * 0.55;
@@ -587,7 +687,32 @@ export const initHero = (canvas, {onBreak = () => {}, reducedMotion = false} = {
 
 		// парящие блоки
 		for (const f of floaters) {
-			f.mesh.position.set(f.base.x, f.base.y + Math.sin(idle * f.speed + f.phase) * 0.8, f.base.z);
+			let scale = f.size;
+			if (f.storedAt >= 0) {
+				// блок улетает в сундук, а через несколько секунд появляется на новом месте
+				const since = now - f.storedAt;
+				if (since < 0.3) {
+					chest.getWorldPosition(tmp);
+					f.base.lerp(tmp, 1 - Math.exp(-dt * 18));
+					scale *= 1 - since / 0.3;
+				} else if (since < 5) {
+					scale = 0;
+				} else {
+					if (!f.respawned) {
+						placeFloater(f, Math.random);
+						f.respawned = true;
+					}
+					scale *= easeOutCubic((since - 5) / 0.8);
+					if (since > 5.8) {
+						f.storedAt = -1;
+						f.respawned = false;
+					}
+				}
+			}
+			f.bob = lerp(f.bob, drag && drag.f === f ? 0 : 1, 1 - Math.exp(-dt * 3));
+			f.mesh.visible = f.shown && scale > 0.001;
+			f.mesh.scale.setScalar(Math.max(0.001, scale));
+			f.mesh.position.set(f.base.x, f.base.y + Math.sin(idle * f.speed + f.phase) * 0.8 * f.bob, f.base.z);
 			f.mesh.rotation.set(idle * f.rx + f.phase, idle * f.ry + f.phase, 0);
 		}
 		starMat.opacity = 0.62 + Math.sin(idle * 1.2) * 0.18;
@@ -602,7 +727,7 @@ export const initHero = (canvas, {onBreak = () => {}, reducedMotion = false} = {
 		if (!running) return;
 		now += dt;
 		// с отключёнными анимациями рисуем только после действий человека
-		const active = !reducedMotion || needsRender || now - jumpAt < 6 || hovered >= 0;
+		const active = !reducedMotion || needsRender || drag || now - jumpAt < 6 || hovered >= 0;
 		if (!active) return;
 		needsRender = false;
 		update(dt);
@@ -615,5 +740,17 @@ export const initHero = (canvas, {onBreak = () => {}, reducedMotion = false} = {
 	document.addEventListener('visibilitychange', () => (last = performance.now()));
 	requestAnimationFrame(loop);
 
-	return {breakRandom: () => breakVoxel(Math.floor(Math.random() * voxels.length))};
+	// Для проверки сайта: где на экране сейчас парящие блоки, сундук и скин
+	const toScreen = (v) => {
+		const r = canvas.getBoundingClientRect();
+		const p = v.clone().project(camera);
+		return {x: r.left + ((p.x + 1) / 2) * r.width, y: r.top + ((1 - p.y) / 2) * r.height};
+	};
+	return {
+		positions: () => ({
+			floaters: floaters.filter((f) => f.shown && f.storedAt < 0).map((f) => toScreen(f.mesh.position)),
+			chest: toScreen(chest.getWorldPosition(new THREE.Vector3())),
+			player: toScreen(player.parts.body.getWorldPosition(new THREE.Vector3())),
+		}),
+	};
 };

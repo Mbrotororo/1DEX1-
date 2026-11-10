@@ -1,19 +1,20 @@
-// Достижения в стиле Minecraft. Хранятся в браузере посетителя (localStorage),
-// сервер для них не нужен.
+// Достижения: 8 обычных и 2 секретных. Хранятся в браузере посетителя
+// (localStorage), сервер для них не нужен.
 import {icon} from './pixel.js';
 
-const KEY = 'dex.achievements';
+const KEY = 'dex.achievements.v2';
 
 export const ACHIEVEMENTS = [
-	{id: 'miner', icon: 'pick', title: 'Шахтёр', desc: 'Сломай блок в логотипе'},
-	{id: 'wrecker', icon: 'boom', title: 'Разрушитель', desc: 'Сломай 25 блоков'},
-	{id: 'want', icon: 'heart', title: 'Хочу!', desc: 'Отметь товар кнопкой «Хочу»'},
-	{id: 'ip', icon: 'server', title: 'Свой на сервере', desc: 'Скопируй IP сервера'},
-	{id: 'idea', icon: 'bulb', title: 'Изобретатель', desc: 'Собери идею для мода'},
-	{id: 'video', icon: 'play', title: 'Зритель', desc: 'Открой любой ролик'},
-	{id: 'tg', icon: 'plane', title: 'Подписчик', desc: 'Загляни в Telegram-канал'},
-	{id: 'bedrock', icon: 'bedrock', title: 'До бедрока', desc: 'Долистай сайт до самого низа'},
-	{id: 'secret', icon: 'eye', title: 'Любопытный', desc: 'Найди секрет в консоли браузера', hidden: true},
+	{id: 'kirka', icon: 'pick', title: 'Кирка в деле', desc: 'Сломай блок в названии магазина'},
+	{id: 'mason', icon: 'boom', title: 'Каменотёс', desc: 'Сломай 30 блоков на сайте'},
+	{id: 'telekinesis', icon: 'cube', title: 'Телекинез', desc: 'Перетащи парящий блок'},
+	{id: 'showcase', icon: 'chest', title: 'Витрина', desc: 'Загляни в разделы «Моды» и «РП»'},
+	{id: 'newcomer', icon: 'home', title: 'Новосёл', desc: 'Зарегистрируйся в магазине'},
+	{id: 'face', icon: 'face', title: 'Своё лицо', desc: 'Поставь аватарку в профиле'},
+	{id: 'contact', icon: 'plane', title: 'На связи', desc: 'Открой YouTube или Telegram'},
+	{id: 'digger', icon: 'shovel', title: 'Землекоп', desc: 'Сломай блок в самом низу сайта'},
+	{id: 'treasure', icon: 'gem', title: 'Клад', desc: 'Спрячь парящий блок в сундук', hidden: true},
+	{id: 'tickle', icon: 'feather', title: 'Щекотка', desc: 'Пять раз ткни в скин', hidden: true},
 ];
 
 const load = () => {
@@ -43,7 +44,7 @@ const showToast = (a) => {
 	const el = document.createElement('div');
 	el.className = 'toast';
 	el.setAttribute('role', 'status');
-	el.innerHTML = `<span class="toast__icon">${icon(a.icon)}</span><span class="toast__text"><b class="px">Достижение получено!</b><span>${a.title}</span></span>`;
+	el.innerHTML = `<span class="toast__icon">${icon(a.icon)}</span><span class="toast__text"><b class="px">${a.hidden ? 'Секретное достижение!' : 'Достижение получено!'}</b><span>${a.title}</span></span>`;
 	toastHost().append(el);
 	setTimeout(() => el.classList.add('out'), 4200);
 	setTimeout(() => el.remove(), 4700);
@@ -60,15 +61,15 @@ export const unlock = (id) => {
 	return true;
 };
 
-// Обычное короткое сообщение (например «IP скопирован»)
+// Обычное короткое сообщение (например «Аватарка обновлена»)
 export const notify = (text) => {
 	const el = document.createElement('div');
 	el.className = 'toast toast--plain';
 	el.setAttribute('role', 'status');
 	el.textContent = text;
 	toastHost().append(el);
-	setTimeout(() => el.classList.add('out'), 2200);
-	setTimeout(() => el.remove(), 2700);
+	setTimeout(() => el.classList.add('out'), 2400);
+	setTimeout(() => el.remove(), 2900);
 };
 
 export const reset = () => {

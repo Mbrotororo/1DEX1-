@@ -3,16 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>1DEX1 SHOP — моды и ресурс-паки для Minecraft</title>
-<meta name="description" content="Магазин ютубера 1DEX1: моды и ресурс-паки для анархии Minecraft. Снимаю фармы, дюпы и заработок на HolyWorld.">
+<title>1DEX1 SHOP</title>
+<meta name="description" content="1DEX1 SHOP — магазин модов и ресурс-паков для Minecraft от ютубера 1DEX1.">
 <meta name="theme-color" content="#0c0914">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="1DEX1 SHOP">
 <meta property="og:locale" content="ru_RU">
-<meta property="og:title" content="1DEX1 SHOP — моды и ресурс-паки для Minecraft">
-<meta property="og:description" content="Моды и ресурс-паки от ютубера 1DEX1 для анархии HolyWorld.">
+<meta property="og:title" content="1DEX1 SHOP">
+<meta property="og:description" content="Магазин модов и ресурс-паков для Minecraft от ютубера 1DEX1.">
 <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
-<link rel="preload" href="fonts/rubik-mono-one-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/rubik-mono-one-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/golos-text-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="css/fonts.css">
 <link rel="stylesheet" href="css/style.css">
@@ -24,14 +24,11 @@
 <header class="topbar">
 	<a class="logo" href="#top" aria-label="1DEX1 SHOP — наверх">
 		<img src="img/head.png" width="28" height="28" alt="">
-		<span class="logo__name">1DEX1</span><span class="logo__tag px">SHOP</span>
+		<span class="logo__name">1DEX1 SHOP</span>
 	</a>
 	<nav class="nav" aria-label="Разделы сайта">
 		<a data-nav href="#shop">Магазин</a>
-		<a data-nav href="#idea">Идеи</a>
-		<a data-nav href="#videos">Ролики</a>
-		<a data-nav href="#server">Сервер</a>
-		<a data-nav href="#faq">Вопросы</a>
+		<a data-nav href="#social">Каналы</a>
 	</nav>
 	<div class="topbar__right">
 		<a class="icon-btn" data-link="youtube" target="_blank" rel="noopener" aria-label="YouTube-канал">
@@ -43,7 +40,11 @@
 			<span>Telegram</span>
 		</a>
 		<button class="ach-btn" data-open-ach aria-label="Достижения">
-			<span data-icon="trophy"></span><b class="px" data-ach-count>0/9</b>
+			<span data-icon="trophy"></span><b class="px" data-ach-count>0/10</b>
+		</button>
+		<button class="auth-btn" data-open-profile aria-label="Профиль">
+			<span class="auth-btn__ava" data-auth-avatar></span>
+			<span data-auth-label="Войти">Войти</span>
 		</button>
 	</div>
 </header>
@@ -54,9 +55,8 @@
 		<canvas id="hero-gl" class="hero__gl" aria-hidden="true"></canvas>
 		<div class="hero__fallback" aria-hidden="true">1DEX1</div>
 		<div class="hero__content">
-			<p class="eyebrow px"><i></i>1DEX1 — ютубер по анархии HolyWorld</p>
-			<h1>Моды и <span class="t-lime nw">ресурс-паки</span> для&nbsp;<span class="t-purple">анархии</span></h1>
-			<p class="hero__lead">Снимаю фармы, дюпы и заработок на HolyWorld. Здесь собираю свои моды и ресурс-паки. Магазин только открылся — первые товары уже в разработке.</p>
+			<p class="eyebrow px"><i></i>Мой магазин</p>
+			<h1>1DEX1 SHOP</h1>
 			<div class="hero__cta">
 				<a class="btn btn--lime" href="#shop">В магазин
 					<svg class="arr" viewBox="0 0 7 7" aria-hidden="true"><path d="M3 0h1v4h1v1H4v1H3V5H2V4h1z"/><path d="M1 3h1v1H1zM5 3h1v1H5z"/></svg>
@@ -64,10 +64,7 @@
 				<a class="btn btn--ghost" data-link="telegram" target="_blank" rel="noopener">Telegram-канал</a>
 			</div>
 		</div>
-		<div class="hero__hint px">
-			<span>Кликни по букве — блок сломается</span>
-			<button id="sound-toggle" class="hint-btn px" aria-pressed="true">Звук: вкл</button>
-		</div>
+		<p class="hero__hint px">Блоки названия ломаются, парящие можно таскать</p>
 	</section>
 
 	<div class="marquee px" id="marquee" aria-hidden="true"></div>
@@ -77,75 +74,16 @@
 		<div class="wrap">
 			<header class="head" data-reveal>
 				<div>
-					<p class="head__label px"><b>01</b>Магазин</p>
+					<p class="head__label px"><i></i>Магазин</p>
 					<h2>Товары</h2>
 				</div>
-				<p class="head__text">Моды и ресурс-паки, которые я делаю для своих роликов. Жми «Хочу», чтобы не потерять то, что приглянулось. О выходе каждого товара напишу в Telegram.</p>
 			</header>
-			<div class="tabs" id="shop-tabs" role="tablist" aria-label="Разделы магазина" data-reveal>
+			<div class="tabs" id="shop-tabs" role="tablist" aria-label="Каталог товаров" data-reveal>
 				<button data-filter="all" role="tab">Всё <b class="px">0</b></button>
 				<button data-filter="mod" role="tab">Моды <b class="px">0</b></button>
-				<button data-filter="rp" role="tab">Ресурс-паки <b class="px">0</b></button>
-				<button data-filter="want" role="tab">Хочу <b class="px">0</b></button>
+				<button data-filter="rp" role="tab">РП <b class="px">0</b></button>
 			</div>
 			<div class="grid" id="shop-grid" aria-live="polite"></div>
-		</div>
-	</section>
-
-	<!-- ============ ИДЕИ ============ -->
-	<section class="section section--tint" id="idea">
-		<div class="wrap idea">
-			<header class="idea__head" data-reveal>
-				<p class="head__label px"><b>02</b>Идеи</p>
-				<h2>Какой мод сделать?</h2>
-				<p class="head__text">Собираю идеи для следующего мода. Выбери сервер, опиши, что мод должен делать, и отправь в комментарии под постом в Telegram. Читаю всё и смотрю, что просят чаще.</p>
-			</header>
-			<div class="composer card" data-reveal>
-				<p class="composer__step px"><b>1</b>Где играешь</p>
-				<div class="chips" id="idea-servers"></div>
-				<p class="composer__step px"><b>2</b>Что должен делать мод</p>
-				<div class="chips" id="idea-types"></div>
-				<label class="composer__step px" for="idea-text"><b>3</b>Подробности, если есть</label>
-				<textarea id="idea-text" rows="3" maxlength="300" placeholder="Например: показывать урон над головой игрока"></textarea>
-				<p class="composer__preview px" id="idea-preview" aria-live="polite"></p>
-				<a class="btn btn--lime btn--wide" id="idea-send" data-link="idea" target="_blank" rel="noopener">Скопировать и открыть Telegram</a>
-			</div>
-		</div>
-	</section>
-
-	<!-- ============ РОЛИКИ ============ -->
-	<section class="section" id="videos">
-		<div class="wrap">
-			<header class="head" data-reveal>
-				<div>
-					<p class="head__label px"><b>03</b>Ролики</p>
-					<h2>Свежее с канала</h2>
-				</div>
-				<div class="head__side">
-					<p class="head__text">Фармы, дюпы и заработок на анархии HolyWorld.</p>
-					<a class="btn btn--ghost btn--sm" data-link="youtube" target="_blank" rel="noopener">Все ролики на YouTube</a>
-				</div>
-			</header>
-			<div class="videos" id="videos-grid" data-reveal></div>
-		</div>
-	</section>
-
-	<!-- ============ СЕРВЕР ============ -->
-	<section class="section" id="server">
-		<div class="wrap">
-			<div class="server card" data-reveal>
-				<img class="server__logo" src="img/holyworld.png" width="359" height="332" alt="Логотип HolyWorld" loading="lazy">
-				<div class="server__text">
-					<p class="head__label px"><b>04</b>Где я играю</p>
-					<h2 data-text="server">HolyWorld</h2>
-					<p>Все ролики снимаю на анархии HolyWorld. Заходи — увидимся на сервере.</p>
-				</div>
-				<div class="server__ip">
-					<span class="px">IP сервера</span>
-					<code class="px" data-text="ip">mc.holyworld.ru</code>
-					<button class="btn btn--gold" id="copy-ip"><span>Скопировать IP</span></button>
-				</div>
-			</div>
 		</div>
 	</section>
 
@@ -154,26 +92,23 @@
 		<div class="wrap">
 			<header class="head" data-reveal>
 				<div>
-					<p class="head__label px"><b>05</b>Каналы</p>
+					<p class="head__label px"><i></i>Каналы</p>
 					<h2>Где меня найти</h2>
 				</div>
-				<p class="head__text">Ролики выходят на YouTube. Новости, розыгрыши и анонсы модов сначала появляются в Telegram.</p>
 			</header>
 			<div class="socials">
 				<article class="social card" data-reveal>
-					<img class="social__ava" src="img/head.png" width="72" height="72" alt="">
+					<img class="social__ava" src="img/avatar.jpg" width="88" height="88" alt="Аватарка 1DEX1">
 					<p class="social__kind px">YouTube</p>
 					<h3>1DEX1</h3>
 					<p class="social__handle px" data-text="yt">@hw1DEX1</p>
-					<p class="social__desc">Длинные ролики про анархию HolyWorld: как фармить, зарабатывать и находить дюпы.</p>
 					<a class="btn btn--ghost" data-link="youtube" target="_blank" rel="noopener">Смотреть канал</a>
 				</article>
 				<article class="social social--tg card" data-reveal>
-					<img class="social__ava" src="img/head.png" width="72" height="72" alt="">
+					<img class="social__ava" src="img/avatar.jpg" width="88" height="88" alt="Аватарка 1DEX1">
 					<p class="social__kind px">Telegram-канал</p>
 					<h3>Жизнь 1DEX1</h3>
 					<p class="social__handle px" data-text="tg">@hw1DEX1</p>
-					<p class="social__desc">Новости канала, розыгрыши и анонсы новых модов и ресурс-паков.</p>
 					<a class="btn btn--purple" data-link="telegram" target="_blank" rel="noopener">Подписаться</a>
 					<figure class="social__qr">
 						<img src="img/qr-telegram.svg" width="116" height="116" alt="QR-код Telegram-канала" loading="lazy">
@@ -184,24 +119,13 @@
 			<p class="contact" id="contact" hidden>Реклама и сотрудничество: <a target="_blank" rel="noopener"><b></b> в Telegram</a></p>
 		</div>
 	</section>
-
-	<!-- ============ ВОПРОСЫ ============ -->
-	<section class="section" id="faq">
-		<div class="wrap faq-wrap">
-			<header data-reveal>
-				<p class="head__label px"><b>06</b>Вопросы</p>
-				<h2>Частые вопросы</h2>
-			</header>
-			<div class="faq-list" id="faq-list" data-reveal></div>
-		</div>
-	</section>
 </main>
 
 <footer class="foot">
 	<div class="wrap">
-		<canvas id="foot-word" class="foot__word" aria-hidden="true"></canvas>
+		<canvas id="foot-word" class="foot__word" aria-label="1DEX1 SHOP" role="img"></canvas>
 		<div class="foot__row">
-			<p>© <span id="year">2026</span> 1DEX1 SHOP. Не является официальным продуктом Minecraft. Не одобрено и не связано с Mojang или Microsoft. Логотип HolyWorld принадлежит владельцам сервера.</p>
+			<p>© <span id="year">2026</span> 1DEX1 SHOP. Не является официальным продуктом Minecraft. Не одобрено и не связано с Mojang или Microsoft.</p>
 			<nav class="foot__links px" aria-label="Ссылки">
 				<a data-link="youtube" target="_blank" rel="noopener">YouTube</a>
 				<a data-link="telegram" target="_blank" rel="noopener">Telegram</a>
@@ -215,21 +139,20 @@
 <nav class="hotbar px" aria-label="Быстрая навигация">
 	<a data-nav href="#top"><span data-icon="home"></span>Главная</a>
 	<a data-nav href="#shop"><span data-icon="chest"></span>Магазин</a>
-	<a data-nav href="#idea"><span data-icon="bulb"></span>Идеи</a>
-	<a data-nav href="#videos"><span data-icon="play"></span>Ролики</a>
-	<button data-open-ach><span data-icon="trophy"></span><span data-ach-count>0/9</span></button>
+	<a data-nav href="#social"><span data-icon="plane"></span>Каналы</a>
+	<button data-open-ach><span data-icon="trophy"></span><span data-ach-count>0/10</span></button>
+	<button data-open-profile><span class="hotbar__ava" data-auth-avatar></span><span data-auth-label="Войти">Войти</span></button>
 </nav>
 
 <div class="toasts" id="toasts" aria-live="polite"></div>
 
+<!-- ============ ОКНО: ДОСТИЖЕНИЯ ============ -->
 <dialog class="dialog" id="ach-dialog" aria-labelledby="ach-title">
 	<div class="dialog__panel">
 		<header class="dialog__head">
 			<h2 id="ach-title">Достижения</h2>
-			<b class="px" data-ach-count>0/9</b>
-			<button class="dialog__close" data-close aria-label="Закрыть">
-				<svg viewBox="0 0 7 7" aria-hidden="true"><path d="M0 0h1v1H0zM1 1h1v1H1zM2 2h1v1H2zM3 3h1v1H3zM4 4h1v1H4zM5 5h1v1H5zM6 6h1v1H6zM6 0h1v1H6zM5 1h1v1H5zM4 2h1v1H4zM2 4h1v1H2zM1 5h1v1H1zM0 6h1v1H0z"/></svg>
-			</button>
+			<b class="px" data-ach-count>0/10</b>
+			<button class="dialog__close" data-close aria-label="Закрыть"><span data-icon-x></span></button>
 		</header>
 		<div class="dialog__bar" id="ach-bar"><i></i></div>
 		<ul class="ach-list" id="ach-list"></ul>
@@ -237,6 +160,89 @@
 			<span>Достижения хранятся в этом браузере.</span>
 			<button class="link-btn px" id="ach-reset">Сбросить</button>
 		</footer>
+	</div>
+</dialog>
+
+<!-- ============ ОКНО: РЕГИСТРАЦИЯ И ВХОД ============ -->
+<dialog class="dialog" id="auth-dialog" aria-labelledby="auth-title">
+	<div class="dialog__panel">
+		<header class="dialog__head">
+			<div class="tabs tabs--auth" role="tablist" aria-label="Регистрация или вход">
+				<button type="button" data-auth-tab="register" role="tab">Регистрация</button>
+				<button type="button" data-auth-tab="login" role="tab">Вход</button>
+			</div>
+			<button class="dialog__close" data-close aria-label="Закрыть"><span data-icon-x></span></button>
+		</header>
+		<form class="form" id="auth-form" novalidate>
+			<h2 id="auth-title">Создай аккаунт</h2>
+			<div class="field" data-only="register">
+				<label for="auth-nick">Ник</label>
+				<input id="auth-nick" name="nick" type="text" autocomplete="username" maxlength="16" placeholder="Как в Minecraft" required>
+			</div>
+			<div class="field" data-only="register">
+				<label for="auth-email">Почта</label>
+				<input id="auth-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+			</div>
+			<div class="field" data-only="login">
+				<label for="auth-login">Ник или почта</label>
+				<input id="auth-login" name="login" type="text" autocomplete="username" required>
+			</div>
+			<div class="field">
+				<label for="auth-password">Пароль</label>
+				<input id="auth-password" name="password" type="password" autocomplete="new-password" minlength="6" placeholder="Минимум 6 символов" required>
+			</div>
+			<p class="form__error" id="auth-error" role="alert"></p>
+			<button class="btn btn--lime btn--wide" id="auth-submit" type="submit">Зарегистрироваться</button>
+			<p class="form__note">Пока у магазина нет сервера: аккаунт сохраняется только в этом браузере.</p>
+		</form>
+	</div>
+</dialog>
+
+<!-- ============ ОКНО: ПРОФИЛЬ ============ -->
+<dialog class="dialog" id="profile-dialog" aria-labelledby="profile-nick">
+	<div class="dialog__panel">
+		<header class="dialog__head">
+			<p class="head__label px"><i></i>Профиль</p>
+			<button class="dialog__close" data-close aria-label="Закрыть"><span data-icon-x></span></button>
+		</header>
+		<div class="profile">
+			<div class="profile__me">
+				<label class="profile__ava" for="avatar-file" title="Сменить аватарку">
+					<span id="profile-avatar"></span>
+					<i class="px">Сменить</i>
+				</label>
+				<input id="avatar-file" class="visually-hidden" type="file" accept="image/*">
+				<div class="profile__info">
+					<h2 id="profile-nick"></h2>
+					<p id="profile-email"></p>
+					<p class="profile__since px">В магазине с <span id="profile-since"></span></p>
+				</div>
+			</div>
+			<div class="profile__ava-actions">
+				<label class="btn btn--ghost btn--sm" for="avatar-file">Выбрать аватарку</label>
+				<button class="link-btn px" id="avatar-remove">Убрать</button>
+			</div>
+
+			<section class="balance" aria-label="Баланс">
+				<div class="balance__top">
+					<span class="px">Баланс</span>
+					<span class="balance__coin" data-icon="coin"></span>
+				</div>
+				<p class="balance__sum"><b id="profile-balance">0</b><span>₽</span></p>
+				<div class="balance__foot">
+					<button class="btn btn--gold btn--sm" disabled>Пополнить</button>
+					<span>Пополнение появится вместе с оплатой</span>
+				</div>
+			</section>
+
+			<div class="profile__row">
+				<button class="stat" data-open-ach>
+					<span data-icon="trophy"></span>
+					<span><b class="px" data-ach-count>0/10</b>Достижения</span>
+				</button>
+				<button class="btn btn--ghost btn--sm" id="logout">Выйти</button>
+			</div>
+		</div>
 	</div>
 </dialog>
 
