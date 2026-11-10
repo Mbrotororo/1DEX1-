@@ -57,3 +57,20 @@ npm run render   # готовое видео: out/1dex1-flood.mp4
 Текстуры блоков и пиксельный шрифт нарисованы кодом
 (`src/lib/textures.ts`, `src/lib/font.ts`). Шрифт знает латиницу, цифры и
 заглавную кириллицу.
+
+## Второй ролик: «Чат админов» (вертикальный)
+
+Страшилка для Shorts, Reels и TikTok: 60 секунд, 1080×1920, 30 fps. Код лежит в `src/admin-chat/`,
+сценарий описан в `content-plan/05-chat-adminov.md`.
+
+```bash
+npm run render:admin   # готовое видео: out/1dex1-admin-chat.mp4
+```
+
+| Что | Где |
+| --- | --- |
+| Сцены, субтитры, сообщения чата, ники | `src/admin-chat/script.ts` |
+| Картинка сцен | `src/admin-chat/Scenes.tsx` |
+| Звуки и субтитры | `src/admin-chat/AdminChat.tsx` |
+| Шрифт Pixelify Sans (лицензия OFL) | `public/fonts/` |
+| Фоновый гул (сгенерирован в ffmpeg) | `public/admin-chat/drone.ogg` |

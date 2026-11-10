@@ -88,6 +88,20 @@ export const SOUNDS = [
 	'fireworks/blast1',
 	'fireworks/largeblast1',
 	'fireworks/twinkle1',
+	// --- «Чат админов» (src/admin-chat) ---
+	'ambient/cave/cave1',
+	'ambient/cave/cave7',
+	'ambient/cave/cave13',
+	'mob/endermen/stare',
+	'mob/warden/heartbeat_1',
+	'mob/warden/heartbeat_2',
+	'mob/warden/heartbeat_3',
+	'mob/warden/heartbeat_4',
+	'mob/warden/nearby_close_1',
+	'mob/warden/listening_1',
+	'mob/warden/listening_angry_1',
+	'note/bass',
+	'note/pling',
 ];
 
 const exists = (p) =>

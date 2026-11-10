@@ -7,6 +7,7 @@
     "sounds": "node scripts/fetch-sounds.mjs",
     "dev": "npm run sounds && remotion studio",
     "render": "npm run sounds && remotion render FloodVideo out/1dex1-flood.mp4",
+    "render:admin": "npm run sounds && remotion render AdminChat out/1dex1-admin-chat.mp4",
     "still": "remotion still FloodVideo out/frame.png",
     "typecheck": "tsc --noEmit"
   },
