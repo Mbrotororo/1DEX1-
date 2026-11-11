@@ -3,6 +3,7 @@
 -- Аккаунты
 CREATE TABLE IF NOT EXISTS users (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	num INTEGER,                              -- номер игрока по порядку: 1, 2, 3… (выдаётся после подтверждения почты)
 	nick TEXT NOT NULL UNIQUE COLLATE NOCASE,
 	email TEXT NOT NULL UNIQUE COLLATE NOCASE,
 	pass TEXT NOT NULL,                       -- scrypt$соль$хэш, сам пароль не хранится

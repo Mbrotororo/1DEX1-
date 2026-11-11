@@ -34,7 +34,7 @@ const save = (set) => {
 	}
 };
 
-let unlocked = load();
+const unlocked = load();
 const listeners = new Set();
 export const onChange = (fn) => listeners.add(fn);
 export const count = () => unlocked.size;
@@ -72,12 +72,6 @@ export const notify = (text) => {
 	toastHost().append(el);
 	setTimeout(() => el.classList.add('out'), 2400);
 	setTimeout(() => el.remove(), 2900);
-};
-
-export const reset = () => {
-	unlocked = new Set();
-	save(unlocked);
-	listeners.forEach((fn) => fn());
 };
 
 // Список для окна «Достижения»

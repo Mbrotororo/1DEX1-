@@ -346,12 +346,8 @@ h2{font:400 clamp(26px,4vw,50px)/1.05 var(--font-display);letter-spacing:-.01em;
 	position:relative;height:clamp(300px,30vw,380px);overflow:hidden;
 	background:radial-gradient(45% 60% at 50% 50%,rgba(154,107,255,.2),transparent 72%);
 }
-.collab__ava{
-	position:absolute;left:50%;top:50%;z-index:4;width:clamp(124px,12vw,150px);aspect-ratio:1;transform:translate(-50%,-50%);
-	padding:5px;border-radius:50%;background:linear-gradient(150deg,#3a3a44 0%,#0b0b0f 38%,#000 70%,#26262e 100%);
-	box-shadow:0 0 0 6px var(--surface),0 24px 60px -12px rgba(154,107,255,.7);
-}
-.collab__ava img{display:block;width:100%;height:100%;object-fit:cover;border-radius:50%;border:3px solid #000}
+.collab__ava{position:absolute;left:50%;top:50%;z-index:4;width:clamp(124px,12vw,150px);aspect-ratio:1;transform:translate(-50%,-50%);border-radius:50%;box-shadow:0 6px 18px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.06)}
+.collab__ava img{display:block;width:100%;height:100%;object-fit:cover;border-radius:50%}
 /* значок визуала: маленький и в тени; под курсором плавно светлеет и растёт,
    без курсора так же плавно уменьшается и темнеет */
 .visual{position:absolute;left:0;top:0;z-index:2;width:var(--s,42px);text-decoration:none;will-change:transform;-webkit-tap-highlight-color:transparent}

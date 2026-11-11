@@ -1,5 +1,5 @@
 // Главный файл сайта: собирает страницу из данных в data.js и оживляет её.
-import {ACHIEVEMENTS, count, notify, onChange, renderList, reset, unlock} from './achievements.js';
+import {ACHIEVEMENTS, count, notify, onChange, renderList, unlock} from './achievements.js';
 import * as auth from './auth.js';
 import {initCollab} from './collab.js';
 import {CASE, MARQUEE, SITE, TASKS, VISUALS} from './data.js';
@@ -212,10 +212,6 @@ auth.onAuth(renderShop);
 			openDialog(dlg);
 		}),
 	);
-	$('#ach-reset').addEventListener('click', () => {
-		reset();
-		notify(t('toast.achReset'));
-	});
 }
 
 // ---------- аккаунт: регистрация, вход, подтверждение почты, профиль ----------
@@ -225,7 +221,8 @@ auth.onAuth(renderShop);
 	const submit = $('#auth-submit');
 	const resend = $('#auth-resend');
 	let mode = 'register';
-	let pendingEmail = '';
+	let pendingLogin = ''; // ник, для которого ждём код из письма
+	let pendingEmail = ''; // почта, куда ушёл код (при входе — частично скрыта)
 	let resendAt = 0;
 	let fromRegister = false;
 
@@ -236,7 +233,6 @@ auth.onAuth(renderShop);
 		const h = nickHue(user.nick);
 		return `<span class="ava-letter" style="--h1:${h};--h2:${(h + 50) % 360}">${esc(user.nick[0].toUpperCase())}</span>`;
 	};
-	const walletId = (nick) => String(1000 + ((nickHue(nick) * 37 + nick.length * 911) % 9000));
 
 	const paintResend = () => {
 		const left = Math.ceil((resendAt - Date.now()) / 1000);
@@ -262,7 +258,6 @@ auth.onAuth(renderShop);
 		});
 		$('#auth-password').autocomplete = mode === 'register' ? 'new-password' : 'current-password';
 		$('#auth-lead').textContent = mode === 'verify' ? t('auth.codeSent', {email: pendingEmail}) : '';
-		$('#auth-note').textContent = mode === 'register' ? t(auth.serverMode ? 'auth.noteServer' : 'auth.noteLocal') : '';
 		error.textContent = '';
 		if (mode === 'verify') {
 			paintResend();
@@ -279,7 +274,8 @@ auth.onAuth(renderShop);
 	});
 	onLang(() => setMode(mode));
 
-	const toVerify = (email) => {
+	const toVerify = ({login, email}) => {
+		pendingLogin = login;
 		pendingEmail = email;
 		resendAt = Date.now() + 60e3;
 		setMode('verify');
@@ -302,18 +298,14 @@ auth.onAuth(renderShop);
 		try {
 			if (mode === 'register') res = await auth.register(data, getLang());
 			else if (mode === 'login') res = await auth.login(data, getLang());
-			else res = await auth.verifyEmail({email: pendingEmail, code: data.code});
+			else res = await auth.verifyEmail({login: pendingLogin, code: data.code});
 		} finally {
 			submit.disabled = false;
 		}
+		// с сервером после регистрации и после пароля при входе на почту приходит код
 		if (res.verify) {
-			fromRegister = true;
-			return toVerify(res.email);
-		}
-		if (res.error === 'not_verified') {
-			fromRegister = false;
-			notify(t('toast.codeSent'));
-			return toVerify(res.email);
+			fromRegister = mode === 'register';
+			return toVerify(res);
 		}
 		if (res.error) {
 			error.textContent = errText(res.error);
@@ -324,7 +316,7 @@ auth.onAuth(renderShop);
 	});
 	resend.addEventListener('click', async () => {
 		resend.disabled = true;
-		const res = await auth.resendCode({email: pendingEmail}, getLang());
+		const res = await auth.resendCode({login: pendingLogin}, getLang());
 		if (res.error) {
 			error.textContent = errText(res.error);
 			resendAt = Date.now() + (res.wait || 15e3);
@@ -351,7 +343,7 @@ auth.onAuth(renderShop);
 		$('#profile-email').textContent = user.email;
 		$('#profile-since').textContent = t('profile.since', {date: date(user.createdAt, true)});
 		$('#profile-balance').textContent = money(user.balance);
-		$('#wallet-id').textContent = `ID •••• ${walletId(user.nick)}`;
+		$('#wallet-id').textContent = `ID ${user.id ?? '—'}`; // номер игрока по порядку регистрации
 		$('#wallet-owner').textContent = user.nick;
 		const bonus = $('#wallet-bonus');
 		bonus.hidden = !user.bonusCases;

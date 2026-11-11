@@ -80,6 +80,21 @@ const startSession = (res, userId) => {
 	setCookie(res, token, SESSION_DAYS * 86400);
 };
 
+// почта для показа: r***x@gmail.com
+const maskEmail = (email) => {
+	const [name, domain] = String(email).split('@');
+	return `${name[0]}***${name.length > 2 ? name.at(-1) : ''}@${domain}`;
+};
+// подтвердить почту и выдать номер игрока по порядку: 1, 2, 3…
+const markVerified = (id) => q('UPDATE users SET verified = 1, num = COALESCE(num, (SELECT COALESCE(MAX(num), 0) + 1 FROM users)) WHERE id = ?').run(id);
+// найти аккаунт по нику или почте
+const userByLogin = (login) => {
+	const name = String(login || '')
+		.trim()
+		.toLowerCase();
+	return name ? q('SELECT * FROM users WHERE nick = ? OR email = ?').get(name, name) : null;
+};
+
 // ---------- код подтверждения почты ----------
 const issueCode = async (user, l) => {
 	const code = String(randomInt(0, 1e6)).padStart(6, '0');
@@ -110,6 +125,7 @@ const userJson = (id) => {
 	const u = q('SELECT * FROM users WHERE id = ?').get(id);
 	if (!u) return null;
 	return {
+		id: u.num, // номер игрока по порядку регистрации
 		nick: u.nick,
 		email: u.email,
 		avatar: u.avatar,
@@ -182,19 +198,20 @@ route('POST', 'register', async ({body, ip}) => {
 		console.error('Письмо не отправлено:', err.message);
 		return [502, {error: 'mail'}];
 	}
-	return [200, {verify: true, email}];
+	return [200, {verify: true, login: nick, email}];
 });
 
 // --- новый код на почту ---
 route('POST', 'resend', async ({body, ip}) => {
-	const email = String(body.email || '')
+	const login = String(body.login || body.email || '')
 		.trim()
 		.toLowerCase();
-	if (limited(`resend:${ip}`, 6, 15 * 60e3) || limited(`resend:${email}`, 4, 15 * 60e3)) return [429, {error: 'too_many'}];
-	const user = q('SELECT * FROM users WHERE email = ? AND verified = 0').get(email);
-	if (!user) return [200, {ok: true}]; // не говорим, есть ли такая почта
-	const last = q('SELECT sent_at FROM email_codes WHERE user_id = ?').get(user.id);
-	if (last && Date.now() - last.sent_at < RESEND_GAP) return [429, {error: 'too_many', wait: RESEND_GAP - (Date.now() - last.sent_at)}];
+	if (limited(`resend:${ip}`, 6, 15 * 60e3) || limited(`resend:${login}`, 4, 15 * 60e3)) return [429, {error: 'too_many'}];
+	const user = userByLogin(login);
+	// код отправляем заново, только если его уже ждут (после регистрации или пароля при входе)
+	const last = user && q('SELECT sent_at FROM email_codes WHERE user_id = ?').get(user.id);
+	if (!last) return [200, {ok: true}]; // не говорим, есть ли такой аккаунт
+	if (Date.now() - last.sent_at < RESEND_GAP) return [429, {error: 'too_many', wait: RESEND_GAP - (Date.now() - last.sent_at)}];
 	try {
 		await issueCode(user, lang(body));
 	} catch (err) {
@@ -204,14 +221,11 @@ route('POST', 'resend', async ({body, ip}) => {
 	return [200, {ok: true}];
 });
 
-// --- код из письма: почта подтверждена, сразу входим ---
+// --- код из письма: заканчивает регистрацию или вход ---
 route('POST', 'verify', ({body, res, ip}) => {
-	const email = String(body.email || '')
-		.trim()
-		.toLowerCase();
 	const code = String(body.code || '').replace(/\D/g, '');
 	if (limited(`verify:${ip}`, 30, 15 * 60e3)) return [429, {error: 'too_many'}];
-	const user = q('SELECT * FROM users WHERE email = ?').get(email);
+	const user = userByLogin(body.login || body.email);
 	const row = user && q('SELECT * FROM email_codes WHERE user_id = ?').get(user.id);
 	if (!row) return [400, {error: 'bad_code'}];
 	if (row.expires_at < Date.now()) return [400, {error: 'code_expired'}];
@@ -220,33 +234,28 @@ route('POST', 'verify', ({body, res, ip}) => {
 		q('UPDATE email_codes SET tries = tries + 1 WHERE user_id = ?').run(user.id);
 		return [400, {error: 'bad_code'}];
 	}
-	q('UPDATE users SET verified = 1 WHERE id = ?').run(user.id);
+	if (!user.verified) markVerified(user.id);
 	q('DELETE FROM email_codes WHERE user_id = ?').run(user.id);
 	startSession(res, user.id);
 	return [200, {user: userJson(user.id)}];
 });
 
-// --- вход по нику или почте ---
-route('POST', 'login', async ({body, res, ip}) => {
-	const name = String(body.login || '')
-		.trim()
-		.toLowerCase();
+// --- вход: ник (или почта) и пароль, потом код из письма ---
+route('POST', 'login', async ({body, ip}) => {
 	if (limited(`login:${ip}`, 20, 15 * 60e3)) return [429, {error: 'too_many'}];
-	const user = q('SELECT * FROM users WHERE nick = ? OR email = ?').get(name, name);
+	const user = userByLogin(body.login);
 	if (!user || !(await checkPass(body.password, user.pass))) return [401, {error: 'bad_login'}];
-	if (!user.verified) {
-		const last = q('SELECT sent_at FROM email_codes WHERE user_id = ?').get(user.id);
-		if (!last || Date.now() - last.sent_at > RESEND_GAP) {
-			try {
-				await issueCode(user, lang(body));
-			} catch (err) {
-				console.error('Письмо не отправлено:', err.message);
-			}
+	// пароль верный — на почту уходит код (если свежий уже отправлен меньше минуты назад, ждём его)
+	const last = q('SELECT sent_at, expires_at FROM email_codes WHERE user_id = ?').get(user.id);
+	if (!last || Date.now() - last.sent_at > RESEND_GAP || last.expires_at < Date.now()) {
+		try {
+			await issueCode(user, lang(body));
+		} catch (err) {
+			console.error('Письмо не отправлено:', err.message);
+			return [502, {error: 'mail'}];
 		}
-		return [403, {error: 'not_verified', email: user.email}];
 	}
-	startSession(res, user.id);
-	return [200, {user: userJson(user.id)}];
+	return [200, {verify: true, login: user.nick, email: maskEmail(user.email)}];
 });
 
 route('POST', 'logout', ({req, res}) => {

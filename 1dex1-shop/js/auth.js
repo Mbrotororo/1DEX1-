@@ -103,8 +103,11 @@ const taskStates = (u) => {
 	}
 	return out;
 };
-const publicUser = (u) =>
+// номер игрока по порядку регистрации (у старых аккаунтов — по дате создания)
+const numOf = (u, users) => u.num || Object.values(users).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))).indexOf(u) + 1;
+const publicUser = (u, users = read(USERS, {})) =>
 	u && {
+		id: numOf(u, users),
 		nick: u.nick,
 		email: u.email,
 		avatar: u.avatar,
@@ -153,7 +156,7 @@ export const init = async () => {
 	emit();
 };
 
-// Регистрация. С сервером ответ {verify: true, email} — нужен код из письма.
+// Регистрация. С сервером ответ {verify: true, login, email} — дальше нужен код из письма.
 export const register = async ({nick, email, password}, lang) => {
 	nick = String(nick || '').trim();
 	email = String(email || '').trim().toLowerCase();
@@ -168,17 +171,18 @@ export const register = async ({nick, email, password}, lang) => {
 	if (users[key]) return {error: 'nick_taken', field: 'nick'};
 	if (Object.values(users).some((u) => u.email === email)) return {error: 'email_taken', field: 'email'};
 	const salt = makeSalt();
-	users[key] = {nick, email, salt, hash: await hashPassword(password, salt), avatar: null, balance: 0, createdAt: new Date().toISOString()};
+	const num = Object.values(users).reduce((max, u) => Math.max(max, numOf(u, users)), 0) + 1;
+	users[key] = {num, nick, email, salt, hash: await hashPassword(password, salt), avatar: null, balance: 0, createdAt: new Date().toISOString()};
 	if (!write(USERS, users) || !write(SESSION, key)) return {error: 'save'};
 	localSave(users);
 	return {user: cached};
 };
 
-// Подтверждение почты кодом из письма (только с сервером)
-export const verifyEmail = ({email, code}) => api('verify', {email, code: String(code || '').replace(/\D/g, '')});
-export const resendCode = ({email}, lang) => api('resend', {email, lang});
+// Код из письма: заканчивает регистрацию или вход (только с сервером)
+export const verifyEmail = ({login, code}) => api('verify', {login, code: String(code || '').replace(/\D/g, '')});
+export const resendCode = ({login}, lang) => api('resend', {login, lang});
 
-// Вход. С сервером, если почта не подтверждена: {error: 'not_verified', email}
+// Вход: ник и пароль. С сервером ответ {verify: true, login, email} — на почту ушёл код
 export const login = async ({login: name, password}, lang) => {
 	name = String(name || '').trim().toLowerCase();
 	password = String(password || '');

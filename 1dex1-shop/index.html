@@ -203,10 +203,6 @@
 		</header>
 		<div class="dialog__bar" id="ach-bar"><i></i></div>
 		<ul class="ach-list" id="ach-list"></ul>
-		<footer class="dialog__foot">
-			<span data-i18n-html="ach.reward">Собери все — получишь <b class="t-gold">5 ₽</b> на баланс.</span>
-			<button class="link-btn px" id="ach-reset" data-i18n="ach.reset">Сбросить</button>
-		</footer>
 	</div>
 </dialog>
 
@@ -232,7 +228,7 @@
 				<input id="auth-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
 			</div>
 			<div class="field" data-only="login">
-				<label for="auth-login" data-i18n="auth.loginField">Ник или почта</label>
+				<label for="auth-login" data-i18n="auth.loginField">Ник</label>
 				<input id="auth-login" name="login" type="text" autocomplete="username" required>
 			</div>
 			<div class="field" data-only="register login">
@@ -246,7 +242,6 @@
 			<p class="form__error" id="auth-error" role="alert"></p>
 			<button class="btn btn--lime btn--wide" id="auth-submit" type="submit">Зарегистрироваться</button>
 			<button class="link-btn px form__resend" id="auth-resend" type="button" data-only="verify" data-i18n="auth.resend">Отправить код ещё раз</button>
-			<p class="form__note" id="auth-note" data-only="register login"></p>
 		</form>
 	</div>
 </dialog>

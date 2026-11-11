@@ -94,7 +94,7 @@ if (what === 'product' && action === 'add') {
 	if (!r.changes) fail('товар не найден');
 	console.log('Цена изменена.');
 } else if (what === 'user' && action === 'list') {
-	table(q("SELECT nick, email, CASE verified WHEN 1 THEN 'да' ELSE 'нет' END AS verified, balance / 100.0 AS rub, bonus_cases AS cases, datetime(created_at / 1000, 'unixepoch') AS created FROM users ORDER BY id").all());
+	table(q("SELECT num AS id, nick, email, CASE verified WHEN 1 THEN 'да' ELSE 'нет' END AS verified, balance / 100.0 AS rub, bonus_cases AS cases, datetime(created_at / 1000, 'unixepoch') AS created FROM users ORDER BY num IS NULL, num, id").all());
 } else if (what === 'user' && (action === 'topup' || action === 'credit')) {
 	const [nick, value] = args;
 	const u = userBy(nick);
@@ -104,7 +104,7 @@ if (what === 'product' && action === 'add') {
 	console.log(`${u.nick}: +${amount / 100} ₽, баланс ${(u.balance + amount) / 100} ₽.`);
 } else if (what === 'user' && action === 'verify') {
 	const u = userBy(args[0]);
-	q('UPDATE users SET verified = 1 WHERE id = ?').run(u.id);
+	q('UPDATE users SET verified = 1, num = COALESCE(num, (SELECT COALESCE(MAX(num), 0) + 1 FROM users)) WHERE id = ?').run(u.id);
 	console.log(`Почта ${u.email} подтверждена.`);
 } else {
 	console.log(`База: ${DB_PATH}\nКоманды — в начале файла ${basename(fileURLToPath(import.meta.url))} и в README.`);

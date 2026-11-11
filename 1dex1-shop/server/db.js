@@ -13,6 +13,13 @@ export const db = new DatabaseSync(DB_PATH);
 db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 3000;');
 db.exec(readFileSync(join(here, 'schema.sql'), 'utf8'));
 
+// База, созданная до появления номеров игроков: добавить колонку и пронумеровать по порядку
+if (!db.prepare('PRAGMA table_info(users)').all().some((c) => c.name === 'num')) {
+	db.exec('ALTER TABLE users ADD COLUMN num INTEGER');
+	db.exec('UPDATE users SET num = (SELECT COUNT(*) FROM users AS o WHERE o.verified = 1 AND o.id <= users.id) WHERE verified = 1');
+}
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_num ON users (num)');
+
 // Несколько изменений как одно целое: либо все, либо ни одного
 export const tx = (fn) => {
 	db.exec('BEGIN IMMEDIATE');
