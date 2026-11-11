@@ -322,12 +322,53 @@ import('./hero.js')
 	.then(({initHero}) => {
 		const ok = initHero($('#hero-gl'), {
 			reducedMotion,
-			on(event) {
-				if (event === 'break') blockBroken('kirka');
-				if (event === 'mine') breakSound();
-				if (event === 'drag') unlock('telekinesis');
-				if (event === 'treasure') unlock('treasure');
-				if (event === 'tickle') unlock('tickle');
+			wall: $('#marquee'),
+			on(event, data) {
+				switch (event) {
+					case 'break':
+						blockBroken('kirka');
+						break;
+					case 'mine':
+					case 'wallHit':
+						breakSound();
+						break;
+					case 'tier':
+						notify(`Новая кирка: ${data}!`);
+						break;
+					case 'diamond':
+						unlock('treasure');
+						setTimeout(() => notify('С алмазной киркой можно сломать стену «Магазин · Моды · РП»'), 1800);
+						break;
+					case 'torch':
+						notify(data === 1 ? 'Уголь! На дереве загорелся факел' : 'Ещё один факел на дереве');
+						break;
+					case 'need':
+						notify(`Нужна ${data} кирка`);
+						break;
+					case 'far':
+						notify('Не дотянуться — блок слишком глубоко');
+						break;
+					case 'busy':
+						notify('Сначала закончит с прошлым блоком');
+						break;
+					case 'away':
+						notify('Сначала верни персонажа на остров');
+						break;
+					case 'wallNeed':
+						notify(`Стену ломает только алмазная кирка. Сейчас — ${data}`);
+						break;
+					case 'free':
+						breakSound();
+						notify('Стена сломана — теперь можно летать по всему сайту');
+						break;
+					case 'drag':
+						unlock('telekinesis');
+						break;
+					case 'tickle':
+						unlock('tickle');
+						break;
+					default:
+				}
 			},
 		});
 		document.documentElement.classList.add(ok ? 'has-gl' : 'no-gl');

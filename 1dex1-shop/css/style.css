@@ -177,8 +177,6 @@ ul{padding:0;list-style:none}
 .eyebrow{margin-bottom:20px}
 .hero h1{font:400 clamp(34px,4.8vw,68px)/1.02 var(--font-display);letter-spacing:-.01em;word-spacing:-.4em;white-space:nowrap}
 .hero__cta{display:flex;flex-wrap:wrap;gap:14px;margin-top:36px}
-.hero__hint{margin-top:26px;font-size:13px;color:var(--dim);letter-spacing:.06em}
-.no-gl .hero__hint{display:none}
 
 /* анимация появления текста первого экрана */
 .js .hero__content>*{opacity:0;transform:translateY(22px);animation:rise .9s var(--ease) forwards}
@@ -186,7 +184,19 @@ ul{padding:0;list-style:none}
 .js .hero__content>:nth-child(3){animation-delay:.16s}
 
 /* ---------- бегущая строка ---------- */
-.marquee{position:relative;z-index:1;overflow:hidden;padding:18px 0;border-block:2px solid var(--line);background:var(--surface)}
+.marquee{position:relative;z-index:1;overflow:hidden;max-height:120px;padding:18px 0;border-block:2px solid var(--line);background:var(--surface);transition:max-height .45s var(--ease) .1s,padding .45s var(--ease) .1s,opacity .3s,border-width .45s .1s}
+/* стена: трещины от ударов алмазной кирки, потом разлетается на блоки */
+.marquee::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .15s;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 80' preserveAspectRatio='none'%3E%3Cpath d='M0 40h40v-8h24v16h30v-10h22M120 8v18h16v14h-12v20h18v20M200 0v22h-14v18h22v14h-10v26M280 6v16h18v20h-14v16h12v22M330 40h26v-12h20v18h24' fill='none' stroke='%230c0914' stroke-width='5'/%3E%3C/svg%3E") center/100% 100% no-repeat}
+.marquee.crack-1::after{opacity:.35}
+.marquee.crack-2::after{opacity:.65}
+.marquee.crack-3::after{opacity:1}
+.marquee.crack-1,.marquee.crack-2,.marquee.crack-3{animation:wall-shake .12s steps(2) 2}
+.marquee.is-gone{max-height:0;padding-block:0;opacity:0;border-width:0;pointer-events:none}
+@keyframes wall-shake{50%{transform:translateX(3px)}}
+.wall-shard{position:absolute;z-index:36;pointer-events:none;box-shadow:inset -2px -2px 0 rgba(0,0,0,.35)}
+/* прослойка поверх сайта, на которой летает персонаж */
+.dex-overlay{position:fixed;inset:0;width:100%;height:100%;z-index:35;pointer-events:none;display:none}
+.dex-overlay.is-on{display:block}
 .marquee__track{display:flex;align-items:center;width:max-content;animation:marquee 60s linear infinite}
 .marquee span{font:400 clamp(22px,3.2vw,40px)/1 var(--font-display);text-transform:uppercase;white-space:nowrap}
 .marquee .is-outline{color:transparent;-webkit-text-stroke:1.5px var(--line-2)}
@@ -415,7 +425,7 @@ h2{font:400 clamp(26px,4vw,50px)/1.05 var(--font-display);letter-spacing:-.01em;
 /* ============ телефон: сцена сверху, текст под ней, снизу хотбар ============ */
 @media (max-width:899px){
 	.hero{display:block;min-height:0;padding:calc(var(--topbar) + var(--safe-top)) var(--gutter) 40px}
-	.hero__gl{position:relative;inset:auto;z-index:0;width:calc(100% + var(--gutter)*2);height:min(48svh,400px);margin-inline:calc(var(--gutter)*-1)}
+	.hero__gl{position:relative;inset:auto;z-index:0;width:calc(100% + var(--gutter)*2);height:min(54svh,460px);margin-inline:calc(var(--gutter)*-1)}
 	.hero__content{margin:8px 0 0}
 	.hero__fallback{position:static;transform:none;margin:24px 0;text-align:center}
 }

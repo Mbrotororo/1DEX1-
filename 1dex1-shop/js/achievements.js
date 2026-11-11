@@ -7,13 +7,13 @@ const KEY = 'dex.achievements.v2';
 export const ACHIEVEMENTS = [
 	{id: 'kirka', icon: 'pick', title: 'Кирка в деле', desc: 'Сломай блок в названии магазина'},
 	{id: 'mason', icon: 'boom', title: 'Каменотёс', desc: 'Сломай 30 блоков на сайте'},
-	{id: 'telekinesis', icon: 'cube', title: 'Телекинез', desc: 'Перетащи парящий блок'},
+	{id: 'telekinesis', icon: 'cube', title: 'Телекинез', desc: 'Сними персонажа с острова'},
 	{id: 'showcase', icon: 'chest', title: 'Витрина', desc: 'Загляни в разделы «Моды» и «РП»'},
 	{id: 'newcomer', icon: 'home', title: 'Новосёл', desc: 'Зарегистрируйся в магазине'},
 	{id: 'face', icon: 'face', title: 'Своё лицо', desc: 'Поставь аватарку в профиле'},
 	{id: 'contact', icon: 'plane', title: 'На связи', desc: 'Открой YouTube или Telegram'},
 	{id: 'digger', icon: 'shovel', title: 'Землекоп', desc: 'Сломай блок в самом низу сайта'},
-	{id: 'treasure', icon: 'gem', title: 'Клад', desc: 'Спрячь парящий блок в сундук', hidden: true},
+	{id: 'treasure', icon: 'gem', title: 'Алмазы!', desc: 'Добудь алмаз и получи алмазную кирку', hidden: true},
 	{id: 'tickle', icon: 'feather', title: 'Щекотка', desc: 'Пять раз ткни в скин', hidden: true},
 ];
 
