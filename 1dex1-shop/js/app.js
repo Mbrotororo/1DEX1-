@@ -721,16 +721,18 @@ let paintCase = () => {};
 	});
 }
 
-// ---------- подвал: документы (соглашение, политика, оферта) в окне с вкладками ----------
+// ---------- подвал: документы (соглашение, политика, оферта) ----------
+// Каждая кнопка открывает только свой документ: своя иконка, свой цвет, своё описание.
 {
 	const dlg = $('#legal-dialog');
 	const body = $('#legal-body');
-	const tabs = $('#legal-tabs');
 	let docId = 'terms';
 	const render = () => {
 		const d = getDoc(docId, getLang());
+		dlg.dataset.doc = docId;
+		$('#legal-icon').innerHTML = navIcon(docId);
 		$('#legal-title').textContent = d.title;
-		$$('[data-legal-tab]', dlg).forEach((b) => b.setAttribute('aria-selected', String(b.dataset.legalTab === docId)));
+		$('#legal-lead').textContent = d.lead;
 		// пункты нумеруются: раздел 2 → 2.1, 2.2…; в списках-перечнях — квадратики
 		const sections = d.sections.map((s, i) => {
 			const n = i + 1;
@@ -741,27 +743,14 @@ let paintCase = () => {};
 		body.innerHTML = `<p class="doc__date">${esc(t('legal.updated', {date: date(`${LEGAL.updated}T12:00:00`, true)}))}</p>${sections.join('')}`;
 		body.scrollTop = 0;
 	};
-	// на телефоне вкладки листаются вбок: выбранную подвинуть в видимую часть
-	const revealTab = () => {
-		const b = $(`[data-legal-tab="${docId}"]`, dlg).getBoundingClientRect();
-		const r = tabs.getBoundingClientRect();
-		if (b.left < r.left || b.right > r.right) tabs.scrollTo({left: tabs.scrollLeft + b.left - r.left - 14, behavior: reducedMotion ? 'auto' : 'smooth'});
-	};
-	const show = (id) => {
-		docId = id;
-		render();
-		revealTab();
-	};
 	$$('[data-legal]').forEach((b) =>
 		b.addEventListener('click', () => {
 			docId = b.dataset.legal;
 			render();
 			openDialog(dlg);
-			revealTab();
 			body.focus({preventScroll: true});
 		}),
 	);
-	$$('[data-legal-tab]', dlg).forEach((b) => b.addEventListener('click', () => show(b.dataset.legalTab)));
 	onLang(() => dlg.open && render());
 }
 

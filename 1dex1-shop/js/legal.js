@@ -1,6 +1,9 @@
-// Документы сайта: пользовательское соглашение, политика конфиденциальности, публичная оферта.
-// Открываются в окне по кнопкам в подвале. Данные продавца (ФИО, ИНН, почта) — в data.js (LEGAL).
-// Это шаблон: перед подключением оплаты стоит показать документы юристу.
+// Документы сайта. Каждый отвечает за своё и открывается в отдельном окне по своей кнопке в подвале:
+//   terms   — пользовательское соглашение: правила сайта, аккаунт, кейсы, задания, достижения;
+//   privacy — политика конфиденциальности: какие данные хранятся и как защищены;
+//   offer   — публичная оферта: покупка товаров, баланс, лицензия, возврат денег.
+// Данные продавца (ФИО, ИНН, почта) — в data.js (LEGAL). Это шаблон: перед подключением оплаты
+// стоит показать документы юристу.
 import {LEGAL, SITE} from './data.js';
 
 const contactsRu = () => [`Telegram: ${LEGAL.telegram}`, LEGAL.email && `почта: ${LEGAL.email}`].filter(Boolean).join(', ');
@@ -8,17 +11,18 @@ const contactsEn = () => [`Telegram: ${LEGAL.telegram}`, LEGAL.email && `email: 
 const sellerRu = () => [LEGAL.owner, LEGAL.inn && `ИНН ${LEGAL.inn}`].filter(Boolean).join(', ');
 const sellerEn = () => [LEGAL.ownerEn || LEGAL.owner, LEGAL.inn && `Tax ID (INN) ${LEGAL.inn}`].filter(Boolean).join(', ');
 
-// Документ: title — заголовок, sections — разделы; в разделе list: 'ul' — простой список без номеров
+// Документ: title — заголовок, lead — за что отвечает документ, sections — разделы;
+// в разделе list: 'ul' — перечень без номеров
 const RU = () => ({
 	terms: {
 		title: 'Пользовательское соглашение',
+		lead: 'Правила сайта: аккаунт, кейсы, задания, достижения и что на сайте запрещено.',
 		sections: [
 			{
 				h: 'Общие положения',
 				items: [
-					`Соглашение регулирует использование сайта ${SITE.name} (далее — Сайт) и его сервисов: аккаунта, кейсов, заданий, достижений и магазина.`,
-					'Пользуясь Сайтом, ты принимаешь это Соглашение и Политику конфиденциальности. Если ты не согласен с ними — не пользуйся Сайтом.',
-					'Покупка товаров регулируется Публичной офертой.',
+					`Соглашение регулирует использование сайта ${SITE.name} (далее — Сайт): аккаунта, кейсов, заданий и достижений.`,
+					'Пользуясь Сайтом, ты принимаешь это Соглашение. Если ты с ним не согласен — не пользуйся Сайтом.',
 				],
 			},
 			{
@@ -27,46 +31,46 @@ const RU = () => ({
 					'Для регистрации нужны ник, действующая почта и пароль. Почта подтверждается кодом из письма, вход в аккаунт — тоже по коду.',
 					'Ты отвечаешь за сохранность пароля и доступ к своей почте. Действия, совершённые в твоём аккаунте, считаются совершёнными тобой.',
 					'Один человек — один аккаунт. Ник не должен быть оскорбительным и не должен выдавать тебя за другого человека.',
-					'Если тебе меньше 14 лет, пользоваться Сайтом можно с согласия родителей или законных представителей. До 18 лет покупки совершаются с их разрешения.',
+					'Если тебе меньше 14 лет, пользоваться Сайтом можно с согласия родителей или законных представителей.',
 				],
 			},
 			{
-				h: 'Баланс, кейсы, задания и достижения',
+				h: 'Кейсы, задания и достижения',
 				items: [
-					'Баланс — внутренний счёт Сайта в рублях. Его можно тратить только на товары Сайта; вывести деньги с баланса или перевести их другому пользователю нельзя, кроме возврата по Оферте.',
-					'Кейсы, задания и достижения — бесплатные игровые механики. Награды из них (рубли на балансе, купоны) не являются деньгами и не обмениваются на деньги.',
-					'Шансы наград в кейсе указаны на Сайте. Ежедневный кейс открывается раз в 24 часа, дополнительные — за выполненные задания.',
+					'Кейсы, задания и достижения — бесплатные игровые механики Сайта.',
+					'Ежедневный кейс открывается раз в 24 часа, дополнительные кейсы выдаются за выполненные задания. Шансы наград указаны на Сайте рядом с кейсом.',
+					'Награды из кейсов, заданий и достижений можно использовать только на Сайте.',
 					'Запрещено получать награды обманом: заводить несколько аккаунтов, использовать ботов и ошибки Сайта, подделывать запросы. За это награды и аккаунт могут быть аннулированы.',
 				],
 			},
 			{
-				h: 'Правила',
+				h: 'Что запрещено',
+				list: 'ul',
 				items: [
-					'Запрещено взламывать Сайт или мешать его работе, собирать данные других пользователей и использовать Сайт для незаконных действий.',
-					'Запрещено распространять купленные файлы, выкладывать их в открытый доступ и выдавать за свои.',
+					'взламывать Сайт или мешать его работе;',
+					'собирать данные других пользователей;',
+					'использовать ошибки Сайта для выгоды — о найденной ошибке лучше написать нам;',
+					'выдавать себя за администрацию Сайта или за автора канала;',
+					'использовать Сайт для незаконных действий.',
 				],
 			},
 			{
 				h: 'Интеллектуальная собственность',
 				items: [
-					'Моды, ресурс-паки, дизайн, тексты и графика Сайта принадлежат их авторам и охраняются законом. Покупка даёт право на личное использование на условиях Оферты.',
-					'Minecraft — товарный знак Mojang Synergies AB и Microsoft. Сайт и товары неофициальные, не одобрены Mojang или Microsoft и не связаны с ними.',
+					'Дизайн, тексты, графика и анимации Сайта принадлежат их авторам и охраняются законом. Копировать их без разрешения нельзя.',
+					'Minecraft — товарный знак Mojang Synergies AB и Microsoft. Сайт неофициальный, не одобрен Mojang или Microsoft и не связан с ними.',
 				],
 			},
 			{
 				h: 'Ответственность',
 				items: [
 					'Сайт предоставляется «как есть». Мы стараемся, чтобы всё работало, но не гарантируем отсутствие перерывов и ошибок.',
-					'Моды и ресурс-паки устанавливаются на твой риск: перед установкой сделай копию своих миров. Использовать моды на серверах можно только по правилам этих серверов.',
 					'Мы не отвечаем за сайты и сервисы, на которые ведут ссылки с Сайта (YouTube, Telegram, сайты визуалов).',
 				],
 			},
 			{
 				h: 'Блокировка и удаление аккаунта',
-				items: [
-					'За нарушение Соглашения аккаунт может быть ограничен или удалён.',
-					'Чтобы удалить аккаунт, напиши нам. Неизрасходованные деньги, внесённые пополнением, можно вернуть по Оферте; награды из кейсов, заданий и достижений при удалении не возвращаются.',
-				],
+				items: ['За нарушение Соглашения аккаунт может быть ограничен или удалён.', 'Ты можешь удалить свой аккаунт в любой момент — для этого напиши нам.'],
 			},
 			{
 				h: 'Изменения и контакты',
@@ -76,6 +80,7 @@ const RU = () => ({
 	},
 	privacy: {
 		title: 'Политика конфиденциальности',
+		lead: 'Какие данные о тебе хранит сайт, зачем они нужны и как они защищены.',
 		sections: [
 			{
 				h: 'Общие положения',
@@ -142,12 +147,14 @@ const RU = () => ({
 	},
 	offer: {
 		title: 'Публичная оферта',
+		lead: 'Условия покупки: товары, цены, баланс, лицензия и возврат денег.',
 		sections: [
 			{
 				h: 'Общие положения',
 				items: [
 					`Этот документ — публичная оферта (статья 437 Гражданского кодекса РФ) ${sellerRu() ? `продавца ${sellerRu()}` : 'продавца'} (далее — Продавец) о продаже цифровых товаров на сайте ${SITE.name} (далее — Сайт).`,
 					'Акцепт оферты — оплата товара или пополнение баланса. С этого момента договор между Продавцом и покупателем считается заключённым.',
+					'Если покупателю нет 18 лет, покупка совершается с разрешения родителей или законных представителей.',
 				],
 			},
 			{
@@ -158,11 +165,12 @@ const RU = () => ({
 				],
 			},
 			{
-				h: 'Цены и оплата',
+				h: 'Цены, баланс и оплата',
 				items: [
 					'Цены указаны в рублях. Цена может меняться, но не для уже оплаченного заказа.',
-					'Товар оплачивается с баланса Сайта. Баланс пополняется через платёжный сервис; данные карты Продавец не получает.',
-					'Ресурс-пак можно получить бесплатно по купону из кейса.',
+					'Баланс — внутренний счёт покупателя на Сайте. Он пополняется через платёжный сервис; данные карты Продавец не получает.',
+					'Товары оплачиваются с баланса. Деньги с баланса нельзя вывести или перевести другому пользователю — только вернуть по разделу «Возврат».',
+					'Рубли и купоны из кейсов, заданий и достижений — подарок Продавца: ими можно оплачивать товары, но их нельзя вывести или вернуть деньгами. Ресурс-пак можно получить бесплатно по купону из кейса.',
 				],
 			},
 			{
@@ -176,13 +184,14 @@ const RU = () => ({
 				h: 'Возврат',
 				items: [
 					'Если товар не скачивается или не работает на версии игры, указанной в описании, напиши нам: мы поможем, заменим файл или вернём деньги.',
-					'Неизрасходованные деньги, внесённые пополнением баланса, можно вернуть по заявлению тем же способом, которым они были внесены. Награды из кейсов, заданий и достижений не возвращаются и не выводятся.',
+					'Неизрасходованные деньги, внесённые пополнением баланса, можно вернуть по заявлению тем же способом, которым они были внесены.',
 					'Заявление рассматривается в течение 10 дней.',
 				],
 			},
 			{
 				h: 'Ответственность',
 				items: [
+					'Перед установкой мода или ресурс-пака сделай копию своих миров. Использовать моды на серверах можно только по правилам этих серверов.',
 					'Продавец не отвечает за несовместимость товара с модами, серверами и сборками, не указанными в описании, и за последствия установки без соблюдения инструкции.',
 					'Ответственность Продавца по договору ограничена ценой товара.',
 				],
@@ -202,13 +211,13 @@ const RU = () => ({
 const EN = () => ({
 	terms: {
 		title: 'Terms of use',
+		lead: 'Site rules: your account, cases, quests, achievements and what is not allowed.',
 		sections: [
 			{
 				h: 'General',
 				items: [
-					`These Terms govern the use of the ${SITE.name} website (the “Site”) and its services: accounts, cases, quests, achievements and the shop.`,
-					'By using the Site you accept these Terms and the Privacy policy. If you do not agree, do not use the Site.',
-					'Purchases are governed by the Public offer.',
+					`These Terms govern the use of the ${SITE.name} website (the “Site”): accounts, cases, quests and achievements.`,
+					'By using the Site you accept these Terms. If you do not agree, do not use the Site.',
 				],
 			},
 			{
@@ -217,46 +226,46 @@ const EN = () => ({
 					'To sign up you need a nickname, a working email address and a password. The email is confirmed with a code, and signing in also requires a code from the email.',
 					'You are responsible for keeping your password and email access safe. Actions taken in your account are considered your own.',
 					'One person — one account. A nickname must not be offensive or impersonate another person.',
-					'If you are under 14, you may use the Site with the consent of your parents or legal guardians. Under 18, purchases are made with their permission.',
+					'If you are under 14, you may use the Site with the consent of your parents or legal guardians.',
 				],
 			},
 			{
-				h: 'Balance, cases, quests and achievements',
+				h: 'Cases, quests and achievements',
 				items: [
-					'The balance is an internal Site account in rubles. It can only be spent on Site products; it cannot be withdrawn or transferred to other users, except for refunds under the Offer.',
-					'Cases, quests and achievements are free game mechanics. Their rewards (rubles on the balance, coupons) are not money and cannot be exchanged for money.',
-					'The chances of case rewards are shown on the Site. The daily case opens once every 24 hours; extra cases are given for completed quests.',
+					'Cases, quests and achievements are free game mechanics of the Site.',
+					'The daily case opens once every 24 hours; extra cases are given for completed quests. The chances of rewards are shown next to the case.',
+					'Rewards from cases, quests and achievements can only be used on the Site.',
 					'Getting rewards by cheating is forbidden: multiple accounts, bots, exploiting bugs, forging requests. Such rewards and the account may be cancelled.',
 				],
 			},
 			{
-				h: 'Rules',
+				h: 'Not allowed',
+				list: 'ul',
 				items: [
-					'Do not hack the Site or disrupt it, collect other users’ data or use the Site for illegal activities.',
-					'Do not redistribute purchased files, publish them openly or present them as your own.',
+					'hacking the Site or disrupting it;',
+					'collecting other users’ data;',
+					'exploiting Site bugs for gain — please report them to us instead;',
+					'pretending to be the Site administration or the channel author;',
+					'using the Site for illegal activities.',
 				],
 			},
 			{
 				h: 'Intellectual property',
 				items: [
-					'Mods, resource packs, the Site design, texts and graphics belong to their authors and are protected by law. A purchase grants the right to personal use under the Offer.',
-					'Minecraft is a trademark of Mojang Synergies AB and Microsoft. The Site and its products are unofficial and are not approved by or associated with Mojang or Microsoft.',
+					'The Site design, texts, graphics and animations belong to their authors and are protected by law. Do not copy them without permission.',
+					'Minecraft is a trademark of Mojang Synergies AB and Microsoft. The Site is unofficial and is not approved by or associated with Mojang or Microsoft.',
 				],
 			},
 			{
 				h: 'Liability',
 				items: [
 					'The Site is provided “as is”. We do our best to keep everything working but do not guarantee the absence of interruptions and errors.',
-					'You install mods and resource packs at your own risk: back up your worlds first. Use mods on servers only according to their rules.',
 					'We are not responsible for websites and services linked from the Site (YouTube, Telegram, visuals websites).',
 				],
 			},
 			{
 				h: 'Suspension and deletion',
-				items: [
-					'An account may be restricted or deleted for violating these Terms.',
-					'To delete your account, write to us. Unspent money added by top-ups can be refunded under the Offer; rewards from cases, quests and achievements are not refunded.',
-				],
+				items: ['An account may be restricted or deleted for violating these Terms.', 'You can delete your account at any time — just write to us.'],
 			},
 			{
 				h: 'Changes and contacts',
@@ -266,6 +275,7 @@ const EN = () => ({
 	},
 	privacy: {
 		title: 'Privacy policy',
+		lead: 'What data the site keeps about you, why it needs it and how it is protected.',
 		sections: [
 			{
 				h: 'General',
@@ -332,12 +342,14 @@ const EN = () => ({
 	},
 	offer: {
 		title: 'Public offer',
+		lead: 'Purchase terms: products, prices, balance, license and refunds.',
 		sections: [
 			{
 				h: 'General',
 				items: [
 					`This document is a public offer (Article 437 of the Civil Code of the Russian Federation) by ${sellerEn() ? `the seller ${sellerEn()}` : 'the seller'} (the “Seller”) to sell digital products on the ${SITE.name} website (the “Site”).`,
 					'The offer is accepted by paying for a product or topping up the balance. From that moment the contract between the Seller and the buyer is concluded.',
+					'If the buyer is under 18, purchases are made with the permission of their parents or legal guardians.',
 				],
 			},
 			{
@@ -348,11 +360,12 @@ const EN = () => ({
 				],
 			},
 			{
-				h: 'Prices and payment',
+				h: 'Prices, balance and payment',
 				items: [
 					'Prices are in rubles. A price may change, but not for an order that is already paid.',
-					'Products are paid from the Site balance. The balance is topped up through a payment service; the Seller never receives card details.',
-					'A resource pack can be taken for free with a case coupon.',
+					'The balance is the buyer’s internal account on the Site. It is topped up through a payment service; the Seller never receives card details.',
+					'Products are paid from the balance. Money on the balance cannot be withdrawn or transferred to other users — only refunded under the Refunds section.',
+					'Rubles and coupons from cases, quests and achievements are a gift from the Seller: they can pay for products but cannot be withdrawn or refunded as money. A resource pack can be taken for free with a case coupon.',
 				],
 			},
 			{
@@ -366,13 +379,14 @@ const EN = () => ({
 				h: 'Refunds',
 				items: [
 					'If a product cannot be downloaded or does not work on the game version stated in its description, write to us: we will help, replace the file or refund the money.',
-					'Unspent money added by topping up the balance can be refunded on request in the same way it was paid. Rewards from cases, quests and achievements are not refunded or withdrawn.',
+					'Unspent money added by topping up the balance can be refunded on request in the same way it was paid.',
 					'Requests are reviewed within 10 days.',
 				],
 			},
 			{
 				h: 'Liability',
 				items: [
+					'Back up your worlds before installing a mod or resource pack. Use mods on servers only according to their rules.',
 					'The Seller is not responsible for incompatibility with mods, servers and modpacks not listed in the description, or for installation without following the instructions.',
 					'The Seller’s liability under the contract is limited to the price of the product.',
 				],

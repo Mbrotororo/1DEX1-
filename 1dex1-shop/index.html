@@ -167,9 +167,9 @@
 		<div class="foot__row">
 			<p>© <span id="year">2026</span> <span data-i18n="foot.legal">1DEX1 SHOP. Не является официальным продуктом Minecraft. Не одобрено и не связано с Mojang или Microsoft.</span></p>
 			<nav class="foot__links px" aria-label="Документы" data-i18n-attr="aria-label:foot.links">
-				<button type="button" data-legal="terms" data-i18n="legal.terms">Пользовательское соглашение</button>
-				<button type="button" data-legal="privacy" data-i18n="legal.privacy">Политика конфиденциальности</button>
-				<button type="button" data-legal="offer" data-i18n="legal.offer">Публичная оферта</button>
+				<button type="button" data-legal="terms"><span data-nav-icon="terms"></span><span data-i18n="legal.terms">Пользовательское соглашение</span></button>
+				<button type="button" data-legal="privacy"><span data-nav-icon="privacy"></span><span data-i18n="legal.privacy">Политика конфиденциальности</span></button>
+				<button type="button" data-legal="offer"><span data-nav-icon="offer"></span><span data-i18n="legal.offer">Публичная оферта</span></button>
 			</nav>
 		</div>
 	</div>
@@ -321,19 +321,18 @@
 	</div>
 </dialog>
 
-<!-- ============ ОКНО: ДОКУМЕНТЫ (соглашение, политика, оферта). Тексты — в js/legal.js ============ -->
+<!-- ============ ОКНО: ДОКУМЕНТ (соглашение, политика или оферта — по кнопке в подвале). Тексты — в js/legal.js ============ -->
 <dialog class="dialog dialog--doc" id="legal-dialog" aria-labelledby="legal-title">
 	<div class="dialog__panel">
 		<header class="dialog__head">
-			<h2 id="legal-title"></h2>
+			<span class="doc-head__icon" id="legal-icon" aria-hidden="true"></span>
+			<div class="doc-head__text">
+				<h2 id="legal-title"></h2>
+				<p id="legal-lead"></p>
+			</div>
 			<button class="dialog__close" data-close aria-label="Закрыть" data-i18n-attr="aria-label:close"><span data-icon-x></span></button>
 		</header>
-		<div class="doc-tabs px" id="legal-tabs" role="tablist" aria-label="Документы" data-i18n-attr="aria-label:foot.links">
-			<button type="button" role="tab" data-legal-tab="terms" data-i18n="legal.terms">Пользовательское соглашение</button>
-			<button type="button" role="tab" data-legal-tab="privacy" data-i18n="legal.privacy">Политика конфиденциальности</button>
-			<button type="button" role="tab" data-legal-tab="offer" data-i18n="legal.offer">Публичная оферта</button>
-		</div>
-		<div class="doc" id="legal-body" role="tabpanel" tabindex="0"></div>
+		<div class="doc" id="legal-body" tabindex="0"></div>
 	</div>
 </dialog>
 
