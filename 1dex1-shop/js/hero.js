@@ -1,10 +1,11 @@
 // 3D-сцена первого экрана.
 // - Остров плавно поворачивается на 90° в каждую сторону (всего 180°).
 // - Клик по блоку острова: персонаж подходит и добывает его, через 5 секунд блок вырастает.
-// - Персонажа можно схватить и унести: вне острова он парит в невесомости,
-//   над островом падает вниз, приземляется с прыжком и идёт на своё место.
-// - Парящие кубики можно таскать и кидать. Они отталкиваются друг от друга,
-//   от острова, персонажа и названия: держат дистанцию около сантиметра на экране.
+// - Кубики и персонаж подчиняются гравитации и имеют твёрдые невидимые хитбоксы:
+//   не проходят сквозь друг друга, остров, название и кнопки, стоят на них.
+// - Персонажа можно схватить и унести. Поставленный на кнопку или текст,
+//   он стоит, машет, приседает, сидит со свисающими ногами или ложится.
+//   Поставленный на остров — спрыгивает на верх и идёт на своё место.
 // - Блоки названия 1DEX1 ломаются кликом и через 3 секунды вырастают снова.
 import * as THREE from '../vendor/three.module.min.js';
 import {CROSSHAIR, wordPixels} from './pixel.js';
@@ -304,7 +305,7 @@ const BODY = 1.35; // центр тела над ногами
 const ISLAND_R = 3.4; // радиус верхушки острова, по которой можно ходить
 const PLAYER_SCALE = 2.7 / 32;
 const MINE_TIME = 1.1;
-const KNOCK = 520; // скорость, с которой кубик отлетает от препятствия, px/s
+const KNOCK = 520; // скорость, с которой кубик отлетает от острова, px/s
 
 // on(событие): 'break' — сломан блок названия, 'mine' — добыт блок острова,
 // 'drag' — перенесён кубик, 'treasure' — кубик спрятан в сундук, 'tickle' — пять кликов по скину
@@ -506,20 +507,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false} = {}) =>
 	pivot.add(player.root);
 	world.add(pivot);
 
-	const P = {
-		mode: 'idle', // idle | walk | mine | held | float | fall | land
-		pos: HOME.clone(),
-		vel: new THREE.Vector3(),
-		tumble: new THREE.Vector3(),
-		spin: new THREE.Vector3(),
-		face: 0.15,
-		target: HOME.clone(),
-		task: null,
-		mineT: 0,
-		landT: 0,
-		walkPhase: 0,
-		desired: new THREE.Vector3(),
-	};
+	// mode: idle | walk | mine | land — на острове (3D); free — снят с острова (2D-тело PB ниже)
+	const P = {mode: 'idle', pos: HOME.clone(), face: 0.15, target: HOME.clone(), task: null, mineT: 0, landT: 0, walkPhase: 0};
 
 	// ================= НАЗВАНИЕ 1DEX1 ИЗ БЛОКОВ =================
 	const word = wordPixels('1DEX1');
@@ -566,9 +555,9 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false} = {}) =>
 		debrisMesh.instanceColor.needsUpdate = true;
 	};
 
-	// ================= ПАРЯЩИЕ КУБИКИ =================
-	// Кубики живут «на экране»: координаты в пикселях + своя глубина. Так дистанция
-	// между ними совпадает с тем, что видит человек, независимо от перспективы.
+	// ================= КУБИКИ =================
+	// Кубики живут «на экране»: координаты в пикселях + своя глубина в 3D.
+	// Хитбокс — квадрат по передней грани кубика, его не видно.
 	const floatRand = rng(23);
 	const floatMats = [lambert(tex.amethyst), lambert(tex.lime), lambert(tex.gold)];
 	const floaters = [];
@@ -576,46 +565,46 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false} = {}) =>
 		const mesh = new THREE.Mesh(box, floatMats[i % 3 === 0 ? 0 : i % 3 === 1 ? (i % 2 ? 1 : 0) : 2]);
 		scene.add(mesh);
 		floaters.push({
+			kind: 'cube',
 			mesh,
 			index: i,
-			size: 0.6 + floatRand() * 1.1,
+			size: 0.7 + floatRand() * 1.0,
 			far: floatRand(),
 			depth: 40,
 			x: 0,
 			y: 0,
 			vx: 0,
 			vy: 0,
-			r: 10,
-			phase: floatRand() * 6.28,
-			speed: 0.2 + floatRand() * 0.4,
-			rx: (floatRand() - 0.5) * 0.5,
-			ry: (floatRand() - 0.5) * 0.6,
+			hw: 10,
+			hh: 10,
+			invMass: 1,
 			rotX: floatRand() * 6.28,
 			rotY: floatRand() * 6.28,
-			extraSpin: 0,
-			bob: 1,
+			spin: 0,
 			held: false,
+			grounded: false,
+			support: null,
 			storedAt: -1,
 			storeFrom: new THREE.Vector3(),
 			respawned: false,
 			shown: true,
 		});
 	}
-	// Свободные места на экране при загрузке (координаты -1..1): [x0, x1, y0, y1]
+	// Откуда кубики падают при загрузке (координаты -1..1): [x0, x1, y0, y1]
 	const SLOTS_WIDE = [
 		[-0.95, -0.2, 0.56, 0.7],
-		[-0.95, -0.1, -0.92, -0.66],
-		[-0.1, 0.1, -0.5, 0.2],
-		[0.74, 0.97, -0.62, 0.2],
-		[0.1, 0.3, -0.72, -0.2],
-		[0.0, 0.28, -0.95, -0.8],
+		[-0.1, 0.1, 0.3, 0.7],
+		[0.74, 0.97, 0.2, 0.6],
 		[-0.6, -0.3, 0.56, 0.7],
+		[0.1, 0.3, 0.2, 0.6],
+		[-0.95, -0.7, -0.2, 0.3],
+		[0.0, 0.28, -0.4, 0.0],
 	];
 	const SLOTS_NARROW = [
-		[-0.96, -0.62, -0.9, 0.1],
-		[0.62, 0.96, -0.9, 0.1],
-		[-0.96, -0.66, 0.1, 0.5],
-		[0.66, 0.96, 0.1, 0.5],
+		[-0.96, -0.62, 0.2, 0.6],
+		[0.62, 0.96, 0.2, 0.6],
+		[-0.96, -0.66, -0.4, 0.1],
+		[0.66, 0.96, -0.4, 0.1],
 	];
 	scene.fog = new THREE.Fog(0x0e0a1c, 30, 80);
 
@@ -657,6 +646,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false} = {}) =>
 		floaters.forEach((f) => {
 			f.shown = viewWide || f.index < 8;
 			f.depth = viewDist + 4 + f.far * 26;
+			f.held = false;
 			placeFloater(f, r);
 		});
 	};
@@ -701,6 +691,11 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false} = {}) =>
 		renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, width < 900 ? 1.5 : 2));
 		renderer.setSize(width, height, false);
 		frame();
+		// при смене размера персонаж возвращается домой
+		if (P.mode === 'free') {
+			P.mode = 'idle';
+			P.pos.copy(HOME);
+		}
 	};
 
 	// экранные пиксели (относительно канваса) <-> 3D
@@ -715,7 +710,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false} = {}) =>
 	};
 
 	// ================= УКАЗАТЕЛЬ =================
-	const zone = canvas.parentElement; // слушаем весь первый экран: текст лежит поверх канваса
+	const zone = canvas.parentElement; // слушаем весь первый экран
 	const content = zone.querySelector('.hero__content');
 	const pointer = new THREE.Vector2(0.3, 0.1); // -1..1
 	const pointerPx = {x: 0, y: 0};
@@ -747,10 +742,11 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false} = {}) =>
 		let bestD = Infinity;
 		for (const f of floaters) {
 			if (!f.shown || f.storedAt >= 0) continue;
-			const d = Math.hypot(pointerPx.x - f.x, pointerPx.y - f.y);
-			if (d < f.r * 1.15 && d < bestD) {
+			const dx = Math.abs(pointerPx.x - f.x);
+			const dy = Math.abs(pointerPx.y - f.y);
+			if (dx < f.hw * 1.2 && dy < f.hh * 1.2 && dx + dy < bestD) {
 				best = f;
-				bestD = d;
+				bestD = dx + dy;
 			}
 		}
 		return best;
@@ -823,58 +819,87 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false} = {}) =>
 		P.target.copy(HOME);
 	};
 
-	// --- персонаж: схватить, отпустить ---
-	const dragPlane = new THREE.Plane();
-	const hitPoint = new THREE.Vector3();
+	// ================= ПЕРСОНАЖ ВНЕ ОСТРОВА (2D-тело) =================
+	// Размеры хитбокса для каждой позы, в единицах мира: [полуширина, полувысота]
+	const POSE_BOX = {stand: [0.42, 1.35], wave: [0.42, 1.35], air: [0.42, 1.35], held: [0.42, 1.35], crouch: [0.42, 1.25], sit: [0.42, 0.845], lie: [1.35, 0.6]};
+	const PB = {kind: 'player', x: 0, y: 0, vx: 0, vy: 0, hw: 10, hh: 30, invMass: 0.25, held: false, grounded: false, support: null, pose: 'stand', poseT: 0, poseDur: 1.5, lieDir: 1, airT: 0, sneak: 0, drop: 0, lie: 0};
+	let playerK = 20; // пикселей на единицу мира на глубине персонажа
+	let playerDepth = 30;
+	const fitPoseBox = () => {
+		const bottom = PB.y + PB.hh;
+		const [w, h] = POSE_BOX[PB.pose];
+		PB.hw = w * playerK;
+		PB.hh = h * playerK;
+		PB.y = bottom - PB.hh;
+	};
+	const setPose = (pose, dur) => {
+		PB.pose = pose;
+		PB.poseT = 0;
+		PB.poseDur = dur;
+		if (pose === 'lie') PB.lieDir = Math.random() < 0.5 ? -1 : 1;
+		fitPoseBox();
+	};
+	// стоя на чём-то, персонаж сам выбирает, чем заняться
+	const nextPose = () => {
+		const supportWidth = PB.support ? PB.support.maxX - PB.support.minX : 0;
+		const options = [
+			['stand', 3],
+			['wave', 2.6],
+			['crouch', 2.2],
+			['sit', 6],
+		];
+		if (supportWidth > PB.hw * 2 * 3.4) options.push(['lie', 6]);
+		const pick = options[Math.floor(Math.random() * options.length)];
+		setPose(pick[0], pick[1] * (0.8 + Math.random() * 0.4));
+	};
+
 	const startPlayerDrag = () => {
 		if (P.task) {
 			activeBlocks.add(P.task.block);
 			P.task = null;
 		}
-		// персонажа носим на глубине острова: так его легко вернуть на место
-		const center = world.localToWorld(tmp.copy(P.pos).add(tmp2.set(0, BODY, 0)));
-		const planePoint = world.localToWorld(tmp2.copy(HOME).add(new THREE.Vector3(0, BODY, 0)));
-		dragPlane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()), planePoint);
-		castRay();
-		raycaster.ray.intersectPlane(dragPlane, hitPoint);
-		const onPlane = dragPlane.projectPoint(center, new THREE.Vector3());
-		drag.offset = onPlane.sub(hitPoint);
+		// с острова — в «экранный» режим, с той же точки, где он стоял
+		if (P.mode !== 'free') {
+			const c = toPx(pivot.getWorldPosition(new THREE.Vector3()));
+			PB.x = c.x;
+			PB.y = c.y;
+			PB.vx = 0;
+			PB.vy = 0;
+			PB.pose = 'held';
+			fitPoseBox();
+			PB.y = c.y;
+			P.mode = 'free';
+		}
+		PB.held = true;
+		setPose('held', 0);
+		drag.ox = PB.x - pointerPx.x;
+		drag.oy = PB.y - pointerPx.y;
 		drag.started = true;
-		P.mode = 'held';
-		P.desired.copy(P.pos);
-		P.vel.set(0, 0, 0);
 	};
-	// отпустили над островом или прямо на его верхушку — падает туда
+	// персонаж встал на верх острова — возвращаемся в 3D и идём домой
 	const islandTop = new THREE.Plane();
-	const landingPoint = () => {
-		if (Math.hypot(P.pos.x, P.pos.z) < ISLAND_R && P.pos.y > -0.6) return P.pos.clone();
+	const landOnIsland = () => {
+		// точка верха острова прямо под ногами (по лучу из камеры)
 		const up = new THREE.Vector3(0, 1, 0).transformDirection(world.matrixWorld);
 		islandTop.setFromNormalAndCoplanarPoint(up, world.localToWorld(new THREE.Vector3(0, 0, 0)));
-		castRay();
-		if (!raycaster.ray.intersectPlane(islandTop, hitPoint)) return null;
-		const local = world.worldToLocal(hitPoint.clone());
-		return Math.hypot(local.x, local.z) < ISLAND_R ? local : null;
-	};
-	const releasePlayer = () => {
-		P.vel.clampLength(0, 6);
-		const land = landingPoint();
-		if (land) {
-			// падает вертикально туда, куда его опустили
-			P.pos.x = land.x;
-			P.pos.z = land.z;
-			P.pos.y = Math.max(P.pos.y, 0.4);
-			P.vel.set(0, 0, 0);
-			P.mode = 'fall';
-		} else {
-			P.mode = 'float';
-			// кувырок зависит от того, как сильно бросили
-			P.spin.set(P.vel.z * 0.25 + (Math.random() - 0.5) * 0.6, 0, -P.vel.x * 0.25 + (Math.random() - 0.5) * 0.6);
-		}
+		const fw = pxToWorld(PB.x, PB.y + PB.hh, playerDepth, new THREE.Vector3());
+		const ray = new THREE.Ray(camera.position.clone(), fw.sub(camera.position).normalize());
+		const hit = ray.intersectPlane(islandTop, new THREE.Vector3());
+		const feet = hit ? world.worldToLocal(hit) : world.worldToLocal(pxToWorld(PB.x, PB.y + PB.hh, playerDepth, new THREE.Vector3()));
+		const r = Math.hypot(feet.x, feet.z);
+		if (r > ISLAND_R - 0.3) feet.multiplyScalar((ISLAND_R - 0.3) / r);
+		P.pos.set(feet.x, 0, feet.z);
+		P.mode = 'land';
+		P.landT = 0;
+		P.face = 0.15;
+		jumpAt = now;
 	};
 	const tickle = () => {
-		if (P.mode === 'float') {
-			P.spin.x += (Math.random() - 0.5) * 3;
-			P.spin.z += (Math.random() - 0.5) * 3;
+		if (P.mode === 'free') {
+			if (PB.grounded && !PB.held) {
+				PB.vy = -620;
+				setPose('air', 0);
+			}
 		} else if (playerFree() || P.mode === 'land') {
 			jumpAt = now;
 		}
@@ -928,7 +953,6 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false} = {}) =>
 		const f = pickFloater();
 		if (f) {
 			f.held = true;
-			f.bob = 0;
 			drag = {kind: 'floater', f, ox: f.x - pointerPx.x, oy: f.y - pointerPx.y, moved: 0};
 		} else if (pickPlayer()) {
 			drag = {kind: 'player', moved: 0, started: false};
@@ -949,7 +973,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false} = {}) =>
 			return;
 		}
 		if (d?.kind === 'player' && d.started) {
-			releasePlayer();
+			PB.held = false;
+			setPose('air', 0);
 			return;
 		}
 		if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 8) return;
@@ -966,7 +991,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false} = {}) =>
 	});
 	zone.addEventListener('pointercancel', () => {
 		if (drag?.kind === 'floater') drag.f.held = false;
-		if (drag?.kind === 'player' && drag.started) releasePlayer();
+		if (drag?.kind === 'player' && drag.started) PB.held = false;
 		drag = null;
 	});
 	// на телефоне палец на кубике или персонаже двигает их, а не страницу
@@ -981,7 +1006,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false} = {}) =>
 		{passive: false},
 	);
 
-	// ================= НЕВИДИМЫЕ ХИТБОКСЫ (оболочки на экране) =================
+	// ================= НЕВИДИМЫЕ ХИТБОКСЫ =================
+	// силуэт острова целиком — от него кубики отскакивают
 	const ISLAND_HULL_PTS = [];
 	for (let i = 0; i < 14; i++) {
 		const a = (i / 14) * Math.PI * 2;
@@ -989,207 +1015,266 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false} = {}) =>
 		ISLAND_HULL_PTS.push(new THREE.Vector3(Math.cos(a) * 3.6, -2, Math.sin(a) * 3.6));
 		ISLAND_HULL_PTS.push(new THREE.Vector3(Math.cos(a) * 1.4, -6, Math.sin(a) * 1.4));
 	}
+	// без дерева — это силуэт, в который упирается персонаж: снаружи его ничто не загораживает
+	const ISLAND_BODY_PTS = ISLAND_HULL_PTS.map((v) => v.clone().setY(v.y === 1.0 ? 0.05 : v.y));
 	for (const dx of [-2.5, 2.5]) for (const dz of [-2.5, 2.5]) ISLAND_HULL_PTS.push(new THREE.Vector3(TREE.x + dx, 4.1, TREE.z + dz));
 	const PLAYER_HULL_PTS = [];
 	for (const x of [-7, 7]) for (const y of [0, 17, 33]) for (const z of [-4, 4]) PLAYER_HULL_PTS.push(new THREE.Vector3(x, y, z));
-	const wordHalf = (word.width * VOXEL) / 2 + 0.25;
+	const wordHalf = (word.width * VOXEL) / 2 + 0.1;
 	const LOGO_HULL_PTS = [];
-	for (const x of [-wordHalf, wordHalf]) for (const y of [WORD_Y - 0.35, WORD_Y + 7 * VOXEL + 0.25]) for (const z of [-1.6, -0.4]) LOGO_HULL_PTS.push(new THREE.Vector3(x, y, z));
+	for (const x of [-wordHalf, wordHalf]) for (const y of [WORD_Y + 0.05, WORD_Y + 7 * VOXEL]) for (const z of [-1.4, -0.6]) LOGO_HULL_PTS.push(new THREE.Vector3(x, y, z));
 	const hullOf = (pts, obj) => convexHull(pts.map((p) => toPx(obj.localToWorld(tmp.copy(p)))));
-
-	// ================= ФИЗИКА КУБИКОВ =================
-	const chestPx = {x: 0, y: 0, r: 0};
-	const stepFloaters = (dt, obstacles) => {
-		const list = floaters.filter((f) => f.shown && f.storedAt < 0);
-		for (const f of list) f.r = (f.size * 0.62 * focal) / f.depth;
-
-		// движение: в руке кубик идёт за пальцем, иначе летит по инерции и плавно тормозит
-		for (const f of list) {
-			if (f.held && drag && drag.f === f) {
-				const tx = pointerPx.x + drag.ox;
-				const ty = pointerPx.y + drag.oy;
-				const k = 1 - Math.exp(-dt * 30);
-				const nx = lerp(f.x, tx, k);
-				const ny = lerp(f.y, ty, k);
-				// запоминаем скорость руки, чтобы кубик можно было бросить
-				f.vx = lerp(f.vx, (nx - f.x) / dt, 0.35);
-				f.vy = lerp(f.vy, (ny - f.y) / dt, 0.35);
-				f.x = nx;
-				f.y = ny;
-			} else {
-				const sp = Math.hypot(f.vx, f.vy);
-				if (sp > 2400) {
-					f.vx *= 2400 / sp;
-					f.vy *= 2400 / sp;
-				}
-				f.x += f.vx * dt;
-				f.y += f.vy * dt;
-				const damp = Math.exp(-1.5 * dt);
-				f.vx *= damp;
-				f.vy *= damp;
-			}
-			f.extraSpin = Math.max(f.extraSpin * Math.exp(-1.4 * dt), Math.hypot(f.vx, f.vy) / 500);
+	const rectPoly = (x0, y0, x1, y1) => [
+		{x: x0, y: y0},
+		{x: x1, y: y0},
+		{x: x1, y: y1},
+		{x: x0, y: y1},
+	];
+	const withBounds = (s) => {
+		let minX = Infinity;
+		let maxX = -Infinity;
+		for (const p of s.poly) {
+			minX = Math.min(minX, p.x);
+			maxX = Math.max(maxX, p.x);
 		}
-
-		// кубики отталкивают друг друга, держа дистанцию gap
-		for (let it = 0; it < 2; it++) {
-			for (let i = 0; i < list.length; i++) {
-				for (let j = i + 1; j < list.length; j++) {
-					const a = list[i];
-					const b = list[j];
-					let dx = b.x - a.x;
-					let dy = b.y - a.y;
-					let d = Math.hypot(dx, dy);
-					const minD = a.r + b.r + gap;
-					if (d >= minD) continue;
-					if (d < 0.01) {
-						dx = Math.random() - 0.5;
-						dy = Math.random() - 0.5;
-						d = Math.hypot(dx, dy);
-					}
-					const nx = dx / d;
-					const ny = dy / d;
-					const overlap = minD - d;
-					if (a.held || b.held) {
-						const o = a.held ? b : a;
-						const s = a.held ? 1 : -1;
-						o.x += nx * overlap * 0.6 * s;
-						o.y += ny * overlap * 0.6 * s;
-						o.vx += nx * overlap * 9 * s;
-						o.vy += ny * overlap * 9 * s;
-					} else {
-						a.x -= nx * overlap * 0.22;
-						a.y -= ny * overlap * 0.22;
-						b.x += nx * overlap * 0.22;
-						b.y += ny * overlap * 0.22;
-						a.vx -= nx * overlap * 5;
-						a.vy -= ny * overlap * 5;
-						b.vx += nx * overlap * 5;
-						b.vy += ny * overlap * 5;
-					}
-				}
-			}
+		s.minX = minX;
+		s.maxX = maxX;
+		return s;
+	};
+	// Виджеты первого экрана (название и кнопка) — твёрдые платформы.
+	// Для текста берём рамку самих букв, а не всего блока.
+	const widgetRects = () => {
+		if (!viewWide || !content) return [];
+		const r = canvas.getBoundingClientRect();
+		const out = [];
+		const add = (rect, inset = 0) => {
+			if (!rect || rect.width < 4) return;
+			out.push(rectPoly(rect.left - r.left, rect.top - r.top + inset, rect.right - r.left, rect.bottom - r.top));
+		};
+		const h1 = content.querySelector('h1');
+		if (h1) {
+			const range = document.createRange();
+			range.selectNodeContents(h1);
+			const tr = range.getBoundingClientRect();
+			add(tr, tr.height * 0.13);
 		}
+		content.querySelectorAll('.btn').forEach((b) => add(b.getBoundingClientRect()));
+		const hint = content.querySelector('.hero__hint');
+		if (hint) {
+			const range = document.createRange();
+			range.selectNodeContents(hint);
+			add(range.getBoundingClientRect());
+		}
+		return out;
+	};
 
-		for (const f of list) {
-			// сундук ловит кубик, который к нему поднесли
-			if (f.held && Math.hypot(f.x - chestPx.x, f.y - chestPx.y) < f.r + chestPx.r * 2 + gap + 16) {
-				storeFloater(f);
-				continue;
+	// ================= 2D-ФИЗИКА =================
+	const GRAVITY = 2300; // px/s²
+	// Пересечение прямоугольника и выпуклого многоугольника (теорема о разделяющей оси).
+	// Возвращает, куда и насколько вытолкнуть прямоугольник.
+	const boxPoly = (b, poly) => {
+		let best = Infinity;
+		let bnx = 0;
+		let bny = 0;
+		let cx = 0;
+		let cy = 0;
+		for (const p of poly) {
+			cx += p.x / poly.length;
+			cy += p.y / poly.length;
+		}
+		const test = (ax, ay) => {
+			const bc = b.x * ax + b.y * ay;
+			const br = b.hw * Math.abs(ax) + b.hh * Math.abs(ay);
+			let pmin = Infinity;
+			let pmax = -Infinity;
+			for (const p of poly) {
+				const d = p.x * ax + p.y * ay;
+				if (d < pmin) pmin = d;
+				if (d > pmax) pmax = d;
 			}
-			// остров, персонаж и название откидывают кубик, подошедший ближе чем на gap
-			for (const hull of obstacles) {
-				if (hull.length < 3) continue;
-				const h = hullDistance(f.x, f.y, hull);
-				const clearance = h.dist - f.r;
-				if (clearance >= gap) continue;
-				if (f.held) knockOut(f);
-				f.x += h.nx * (gap - clearance);
-				f.y += h.ny * (gap - clearance);
-				const vn = f.vx * h.nx + f.vy * h.ny;
-				if (vn < KNOCK) {
-					f.vx += h.nx * (KNOCK - vn);
-					f.vy += h.ny * (KNOCK - vn);
-				}
-				f.extraSpin += 2.5;
+			const overlap = Math.min(bc + br - pmin, pmax - (bc - br));
+			if (overlap <= 0) return false;
+			if (overlap < best) {
+				best = overlap;
+				const dir = (b.x - cx) * ax + (b.y - cy) * ay;
+				bnx = dir < 0 ? -ax : ax;
+				bny = dir < 0 ? -ay : ay;
 			}
-			// края экрана: мягкий отскок
-			const top = f.r + (viewWide ? 70 : 8);
-			if (f.x < f.r) {
-				f.x = f.r;
-				f.vx = Math.abs(f.vx) * 0.6;
-			} else if (f.x > width - f.r) {
-				f.x = width - f.r;
-				f.vx = -Math.abs(f.vx) * 0.6;
-			}
-			if (f.y < top) {
-				f.y = top;
-				f.vy = Math.abs(f.vy) * 0.6;
-			} else if (f.y > height - f.r) {
-				f.y = height - f.r;
-				f.vy = -Math.abs(f.vy) * 0.6;
-			}
+			return true;
+		};
+		if (!test(1, 0) || !test(0, 1)) return null;
+		for (let i = 0; i < poly.length; i++) {
+			const a = poly[i];
+			const c = poly[(i + 1) % poly.length];
+			const ex = c.x - a.x;
+			const ey = c.y - a.y;
+			const len = Math.hypot(ex, ey);
+			if (len < 1e-6) continue;
+			if (!test(-ey / len, ex / len)) return null;
+		}
+		return {nx: bnx, ny: bny, depth: best};
+	};
+
+	const pushOut = (b, nx, ny, depth, support, bounce) => {
+		b.x += nx * depth;
+		b.y += ny * depth;
+		if (b.held) return;
+		const vn = b.vx * nx + b.vy * ny;
+		if (vn < 0) {
+			b.vx -= nx * vn * (1 + bounce);
+			b.vy -= ny * vn * (1 + bounce);
+		}
+		if (ny < -0.6) {
+			b.grounded = true;
+			b.support = support;
 		}
 	};
 
-	// ================= ПЕРСОНАЖ: ДВИЖЕНИЕ =================
-	const islandRadiusAt = (y) => (y > -1 ? 3.9 : lerp(3.9, 0.9, clamp((-1 - y) / 5, 0, 1)));
-	const center = new THREE.Vector3();
-	const stepPlayer = (dt) => {
+	const chestPx = {x: 0, y: 0, r: 0};
+	const stepPhysics = (dt, statics) => {
+		const bodies = floaters.filter((f) => f.shown && f.storedAt < 0);
+		for (const f of bodies) {
+			f.hw = f.hh = (f.size * 0.5 * focal) / f.depth;
+			f.invMass = f.held ? 0 : 1;
+		}
+		if (P.mode === 'free') {
+			fitPoseBox();
+			PB.invMass = PB.held ? 0 : 0.25;
+			bodies.push(PB);
+		}
+		const top = viewWide ? 72 : 6;
+		const floor = {kind: 'floor', minX: 0, maxX: width};
+
+		// движение: в руке тело идёт за пальцем, иначе падает с гравитацией
+		for (const b of bodies) {
+			if (b.held && drag && (drag.f === b || (drag.kind === 'player' && b === PB))) {
+				const tx = pointerPx.x + drag.ox;
+				const ty = pointerPx.y + drag.oy;
+				const k = 1 - Math.exp(-dt * 30);
+				const nx = lerp(b.x, tx, k);
+				const ny = lerp(b.y, ty, k);
+				// запоминаем скорость руки, чтобы тело можно было бросить
+				b.vx = lerp(b.vx, (nx - b.x) / dt, 0.35);
+				b.vy = lerp(b.vy, (ny - b.y) / dt, 0.35);
+				b.x = nx;
+				b.y = ny;
+			} else {
+				b.vy += GRAVITY * dt;
+				const sp = Math.hypot(b.vx, b.vy);
+				if (sp > 2600) {
+					b.vx *= 2600 / sp;
+					b.vy *= 2600 / sp;
+				}
+				b.x += b.vx * dt;
+				b.y += b.vy * dt;
+			}
+			b.wasGrounded = b.grounded;
+			b.grounded = false;
+			b.support = null;
+		}
+
+		for (let it = 0; it < 6; it++) {
+			// тела и неподвижные препятствия
+			for (const b of bodies) {
+				const isCube = b.kind === 'cube';
+				// сундук ловит кубик, который к нему поднесли
+				if (isCube && b.held && it === 0 && Math.hypot(b.x - chestPx.x, b.y - chestPx.y) < b.hw + chestPx.r * 2 + gap + 16) {
+					storeFloater(b);
+					continue;
+				}
+				if (isCube && b.storedAt >= 0) continue;
+				for (const s of statics) {
+					if (isCube && s.cubes === 'repel') {
+						// остров откидывает кубик, подошедший ближе чем на сантиметр
+						if (it !== 0) continue;
+						const h = hullDistance(b.x, b.y, s.poly);
+						const clearance = h.dist - b.hw * 1.1;
+						if (clearance >= gap) continue;
+						if (b.held) knockOut(b);
+						b.x += h.nx * (gap - clearance);
+						b.y += h.ny * (gap - clearance);
+						const vn = b.vx * h.nx + b.vy * h.ny;
+						if (vn < KNOCK) {
+							b.vx += h.nx * (KNOCK - vn);
+							b.vy += h.ny * (KNOCK - vn);
+						}
+						b.spin += 3;
+						continue;
+					}
+					if (isCube ? s.cubes !== 'solid' : !s.player) continue;
+					const m = boxPoly(b, s.poly);
+					if (m) pushOut(b, m.nx, m.ny, m.depth, s, isCube ? 0.15 : 0.05);
+				}
+				// края первого экрана
+				if (b.x - b.hw < 0) pushOut(b, 1, 0, b.hw - b.x, null, 0.3);
+				if (b.x + b.hw > width) pushOut(b, -1, 0, b.x + b.hw - width, null, 0.3);
+				if (b.y - b.hh < top) pushOut(b, 0, 1, top - (b.y - b.hh), null, 0.2);
+				if (b.y + b.hh > height) pushOut(b, 0, -1, b.y + b.hh - height, floor, 0.12);
+			}
+			// тела друг с другом: не проходят насквозь, лёгкое уступает тяжёлому
+			for (let i = 0; i < bodies.length; i++) {
+				for (let j = i + 1; j < bodies.length; j++) {
+					const a = bodies[i];
+					const b = bodies[j];
+					const sum = a.invMass + b.invMass;
+					if (sum === 0) continue;
+					const dx = b.x - a.x;
+					const dy = b.y - a.y;
+					const ox = a.hw + b.hw - Math.abs(dx);
+					const oy = a.hh + b.hh - Math.abs(dy);
+					if (ox <= 0 || oy <= 0) continue;
+					let nx = 0;
+					let ny = 0;
+					let depth;
+					if (ox < oy) {
+						nx = dx < 0 ? -1 : 1;
+						depth = ox;
+					} else {
+						ny = dy < 0 ? -1 : 1;
+						depth = oy;
+					}
+					a.x -= (nx * depth * a.invMass) / sum;
+					a.y -= (ny * depth * a.invMass) / sum;
+					b.x += (nx * depth * b.invMass) / sum;
+					b.y += (ny * depth * b.invMass) / sum;
+					const rel = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
+					if (rel < 0) {
+						const j2 = (-(1.1) * rel) / sum;
+						a.vx -= nx * j2 * a.invMass;
+						a.vy -= ny * j2 * a.invMass;
+						b.vx += nx * j2 * b.invMass;
+						b.vy += ny * j2 * b.invMass;
+					}
+					// кто сверху — тот стоит на другом
+					if (ny < 0) {
+						b.grounded = true;
+						b.support = {kind: a.kind, minX: a.x - a.hw, maxX: a.x + a.hw};
+					} else if (ny > 0) {
+						a.grounded = true;
+						a.support = {kind: b.kind, minX: b.x - b.hw, maxX: b.x + b.hw};
+					}
+				}
+			}
+		}
+
+		// трение и покой: стоящее тело перестаёт дрожать
+		for (const b of bodies) {
+			if (b.held) continue;
+			if (b.grounded) {
+				b.vx *= Math.exp(-dt * (b.kind === 'cube' ? 7 : 12));
+				if (Math.abs(b.vy) < 40) b.vy = 0;
+				if (Math.abs(b.vx) < 6) b.vx = 0;
+			}
+			if (b.kind === 'cube') b.spin = Math.max(b.spin * Math.exp(-dt * 2), b.grounded ? 0 : Math.hypot(b.vx, b.vy) / 300);
+		}
+	};
+
+	// ================= ПЕРСОНАЖ НА ОСТРОВЕ (3D) =================
+	const stepIslandPlayer = (dt) => {
 		const k = 1 - Math.exp(-dt * 10);
 		switch (P.mode) {
-			case 'held': {
-				castRay();
-				if (raycaster.ray.intersectPlane(dragPlane, hitPoint)) {
-					const local = world.worldToLocal(hitPoint.clone().add(drag?.offset || tmp.set(0, 0, 0)));
-					P.desired.copy(local).sub(tmp.set(0, BODY, 0));
-				}
-				const prev = tmp2.copy(P.pos);
-				P.pos.lerp(P.desired, 1 - Math.exp(-dt * 22));
-				P.vel.lerp(tmp.copy(P.pos).sub(prev).divideScalar(dt), 0.3);
-				P.tumble.x = lerp(P.tumble.x, clamp(P.vel.z * 0.05, -0.6, 0.6), k);
-				P.tumble.z = lerp(P.tumble.z, clamp(-P.vel.x * 0.06, -0.7, 0.7), k);
-				break;
-			}
-			case 'float': {
-				P.pos.addScaledVector(P.vel, dt);
-				P.vel.multiplyScalar(Math.exp(-0.3 * dt));
-				P.vel.y += Math.sin(now * 0.9) * 0.18 * dt; // лёгкое покачивание в невесомости
-				P.tumble.addScaledVector(P.spin, dt);
-				P.spin.multiplyScalar(Math.exp(-0.15 * dt));
-				if (P.spin.length() < 0.25) P.spin.setLength(0.25);
-				// не даём улететь за край экрана
-				center.copy(P.pos).add(tmp.set(0, BODY, 0));
-				const ndc = world.localToWorld(tmp2.copy(center)).project(camera);
-				// у края экрана мягко отскакивает обратно
-				if (ndc.x > 0.86) P.vel.x = -Math.max(Math.abs(P.vel.x) * 0.6, 0.8);
-				if (ndc.x < -0.9) P.vel.x = Math.max(Math.abs(P.vel.x) * 0.6, 0.8);
-				if (ndc.y > 0.72) P.vel.y = -Math.max(Math.abs(P.vel.y) * 0.6, 0.8);
-				if (ndc.y < -0.84) P.vel.y = Math.max(Math.abs(P.vel.y) * 0.6, 0.8);
-				if (P.pos.z > 4) P.vel.z = -Math.abs(P.vel.z) * 0.6 - 0.3;
-				if (P.pos.z < -3) P.vel.z = Math.abs(P.vel.z) * 0.6 + 0.3;
-				// над островом — притягивается и садится, сбоку и снизу — отталкивается
-				const r = Math.hypot(center.x, center.z);
-				if (center.y > 0.6 && center.y < 5 && r < ISLAND_R) {
-					P.mode = 'fall';
-				} else if (center.y <= 0.6 && center.y > -7.5 && r < islandRadiusAt(center.y) + 1) {
-					const nx = r > 0.01 ? center.x / r : 1;
-					const nz = r > 0.01 ? center.z / r : 0;
-					const want = islandRadiusAt(center.y) + 1;
-					P.pos.x += nx * (want - r);
-					P.pos.z += nz * (want - r);
-					const vOut = P.vel.x * nx + P.vel.z * nz;
-					if (vOut < 4) {
-						P.vel.x += nx * (4 - vOut);
-						P.vel.z += nz * (4 - vOut);
-					}
-					P.spin.x += (Math.random() - 0.5) * 1.5;
-				}
-				break;
-			}
-			case 'fall': {
-				P.vel.y -= 26 * dt;
-				P.vel.x *= Math.exp(-4 * dt);
-				P.vel.z *= Math.exp(-4 * dt);
-				P.pos.addScaledVector(P.vel, dt);
-				P.tumble.lerp(tmp.set(0, 0, 0), 1 - Math.exp(-dt * 9));
-				const r = Math.hypot(P.pos.x, P.pos.z);
-				if (P.pos.y <= 0 && r < ISLAND_R + 0.3) {
-					if (r > ISLAND_R - 0.3) P.pos.multiplyScalar((ISLAND_R - 0.3) / r);
-					P.pos.y = 0;
-					P.vel.set(0, 0, 0);
-					P.mode = 'land';
-					P.landT = 0;
-					jumpAt = now; // приземлился — подпрыгнул
-				} else if (P.pos.y < -2) {
-					P.mode = 'float';
-					P.vel.y = 2;
-				}
-				break;
-			}
 			case 'land': {
 				P.landT += dt;
-				P.tumble.lerp(tmp.set(0, 0, 0), k);
 				if (P.landT > 0.5) {
 					P.mode = 'walk';
 					P.target.copy(HOME);
@@ -1200,7 +1285,6 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false} = {}) =>
 				const dx = P.target.x - P.pos.x;
 				const dz = P.target.z - P.pos.z;
 				const dist = Math.hypot(dx, dz);
-				P.tumble.lerp(tmp.set(0, 0, 0), k);
 				if (dist < 0.03) {
 					P.pos.x = P.target.x;
 					P.pos.z = P.target.z;
@@ -1229,17 +1313,17 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false} = {}) =>
 				if (P.mineT >= MINE_TIME) finishMining();
 				break;
 			}
-			default: {
-				// idle: стоит на месте и смотрит в камеру
+			case 'idle': {
 				P.pos.lerp(HOME, k);
 				P.face = 0.15;
-				P.tumble.lerp(tmp.set(0, 0, 0), k);
+				break;
 			}
+			default:
 		}
 	};
 
-	// поза рук и ног для каждого состояния (плавно перетекают друг в друга)
-	const pose = {armRx: 0, armRz: 0, armLx: 0, armLz: 0, legR: 0, legL: 0};
+	// поза рук и ног (плавно перетекают друг в друга)
+	const pose = {armRx: 0, armRz: 0, armLx: 0, armLz: 0, legR: 0, legL: 0, sneak: 0, drop: 0, roll: 0, tiltZ: 0};
 	const look = {yaw: 0, pitch: 0};
 	const headWorld = new THREE.Vector3();
 	const animatePlayer = (dt, idle) => {
@@ -1247,10 +1331,12 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false} = {}) =>
 		const k = 1 - Math.exp(-dt * 12);
 		const p = player.parts;
 		const jump = clamp((now - jumpAt) / 0.42, 0, 1);
-		const cheer = jump < 1 ? Math.sin(jump * Math.PI) : 0;
-		const target = {armRx: 0, armRz: 0.04, armLx: 0, armLz: -0.04, legR: 0, legL: 0};
+		const cheer = jump < 1 && P.mode !== 'free' ? Math.sin(jump * Math.PI) : 0;
+		const target = {armRx: 0, armRz: 0.04, armLx: 0, armLz: -0.04, legR: 0, legL: 0, sneak: 0, drop: 0, roll: 0, tiltZ: 0};
 		const sway = Math.sin(idle * 2) * 0.05;
-		switch (P.mode) {
+		const wave = (amount) => Object.assign(target, {armRx: sway, armRz: lerp(0.04, -2.45 + Math.sin(idle * 15) * 0.35, amount), armLx: -sway});
+		const state = P.mode === 'free' ? PB.pose : P.mode;
+		switch (state) {
 			case 'walk': {
 				const s = Math.sin(P.walkPhase);
 				Object.assign(target, {armRx: -s * 0.55, armLx: s * 0.55, legR: s * 0.7, legL: -s * 0.7});
@@ -1263,46 +1349,75 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false} = {}) =>
 				break;
 			}
 			case 'held':
-				Object.assign(target, {armRx: -2.8 + Math.sin(t * 14) * 0.25, armRz: -0.3, armLx: -2.8 + Math.cos(t * 14) * 0.25, armLz: 0.3, legR: Math.sin(t * 9) * 0.4 + 0.2, legL: -Math.sin(t * 9) * 0.4 + 0.2});
+				Object.assign(target, {armRx: -2.8 + Math.sin(t * 14) * 0.25, armRz: -0.3, armLx: -2.8 + Math.cos(t * 14) * 0.25, armLz: 0.3, legR: Math.sin(t * 9) * 0.4 + 0.2, legL: -Math.sin(t * 9) * 0.4 + 0.2, tiltZ: clamp(-PB.vx * 0.0005, -0.5, 0.5)});
 				break;
-			case 'float':
-				Object.assign(target, {armRx: Math.sin(t * 1.2) * 0.25, armRz: -1.15 + Math.sin(t * 1.5) * 0.15, armLx: -Math.sin(t * 1.2) * 0.25, armLz: 1.15 - Math.sin(t * 1.5) * 0.15, legR: Math.sin(t * 1.1) * 0.3, legL: -Math.sin(t * 1.1) * 0.3});
-				break;
-			case 'fall':
+			case 'air':
 				Object.assign(target, {armRx: -2.6, armRz: -0.4, armLx: -2.6, armLz: 0.4, legR: 0.3, legL: -0.3});
+				break;
+			case 'wave':
+				wave(1);
+				break;
+			case 'crouch':
+				// присел, как на Shift в Minecraft
+				Object.assign(target, {armRx: 0.45 + sway, armLx: 0.45 - sway, sneak: 1, drop: 0.13});
+				break;
+			case 'sit':
+				// сидит на краю, ноги свисают и болтаются
+				Object.assign(target, {armRx: -0.35, armLx: -0.35, armRz: 0.12, armLz: -0.12, legR: -1.25 + Math.sin(t * 2.4) * 0.28, legL: -1.25 - Math.sin(t * 2.4) * 0.28, drop: 1.01});
+				break;
+			case 'lie':
+				Object.assign(target, {armRz: 0.08, armLz: -0.08, roll: PB.lieDir * (Math.PI / 2)});
 				break;
 			default: {
 				// стоит: дышит и время от времени машет рукой
 				const cycle = idle % 7;
 				const waving = P.mode === 'idle' ? clamp(cycle / 0.25, 0, 1) * (1 - clamp((cycle - 1.5) / 0.3, 0, 1)) : 0;
-				Object.assign(target, {armRx: sway, armRz: lerp(0.04, -2.45 + Math.sin(idle * 15) * 0.35, waving), armLx: -sway});
+				wave(waving);
 			}
 		}
-		if (cheer > 0 && P.mode !== 'held' && P.mode !== 'float') {
+		if (cheer > 0) {
 			Object.assign(target, {armRx: lerp(target.armRx, -2.9, cheer), armRz: lerp(target.armRz, -0.3, cheer), armLx: lerp(target.armLx, -2.9, cheer), armLz: lerp(target.armLz, 0.3, cheer), legR: cheer * 0.3, legL: -cheer * 0.3});
 		}
-		for (const key of Object.keys(pose)) pose[key] = lerp(pose[key], target[key], P.mode === 'mine' ? 1 - Math.exp(-dt * 30) : k);
+		for (const key of Object.keys(pose)) pose[key] = lerp(pose[key], target[key], state === 'mine' ? 1 - Math.exp(-dt * 30) : k);
 		p.armR.rotation.set(pose.armRx, 0, pose.armRz);
 		p.armL.rotation.set(pose.armLx, 0, pose.armLz);
 		p.legR.rotation.x = pose.legR;
 		p.legL.rotation.x = pose.legL;
 		p.body.scale.y = 1 + Math.sin(idle * 2) * 0.012;
+		// присед: корпус наклоняется вперёд вокруг центра, плечи и голова уходят вперёд, бёдра назад
+		const s = pose.sneak;
+		const lean = 0.45 * s;
+		p.body.rotation.x = lean;
+		p.head.position.set(0, 18 + 6 * Math.cos(lean), 6 * Math.sin(lean));
+		p.armR.position.set(p.armR.position.x, 18 + 4 * Math.cos(lean), 4 * Math.sin(lean));
+		p.armL.position.set(p.armL.position.x, 18 + 4 * Math.cos(lean), 4 * Math.sin(lean));
+		p.legR.position.set(p.legR.position.x, 18 - 6 * Math.cos(lean), -6 * Math.sin(lean));
+		p.legL.position.set(p.legL.position.x, 18 - 6 * Math.cos(lean), -6 * Math.sin(lean));
+		player.root.position.y = -BODY - pose.drop;
 
-		// положение и поворот: прыжок — только когда стоит на острове
-		const onGround = P.mode === 'idle' || P.mode === 'walk' || P.mode === 'land' || P.mode === 'mine';
-		const hop = onGround ? Math.sin(jump * Math.PI) * 0.55 + (P.mode === 'walk' ? Math.abs(Math.sin(P.walkPhase)) * 0.06 : 0) : 0;
-		pivot.position.set(P.pos.x, P.pos.y + BODY + hop, P.pos.z);
-		const faceNow = lerpAngle(pivot.rotation.y, P.face, 1 - Math.exp(-dt * 10));
-		pivot.rotation.set(P.tumble.x, faceNow, P.tumble.z);
+		// где стоит персонаж
+		if (P.mode === 'free') {
+			// по экранной точке находим место в 3D на глубине острова
+			const feetY = PB.y + PB.hh;
+			const centerAbove = PB.pose === 'lie' ? 0.6 : BODY;
+			const local = world.worldToLocal(pxToWorld(PB.x, feetY - centerAbove * playerK, playerDepth, new THREE.Vector3()));
+			pivot.position.copy(local);
+			pivot.rotation.set(0, lerpAngle(pivot.rotation.y, 0.15, 1 - Math.exp(-dt * 10)), pose.roll + pose.tiltZ);
+		} else {
+			const onGround = P.mode === 'idle' || P.mode === 'walk' || P.mode === 'land' || P.mode === 'mine';
+			const hop = onGround ? Math.sin(jump * Math.PI) * 0.55 + (P.mode === 'walk' ? Math.abs(Math.sin(P.walkPhase)) * 0.06 : 0) : 0;
+			pivot.position.set(P.pos.x, P.pos.y + BODY + hop, P.pos.z);
+			pivot.rotation.set(0, lerpAngle(pivot.rotation.y, P.face, 1 - Math.exp(-dt * 10)), pose.roll + pose.tiltZ);
+		}
 
 		// голова следит за курсором
 		p.head.getWorldPosition(headWorld).project(camera);
 		const lx = pointerInside ? clamp((pointer.x - headWorld.x) * 1.4, -1, 1) : 0;
 		const ly = pointerInside ? clamp((pointer.y - headWorld.y) * 0.9, -0.5, 0.6) : cheer * 0.5;
 		const lookK = 1 - Math.exp(-dt * 6);
-		const busy = P.mode === 'walk' || P.mode === 'mine';
+		const busy = P.mode === 'walk' || P.mode === 'mine' || (P.mode === 'free' && PB.pose === 'lie');
 		look.yaw = lerp(look.yaw, busy ? 0 : lx, lookK);
-		look.pitch = lerp(look.pitch, busy ? (P.mode === 'mine' ? 0.4 : 0) : -ly, lookK);
+		look.pitch = lerp(look.pitch, P.mode === 'mine' ? 0.4 : busy ? 0 : -ly + s * 0.3, lookK);
 		p.head.rotation.set(look.pitch, look.yaw - (P.mode === 'idle' ? tilt.y * 0.4 : 0), 0);
 	};
 
@@ -1328,8 +1443,12 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false} = {}) =>
 		island.rotation.y = Math.sin(swayPhase) * SWAY;
 		world.updateMatrixWorld(true);
 
-		stepPlayer(dt);
-		animatePlayer(dt, idle);
+		// масштаб персонажа на экране
+		const homeWorld = world.localToWorld(tmp.copy(HOME).add(tmp2.set(0, BODY, 0)));
+		playerDepth = camera.position.distanceTo(homeWorld);
+		playerK = focal / playerDepth;
+
+		stepIslandPlayer(dt);
 
 		// блоки острова: добытые исчезают и через 5 секунд вырастают снова
 		for (const b of activeBlocks) {
@@ -1353,6 +1472,46 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false} = {}) =>
 			setBlock(b, s);
 		}
 		for (const pl of plants) pl.mesh.visible = pl.block.scale > 0.6;
+
+		// сундук подпрыгивает, когда в него прячут кубик
+		const bump = clamp((now - chestBumpAt) / 0.35, 0, 1);
+		chest.scale.setScalar(1 + Math.sin(bump * Math.PI) * 0.25);
+
+		// хитбоксы на экране
+		world.updateMatrixWorld(true);
+		const cw = chest.getWorldPosition(new THREE.Vector3());
+		const cp = toPx(cw.clone());
+		chestPx.x = cp.x;
+		chestPx.y = cp.y;
+		chestPx.r = (0.5 * focal) / camera.position.distanceTo(cw);
+		const statics = [
+			withBounds({kind: 'island', poly: hullOf(ISLAND_HULL_PTS, island), cubes: 'repel', player: false}),
+			withBounds({kind: 'island', poly: hullOf(ISLAND_BODY_PTS, island), cubes: null, player: true}),
+			withBounds({kind: 'logo', poly: hullOf(LOGO_HULL_PTS, world), cubes: 'solid', player: true}),
+			...widgetRects().map((poly) => withBounds({kind: 'widget', poly, cubes: 'solid', player: true})),
+		];
+		if (P.mode !== 'free') statics.push(withBounds({kind: 'player', poly: hullOf(PLAYER_HULL_PTS, player.root), cubes: 'solid', player: false}));
+
+		// физика: два шага за кадр, чтобы быстрые броски не пролетали сквозь препятствия
+		const sub = dt / 2;
+		stepPhysics(sub, statics);
+		stepPhysics(sub, statics);
+
+		// персонаж вне острова: встал на верх острова — идёт домой, иначе выбирает позу
+		if (P.mode === 'free' && !PB.held) {
+			if (PB.grounded && PB.support?.kind === 'island') {
+				landOnIsland();
+			} else if (!PB.grounded) {
+				PB.airT += dt;
+				if (PB.airT > 0.12 && PB.pose !== 'air') setPose('air', 0);
+			} else {
+				PB.airT = 0;
+				if (PB.pose === 'air' || PB.pose === 'held') setPose('stand', 1.2);
+				PB.poseT += dt;
+				if (PB.poseT > PB.poseDur) nextPose();
+			}
+		}
+		animatePlayer(dt, idle);
 
 		// что под курсором
 		if (drag) {
@@ -1407,31 +1566,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false} = {}) =>
 		}
 		debrisMesh.instanceMatrix.needsUpdate = true;
 
-		// сундук подпрыгивает, когда в него прячут кубик
-		const bump = clamp((now - chestBumpAt) / 0.35, 0, 1);
-		chest.scale.setScalar(1 + Math.sin(bump * Math.PI) * 0.25);
-
-		// хитбоксы на экране и физика кубиков
-		world.updateMatrixWorld(true);
-		const cw = chest.getWorldPosition(new THREE.Vector3());
-		const cp = toPx(cw.clone());
-		chestPx.x = cp.x;
-		chestPx.y = cp.y;
-		chestPx.r = (0.5 * focal) / camera.position.distanceTo(cw);
-		const obstacles = [hullOf(ISLAND_HULL_PTS, island), hullOf(PLAYER_HULL_PTS, player.root), hullOf(LOGO_HULL_PTS, world)];
-		// текст и кнопки слева тоже не дают кубикам наезжать на себя
-		if (content && viewWide) {
-			const cr = content.getBoundingClientRect();
-			const r = canvas.getBoundingClientRect();
-			const x0 = cr.left - r.left;
-			const y0 = cr.top - r.top;
-			const x1 = cr.right - r.left;
-			const y1 = cr.bottom - r.top;
-			obstacles.push([{x: x0, y: y0}, {x: x1, y: y0}, {x: x1, y: y1}, {x: x0, y: y1}]);
-		}
-		stepFloaters(dt, obstacles);
-
-		// кубики в 3D
+		// кубики в 3D: в полёте крутятся, приземлившись — встают ровно, гранью вниз
+		const snap = (a) => Math.round(a / (Math.PI / 2)) * (Math.PI / 2);
 		for (const f of floaters) {
 			let scale = f.size;
 			if (f.storedAt >= 0) {
@@ -1454,13 +1590,15 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false} = {}) =>
 					}
 				}
 			}
-			if (f.storedAt < 0 || now - f.storedAt >= 5) {
-				f.bob = lerp(f.bob, f.held ? 0 : 1, 1 - Math.exp(-dt * 3));
-				pxToWorld(f.x, f.y, f.depth, f.mesh.position);
-				f.mesh.position.y += Math.sin(idle * f.speed + f.phase) * 0.35 * f.bob;
+			if (f.storedAt < 0 || now - f.storedAt >= 5) pxToWorld(f.x, f.y, f.depth, f.mesh.position);
+			if (f.grounded && f.spin < 0.4) {
+				const kk = 1 - Math.exp(-dt * 10);
+				f.rotX = lerp(f.rotX, snap(f.rotX), kk);
+				f.rotY = lerp(f.rotY, snap(f.rotY), kk);
+			} else {
+				f.rotX += f.spin * dt;
+				f.rotY += f.spin * 0.7 * dt;
 			}
-			f.rotX += (f.rx + f.extraSpin) * dt;
-			f.rotY += (f.ry + f.extraSpin * 0.7) * dt;
 			f.mesh.rotation.set(f.rotX, f.rotY, 0);
 			f.mesh.visible = f.shown && scale > 0.001;
 			f.mesh.scale.setScalar(Math.max(0.001, scale));
@@ -1493,10 +1631,9 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false} = {}) =>
 	};
 	return {
 		positions: () => ({
-			floaters: floaters.filter((f) => f.shown && f.storedAt < 0).map((f) => ({...page(f), r: f.r})),
+			floaters: floaters.filter((f) => f.shown && f.storedAt < 0).map((f) => ({...page(f), hw: f.hw, grounded: f.grounded})),
 			chest: page(chestPx),
 			player: page(toPx(pivot.getWorldPosition(new THREE.Vector3()))),
-			// ближайший к камере блок травы — для проверки добычи
 			grass: (() => {
 				const g = blocks.filter((b) => b.type === 'grass' && b.minedAt < 0 && Math.hypot(b.pos.x, b.pos.z - 0.4) > 1.5);
 				let best = null;
@@ -1510,14 +1647,22 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false} = {}) =>
 				}
 				return page(best);
 			})(),
-			tree: page(toPx(island.localToWorld(new THREE.Vector3(TREE.x, 1.5, TREE.z + 0.5)))),
-			minDistances: (() => {
+			widgets: widgetRects().map((poly) => ({...page(poly[0]), w: poly[1].x - poly[0].x, h: poly[2].y - poly[0].y})),
+			// насколько тела залезли друг в друга (должно быть около нуля)
+			maxOverlap: (() => {
 				const l = floaters.filter((f) => f.shown && f.storedAt < 0);
-				let min = Infinity;
-				for (let i = 0; i < l.length; i++) for (let j = i + 1; j < l.length; j++) min = Math.min(min, Math.hypot(l[i].x - l[j].x, l[i].y - l[j].y) - l[i].r - l[j].r);
-				return {cubes: min, gap};
+				if (P.mode === 'free') l.push(PB);
+				let worst = 0;
+				for (let i = 0; i < l.length; i++) {
+					for (let j = i + 1; j < l.length; j++) {
+						const ox = l[i].hw + l[j].hw - Math.abs(l[i].x - l[j].x);
+						const oy = l[i].hh + l[j].hh - Math.abs(l[i].y - l[j].y);
+						if (ox > 0 && oy > 0) worst = Math.max(worst, Math.min(ox, oy));
+					}
+				}
+				return worst;
 			})(),
 		}),
-		state: () => ({mode: P.mode, pos: P.pos.toArray().map((v) => +v.toFixed(2)), mined: blocks.filter((b) => b.minedAt >= 0).length, sway: +island.rotation.y.toFixed(2)}),
+		state: () => ({mode: P.mode, pose: PB.pose, grounded: PB.grounded, support: PB.support?.kind || null, pos: P.pos.toArray().map((v) => +v.toFixed(2)), pb: [Math.round(PB.x), Math.round(PB.y)], mined: blocks.filter((b) => b.minedAt >= 0).length, sway: +island.rotation.y.toFixed(2)}),
 	};
 };

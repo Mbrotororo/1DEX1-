@@ -125,13 +125,8 @@ ul{padding:0;list-style:none}
 }
 .topbar.is-stuck{background:rgba(12,9,20,.86);border-color:var(--line);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
 .logo{display:flex;align-items:center;gap:10px;text-decoration:none}
-.logo img{width:30px;height:30px;object-fit:cover;border-radius:7px;box-shadow:0 0 0 2px rgba(154,107,255,.55)}
 /* «1DEX1 SHOP» — одним шрифтом и цветом, без выделения */
 .logo__name{font:400 16px/1 var(--font-display);letter-spacing:.02em;word-spacing:-.4em;white-space:nowrap}
-.nav{display:flex;gap:4px;margin-right:auto}
-.nav a{position:relative;padding:8px 12px;font-size:14.5px;font-weight:500;color:var(--muted);text-decoration:none;transition:color .15s}
-.nav a:hover,.nav a.is-current{color:var(--ink)}
-.nav a.is-current::after{content:"";position:absolute;left:12px;right:12px;bottom:2px;height:2px;background:var(--lime)}
 .topbar__right{display:flex;align-items:center;gap:8px;margin-left:auto}
 .icon-btn{display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 12px;font-size:14px;font-weight:500;color:var(--muted);text-decoration:none;transition:color .15s,background .15s}
 .icon-btn:hover{color:var(--ink);background:rgba(255,255,255,.05)}
@@ -162,14 +157,14 @@ ul{padding:0;list-style:none}
 		linear-gradient(180deg,#090614 0%,#120b27 58%,#0c0914 100%);
 }
 .hero{-webkit-user-select:none;user-select:none}
-.hero__gl{position:absolute;inset:0;z-index:-1;width:100%;height:100%;opacity:0;transition:opacity .9s var(--ease);touch-action:pan-y}
+.hero__gl{position:absolute;inset:0;z-index:2;width:100%;height:100%;opacity:0;transition:opacity .9s var(--ease);pointer-events:none}
 .has-gl .hero__gl{opacity:1}
 .hero__fallback{
 	display:none;position:absolute;right:6%;top:50%;z-index:-1;transform:translateY(-50%);
 	font:400 clamp(72px,13vw,200px)/1 var(--font-display);color:transparent;-webkit-text-stroke:2px var(--purple-lo);
 }
 .no-gl .hero__fallback{display:block}
-.hero__content{width:min(600px,100%);margin-left:max(0px,calc((100vw - var(--maxw))/2 - var(--gutter)))}
+.hero__content{position:relative;z-index:1;width:min(600px,100%);margin-left:max(0px,calc((100vw - var(--maxw))/2 - var(--gutter)))}
 /* подпись раздела: пиксельная иконка в плашке */
 .label{
 	display:inline-flex;align-items:center;gap:9px;padding:6px 13px 6px 7px;
@@ -177,11 +172,12 @@ ul{padding:0;list-style:none}
 	background:linear-gradient(90deg,rgba(154,107,255,.2),rgba(154,107,255,.04));
 	border:1px solid rgba(154,107,255,.35);border-radius:999px;
 }
+.label:not(:has(.pxi)){padding:7px 14px}
 .label .pxi{font-size:18px;padding:3px;box-sizing:content-box;background:rgba(12,9,20,.6);border-radius:50%}
 .eyebrow{margin-bottom:20px}
 .hero h1{font:400 clamp(34px,4.8vw,68px)/1.02 var(--font-display);letter-spacing:-.01em;word-spacing:-.4em;white-space:nowrap}
 .hero__cta{display:flex;flex-wrap:wrap;gap:14px;margin-top:36px}
-.hero__hint{position:absolute;right:var(--gutter);bottom:26px;font-size:13px;color:var(--dim);letter-spacing:.06em}
+.hero__hint{margin-top:26px;font-size:13px;color:var(--dim);letter-spacing:.06em}
 .no-gl .hero__hint{display:none}
 
 /* анимация появления текста первого экрана */
@@ -421,12 +417,11 @@ h2{font:400 clamp(26px,4vw,50px)/1.05 var(--font-display);letter-spacing:-.01em;
 	.hero{display:block;min-height:0;padding:calc(var(--topbar) + var(--safe-top)) var(--gutter) 40px}
 	.hero__gl{position:relative;inset:auto;z-index:0;width:calc(100% + var(--gutter)*2);height:min(48svh,400px);margin-inline:calc(var(--gutter)*-1)}
 	.hero__content{margin:8px 0 0}
-	.hero__hint{position:static;margin-top:26px}
 	.hero__fallback{position:static;transform:none;margin:24px 0;text-align:center}
 }
 @media (max-width:700px){
 	body{padding-bottom:calc(72px + env(safe-area-inset-bottom,0px))}
-	.nav,.ach-btn,.auth-btn{display:none}
+	.ach-btn,.auth-btn{display:none}
 	.grid,.socials{grid-template-columns:1fr}
 	.hero__cta .btn{flex:1}
 	.foot__row{margin-top:26px}

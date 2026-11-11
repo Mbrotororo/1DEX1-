@@ -209,13 +209,13 @@ $$('dialog').forEach((dlg) =>
 		$('#profile-balance').textContent = money(user.balance);
 		$('#wallet-id').textContent = `ID •••• ${walletId(user.nick)}`;
 		$('#wallet-owner').textContent = user.nick;
-		$('#wallet-history').innerHTML = user.history.length
-			? user.history
-					.map(
-						(h) => `<li><span class="wallet__op">${icon('trophy')}</span><span class="wallet__what"><b>${esc(h.title)}</b><time>${new Date(h.at).toLocaleDateString('ru-RU', {day: 'numeric', month: 'long'})}</time></span><span class="wallet__amount">+${money(h.amount)} ₽</span></li>`,
-					)
-					.join('')
-			: '<li class="wallet__empty">Операций пока нет. Собери все 10 достижений — получишь 5 ₽.</li>';
+		// история видна, только когда в ней что-то есть
+		$('#wallet-history-box').hidden = !user.history.length;
+		$('#wallet-history').innerHTML = user.history
+			.map(
+				(h) => `<li><span class="wallet__op">${icon('trophy')}</span><span class="wallet__what"><b>${esc(h.title)}</b><time>${new Date(h.at).toLocaleDateString('ru-RU', {day: 'numeric', month: 'long'})}</time></span><span class="wallet__amount">+${money(h.amount)} ₽</span></li>`,
+			)
+			.join('');
 	};
 	onAuth(paint);
 	paint();

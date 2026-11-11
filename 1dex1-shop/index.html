@@ -23,13 +23,8 @@
 
 <header class="topbar">
 	<a class="logo" href="#top" aria-label="1DEX1 SHOP — наверх">
-		<img src="img/avatar.jpg" width="30" height="30" alt="">
 		<span class="logo__name">1DEX1 SHOP</span>
 	</a>
-	<nav class="nav" aria-label="Разделы сайта">
-		<a data-nav href="#shop">Магазин</a>
-		<a data-nav href="#social">Каналы</a>
-	</nav>
 	<div class="topbar__right">
 		<a class="icon-btn" data-link="youtube" target="_blank" rel="noopener" aria-label="YouTube-канал">
 			<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18v10H3z" fill="#ff3d3d"/><path d="M10 9.5v5l4.5-2.5z" fill="#fff"/></svg>
@@ -55,16 +50,14 @@
 		<canvas id="hero-gl" class="hero__gl" aria-hidden="true"></canvas>
 		<div class="hero__fallback" aria-hidden="true">1DEX1</div>
 		<div class="hero__content">
-			<p class="eyebrow label px"><span data-icon="gem"></span>Мой магазин</p>
 			<h1>1DEX1 SHOP</h1>
 			<div class="hero__cta">
 				<a class="btn btn--lime" href="#shop">В магазин
 					<svg class="arr" viewBox="0 0 7 7" aria-hidden="true"><path d="M3 0h1v4h1v1H4v1H3V5H2V4h1z"/><path d="M1 3h1v1H1zM5 3h1v1H5z"/></svg>
 				</a>
-				<a class="btn btn--ghost" data-link="telegram" target="_blank" rel="noopener">Telegram-канал</a>
 			</div>
+			<p class="hero__hint px">Кликай по блокам, таскай кубики и персонажа — поставь его на кнопку</p>
 		</div>
-		<p class="hero__hint px">Кликай по блокам, таскай кубики и персонажа</p>
 	</section>
 
 	<div class="marquee px" id="marquee" aria-hidden="true"></div>
@@ -74,7 +67,7 @@
 		<div class="wrap">
 			<header class="head" data-reveal>
 				<div>
-					<p class="head__label label px"><span data-icon="chest"></span>Магазин</p>
+					<p class="head__label label px">Магазин</p>
 					<h2>Товары</h2>
 				</div>
 			</header>
@@ -198,7 +191,7 @@
 <dialog class="dialog" id="profile-dialog" aria-labelledby="profile-nick">
 	<div class="dialog__panel">
 		<header class="dialog__head">
-			<p class="head__label label px"><span data-icon="user"></span>Профиль</p>
+			<p class="head__label label px">Профиль</p>
 			<button class="dialog__close" data-close aria-label="Закрыть"><span data-icon-x></span></button>
 		</header>
 		<div class="profile">
@@ -234,7 +227,7 @@
 					</button>
 					<span class="wallet__soon">Пополнение появится вместе с оплатой</span>
 				</div>
-				<div class="wallet__history">
+				<div class="wallet__history" id="wallet-history-box" hidden>
 					<p class="wallet__label">История</p>
 					<ul id="wallet-history"></ul>
 				</div>
