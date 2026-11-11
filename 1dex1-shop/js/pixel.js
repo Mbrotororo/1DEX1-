@@ -96,6 +96,7 @@ export const ICONS = {
 	lock: ['...ddd...', '..d...d..', '..d...d..', '.ddddddd.', '.dsssssd.', '.dssdssd.', '.dssdssd.', '.dsssssd.', '.ddddddd.'],
 	trophy: ['ggggggggg', 'g.gGGGg.g', 'g.gGGGg.g', '.ggGGGgg.', '..gGGGg..', '...ggg...', '....g....', '...ggg...', '..ggggg..'],
 	user: ['...ppp...', '..pPPPp..', '..pPPPp..', '..pPPPp..', '...ppp...', '.ppppppp.', 'pPPPPPPPp', 'pPPPPPPPp', 'ppppppppp'],
+	camera: ['.........', '..www....', 'wwwwwwwww', 'wwwkkkwww', 'wwkwwwkww', 'wwkwwwkww', 'wwwkkkwww', 'wwwwwwwww', '.........'],
 	coin: ['..ggggg..', '.gGGGGGg.', 'gGGhhhGGg', 'gGhGGGGGg', 'gGhGGGGGg', 'gGhGGGGGg', 'gGGhhhGGg', '.gGGGGGg.', '..ggggg..'],
 	play: ['.........', '.rrrrrrr.', 'rrrwrrrrr', 'rrrwwrrrr', 'rrrwwwrrr', 'rrrwwrrrr', 'rrrwrrrrr', '.rrrrrrr.', '.........'],
 };

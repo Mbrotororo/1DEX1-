@@ -23,7 +23,7 @@
 
 <header class="topbar">
 	<a class="logo" href="#top" aria-label="1DEX1 SHOP — наверх">
-		<img src="img/head.png" width="28" height="28" alt="">
+		<img src="img/avatar.jpg" width="30" height="30" alt="">
 		<span class="logo__name">1DEX1 SHOP</span>
 	</a>
 	<nav class="nav" aria-label="Разделы сайта">
@@ -55,7 +55,7 @@
 		<canvas id="hero-gl" class="hero__gl" aria-hidden="true"></canvas>
 		<div class="hero__fallback" aria-hidden="true">1DEX1</div>
 		<div class="hero__content">
-			<p class="eyebrow px"><i></i>Мой магазин</p>
+			<p class="eyebrow label px"><span data-icon="gem"></span>Мой магазин</p>
 			<h1>1DEX1 SHOP</h1>
 			<div class="hero__cta">
 				<a class="btn btn--lime" href="#shop">В магазин
@@ -64,7 +64,7 @@
 				<a class="btn btn--ghost" data-link="telegram" target="_blank" rel="noopener">Telegram-канал</a>
 			</div>
 		</div>
-		<p class="hero__hint px">Блоки названия ломаются, парящие можно таскать</p>
+		<p class="hero__hint px">Кликай по блокам, таскай кубики и персонажа</p>
 	</section>
 
 	<div class="marquee px" id="marquee" aria-hidden="true"></div>
@@ -74,7 +74,7 @@
 		<div class="wrap">
 			<header class="head" data-reveal>
 				<div>
-					<p class="head__label px"><i></i>Магазин</p>
+					<p class="head__label label px"><span data-icon="chest"></span>Магазин</p>
 					<h2>Товары</h2>
 				</div>
 			</header>
@@ -92,7 +92,7 @@
 		<div class="wrap">
 			<header class="head" data-reveal>
 				<div>
-					<p class="head__label px"><i></i>Каналы</p>
+					<p class="head__label label px"><span data-icon="plane"></span>Каналы</p>
 					<h2>Где меня найти</h2>
 				</div>
 			</header>
@@ -102,7 +102,7 @@
 					<p class="social__kind px">YouTube</p>
 					<h3>1DEX1</h3>
 					<p class="social__handle px" data-text="yt">@hw1DEX1</p>
-					<a class="btn btn--ghost" data-link="youtube" target="_blank" rel="noopener">Смотреть канал</a>
+					<a class="btn btn--purple" data-link="youtube" target="_blank" rel="noopener">Подписаться</a>
 				</article>
 				<article class="social social--tg card" data-reveal>
 					<img class="social__ava" src="img/avatar.jpg" width="88" height="88" alt="Аватарка 1DEX1">
@@ -110,10 +110,6 @@
 					<h3>Жизнь 1DEX1</h3>
 					<p class="social__handle px" data-text="tg">@hw1DEX1</p>
 					<a class="btn btn--purple" data-link="telegram" target="_blank" rel="noopener">Подписаться</a>
-					<figure class="social__qr">
-						<img src="img/qr-telegram.svg" width="116" height="116" alt="QR-код Telegram-канала" loading="lazy">
-						<figcaption class="px">Наведи камеру телефона</figcaption>
-					</figure>
 				</article>
 			</div>
 			<p class="contact" id="contact" hidden>Реклама и сотрудничество: <a target="_blank" rel="noopener"><b></b> в Telegram</a></p>
@@ -157,7 +153,7 @@
 		<div class="dialog__bar" id="ach-bar"><i></i></div>
 		<ul class="ach-list" id="ach-list"></ul>
 		<footer class="dialog__foot">
-			<span>Достижения хранятся в этом браузере.</span>
+			<span>Собери все — получишь <b class="t-gold">5 ₽</b> на баланс.</span>
 			<button class="link-btn px" id="ach-reset">Сбросить</button>
 		</footer>
 	</div>
@@ -202,38 +198,63 @@
 <dialog class="dialog" id="profile-dialog" aria-labelledby="profile-nick">
 	<div class="dialog__panel">
 		<header class="dialog__head">
-			<p class="head__label px"><i></i>Профиль</p>
+			<p class="head__label label px"><span data-icon="user"></span>Профиль</p>
 			<button class="dialog__close" data-close aria-label="Закрыть"><span data-icon-x></span></button>
 		</header>
 		<div class="profile">
 			<div class="profile__me">
 				<label class="profile__ava" for="avatar-file" title="Сменить аватарку">
 					<span id="profile-avatar"></span>
-					<i class="px">Сменить</i>
+					<i><span data-icon="camera"></span>Сменить</i>
 				</label>
 				<input id="avatar-file" class="visually-hidden" type="file" accept="image/*">
 				<div class="profile__info">
 					<h2 id="profile-nick"></h2>
 					<p id="profile-email"></p>
-					<p class="profile__since px">В магазине с <span id="profile-since"></span></p>
+					<p class="profile__since">В магазине с <span id="profile-since"></span></p>
 				</div>
-			</div>
-			<div class="profile__ava-actions">
-				<label class="btn btn--ghost btn--sm" for="avatar-file">Выбрать аватарку</label>
-				<button class="link-btn px" id="avatar-remove">Убрать</button>
 			</div>
 
-			<section class="balance" aria-label="Баланс">
-				<div class="balance__top">
-					<span class="px">Баланс</span>
-					<span class="balance__coin" data-icon="coin"></span>
+			<section class="wallet" aria-label="Баланс">
+				<div class="wallet__card">
+					<div class="wallet__top">
+						<span>Баланс</span>
+						<span class="wallet__brand">1DEX1 SHOP</span>
+					</div>
+					<p class="wallet__sum"><b id="profile-balance">0,00</b><span>₽</span></p>
+					<div class="wallet__meta">
+						<span id="wallet-id">ID ••••</span>
+						<span id="wallet-owner"></span>
+					</div>
 				</div>
-				<p class="balance__sum"><b id="profile-balance">0</b><span>₽</span></p>
-				<div class="balance__foot">
-					<button class="btn btn--gold btn--sm" disabled>Пополнить</button>
-					<span>Пополнение появится вместе с оплатой</span>
+				<div class="wallet__actions">
+					<button class="wallet__btn" disabled>
+						<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+						Пополнить
+					</button>
+					<span class="wallet__soon">Пополнение появится вместе с оплатой</span>
+				</div>
+				<div class="wallet__history">
+					<p class="wallet__label">История</p>
+					<ul id="wallet-history"></ul>
 				</div>
 			</section>
+
+			<details class="pw">
+				<summary>Сменить пароль<i aria-hidden="true"></i></summary>
+				<form class="form form--inline" id="pw-form" novalidate>
+					<div class="field">
+						<label for="pw-old">Старый пароль</label>
+						<input id="pw-old" name="oldPassword" type="password" autocomplete="current-password" required>
+					</div>
+					<div class="field">
+						<label for="pw-new">Новый пароль</label>
+						<input id="pw-new" name="newPassword" type="password" autocomplete="new-password" minlength="6" placeholder="Минимум 6 символов" required>
+					</div>
+					<p class="form__error" id="pw-error" role="alert"></p>
+					<button class="btn btn--lime btn--sm" type="submit">Сохранить пароль</button>
+				</form>
+			</details>
 
 			<div class="profile__row">
 				<button class="stat" data-open-ach>

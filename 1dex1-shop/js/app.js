@@ -1,7 +1,7 @@
 // Главный файл сайта: собирает страницу из данных в data.js и оживляет её.
 import {MARQUEE, PRODUCTS, SITE} from './data.js';
 import {ACHIEVEMENTS, count, notify, onChange, renderList, reset, unlock} from './achievements.js';
-import {current, fileToAvatar, login, logout, onAuth, register, update} from './auth.js';
+import {changePassword, credit, current, fileToAvatar, login, logout, onAuth, register, update} from './auth.js';
 import {initFootWord} from './footer.js';
 import {coverArt, icon} from './pixel.js';
 import {breakSound} from './sound.js';
@@ -146,8 +146,15 @@ $$('dialog').forEach((dlg) =>
 	const error = $('#auth-error');
 	let mode = 'register';
 
-	const avatarHtml = (user) =>
-		user.avatar ? `<img src="${user.avatar}" alt="">` : `<span>${esc(user.nick[0].toUpperCase())}</span>`;
+	// по умолчанию аватарка — первая буква ника на цветном фоне (цвет зависит от ника)
+	const nickHue = (nick) => [...nick.toLowerCase()].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
+	const avatarHtml = (user) => {
+		if (user.avatar) return `<img src="${user.avatar}" alt="">`;
+		const h = nickHue(user.nick);
+		return `<span class="ava-letter" style="--h1:${h};--h2:${(h + 50) % 360}">${esc(user.nick[0].toUpperCase())}</span>`;
+	};
+	const money = (v) => Number(v || 0).toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+	const walletId = (nick) => String(1000 + (nickHue(nick) * 37 + nick.length * 911) % 9000);
 
 	const setMode = (next) => {
 		mode = next;
@@ -199,7 +206,16 @@ $$('dialog').forEach((dlg) =>
 		$('#profile-nick').textContent = user.nick;
 		$('#profile-email').textContent = user.email;
 		$('#profile-since').textContent = new Date(user.createdAt).toLocaleDateString('ru-RU', {day: 'numeric', month: 'long', year: 'numeric'});
-		$('#profile-balance').textContent = Number(user.balance || 0).toLocaleString('ru-RU');
+		$('#profile-balance').textContent = money(user.balance);
+		$('#wallet-id').textContent = `ID •••• ${walletId(user.nick)}`;
+		$('#wallet-owner').textContent = user.nick;
+		$('#wallet-history').innerHTML = user.history.length
+			? user.history
+					.map(
+						(h) => `<li><span class="wallet__op">${icon('trophy')}</span><span class="wallet__what"><b>${esc(h.title)}</b><time>${new Date(h.at).toLocaleDateString('ru-RU', {day: 'numeric', month: 'long'})}</time></span><span class="wallet__amount">+${money(h.amount)} ₽</span></li>`,
+					)
+					.join('')
+			: '<li class="wallet__empty">Операций пока нет. Собери все 10 достижений — получишь 5 ₽.</li>';
 	};
 	onAuth(paint);
 	paint();
@@ -226,9 +242,19 @@ $$('dialog').forEach((dlg) =>
 			notify(err.message);
 		}
 	});
-	$('#avatar-remove').addEventListener('click', () => {
-		update({avatar: null});
-		notify('Аватарка убрана');
+	// смена пароля
+	const pwForm = $('#pw-form');
+	pwForm.addEventListener('submit', async (e) => {
+		e.preventDefault();
+		const res = await changePassword(Object.fromEntries(new FormData(pwForm)));
+		$('#pw-error').textContent = res.error || '';
+		if (res.error) {
+			$(res.field === 'old' ? '#pw-old' : '#pw-new').focus();
+			return;
+		}
+		pwForm.reset();
+		pwForm.closest('details').open = false;
+		notify('Пароль изменён');
 	});
 
 	$('#logout').addEventListener('click', () => {
@@ -237,6 +263,17 @@ $$('dialog').forEach((dlg) =>
 		notify('Ты вышел из аккаунта');
 	});
 	setMode('register');
+}
+
+// ---------- награда: 5 ₽ на баланс за все достижения (один раз на аккаунт) ----------
+{
+	const reward = () => {
+		if (count() < ACHIEVEMENTS.length || !current()) return;
+		if (credit({id: 'all-achievements', amount: 5, title: 'Награда за все достижения'})) notify('+5 ₽ на баланс за все достижения!');
+	};
+	onChange(reward);
+	onAuth(reward);
+	reward();
 }
 
 // ---------- появление блоков при прокрутке ----------
@@ -287,6 +324,7 @@ import('./hero.js')
 			reducedMotion,
 			on(event) {
 				if (event === 'break') blockBroken('kirka');
+				if (event === 'mine') breakSound();
 				if (event === 'drag') unlock('telekinesis');
 				if (event === 'treasure') unlock('treasure');
 				if (event === 'tickle') unlock('tickle');

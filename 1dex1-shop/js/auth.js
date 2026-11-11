@@ -51,7 +51,8 @@ const listeners = new Set();
 export const onAuth = (fn) => listeners.add(fn);
 const emit = () => listeners.forEach((fn) => fn(current()));
 
-const publicUser = (u) => u && {nick: u.nick, email: u.email, avatar: u.avatar, balance: u.balance, createdAt: u.createdAt};
+const publicUser = (u) =>
+	u && {nick: u.nick, email: u.email, avatar: u.avatar, balance: u.balance || 0, history: u.history || [], createdAt: u.createdAt};
 
 export const current = () => {
 	const key = read(SESSION, null);
@@ -99,6 +100,37 @@ export const logout = () => {
 		// нечего удалять
 	}
 	emit();
+};
+
+// Смена пароля: нужен старый пароль
+export const changePassword = async ({oldPassword, newPassword}) => {
+	const key = read(SESSION, null);
+	const users = read(USERS, {});
+	const user = key && users[key];
+	if (!user) return {error: 'Сначала войди в аккаунт'};
+	if (user.hash !== (await hashPassword(String(oldPassword || ''), user.salt))) return {error: 'Старый пароль не подходит', field: 'old'};
+	newPassword = String(newPassword || '');
+	if (newPassword.length < 6) return {error: 'Новый пароль: минимум 6 символов', field: 'new'};
+	if (newPassword === oldPassword) return {error: 'Новый пароль совпадает со старым', field: 'new'};
+	user.salt = makeSalt();
+	user.hash = await hashPassword(newPassword, user.salt);
+	if (!write(USERS, users)) return {error: 'Браузер не дал сохранить пароль'};
+	return {ok: true};
+};
+
+// Зачислить деньги на баланс. id защищает от повторного начисления одной и той же награды.
+export const credit = ({id, amount, title}) => {
+	const key = read(SESSION, null);
+	const users = read(USERS, {});
+	const user = key && users[key];
+	if (!user) return false;
+	user.history ||= [];
+	if (user.history.some((h) => h.id === id)) return false;
+	user.balance = Math.round(((user.balance || 0) + amount) * 100) / 100;
+	user.history.unshift({id, amount, title, at: new Date().toISOString()});
+	const ok = write(USERS, users);
+	if (ok) emit();
+	return ok;
 };
 
 // Изменить свой профиль (сейчас — только аватарку)
