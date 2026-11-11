@@ -720,9 +720,12 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	bigMesh.frustumCulled = false;
 	bigGroup.add(bigMesh);
 	let bigCell = 0.3; // размер блока большой надписи в единицах мира (считается в frame)
+	const bigBase = new THREE.Vector3(); // где надпись висит без покачивания
+	const glintColor = new THREE.Color();
 
 	// Ломающиеся надписи: unit — размер блока, z — глубина, amp — волна, lift — выезд под курсором
-	const SETS = [{mesh: bigMesh, list: bigVoxels, unit: 1, z: 0, amp: 0.22, lift: 0.9}];
+	// glint — по надписи время от времени пробегает блик
+	const SETS = [{mesh: bigMesh, list: bigVoxels, unit: 1, z: 0, amp: 0.22, lift: 0.9, glint: true}];
 
 	// ================= ОСКОЛКИ =================
 	const DEBRIS = 140;
@@ -799,7 +802,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	const frame = () => {
 		const wide = width >= 900;
 		// остров: на компьютере справа, на телефоне под большой надписью
-		const rect = wide ? {x0: 0.63, x1: 0.985, y0: 0.07, y1: 0.97} : {x0: 0.04, x1: 0.96, y0: 0.22, y1: 0.995};
+		const rect = wide ? {x0: 0.63, x1: 0.985, y0: 0.07, y1: 0.97} : {x0: 0.04, x1: 0.96, y0: 0.2, y1: 0.995};
 		const aspect = width / height;
 		const tan = Math.tan((camera.fov * Math.PI) / 360);
 		const rw = rect.x1 - rect.x0;
@@ -823,14 +826,15 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		camera.updateMatrixWorld();
 		focal = height / 2 / tan;
 		// большая надпись: на компьютере посередине слева от острова, на телефоне — сверху
-		const L = wide ? {cx: 0.36, cy: 0.42, w: 0.5} : {cx: 0.5, cy: 0.11, w: 0.86};
+		const L = wide ? {cx: 0.36, cy: 0.42, w: 0.5} : {cx: 0.5, cy: 0.12, w: 0.8};
 		const d = dist * 0.8;
 		const viewH = 2 * d * tan;
 		const viewW = viewH * aspect;
 		bigCell = Math.min((L.w * viewW) / BIG.width, (0.2 * viewH) / 7);
 		const bx = (L.cx - 0.5) * viewW;
 		const by = (0.5 - L.cy) * viewH;
-		bigGroup.position.set(bx, by, -d);
+		bigBase.set(bx, by, -d);
+		bigGroup.position.copy(bigBase);
 		bigGroup.scale.setScalar(bigCell);
 		// передние грани кубиков повёрнуты прямо к камере, то есть к зрителю
 		bigGroup.rotation.set(Math.atan2(by, d), Math.atan2(-bx, d), 0);
@@ -2161,6 +2165,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		if (!reducedMotion) swayPhase += dt * SWAY_SPEED;
 		island.rotation.y = Math.sin(swayPhase) * SWAY;
 		disk.rotation.z = idle * 0.035; // галактика вращается
+		// большая надпись плавно покачивается вверх-вниз
+		bigGroup.position.set(bigBase.x, bigBase.y + Math.sin(idle * 0.9) * 0.3 * bigCell, bigBase.z);
 		world.updateMatrixWorld(true);
 
 		const homeWorld = island.localToWorld(tmp.copy(HOME).add(tmp2.set(0, BODY, 0)));
@@ -2256,9 +2262,22 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			for (const set of SETS) set.list.forEach((v, i) => (v.hoverTarget = hovered && hovered.set === set && hovered.i === i ? 1 : 0));
 		} else for (const set of SETS) set.list.forEach((v) => (v.hoverTarget = 0));
 
+		// блик: раз в 5 секунд за 2,2 секунды пробегает по надписи слева направо, чуть наискосок
+		const sweep = (idle % 5) / 2.2;
+		const glintAt = sweep <= 1 && !reducedMotion ? sweep * 1.4 - 0.2 : null;
+
 		// блоки надписей: своя волна, но не вращаются
 		for (const set of SETS) {
 			const {list, mesh, unit, z, amp, lift} = set;
+			if (set.glint) {
+				for (let i = 0; i < list.length; i++) {
+					const v = list[i];
+					const xn = (v.x + BIG.width / 2) / BIG.width + v.y * 0.025;
+					const g = glintAt === null ? 0 : Math.exp(-((xn - glintAt) ** 2) / 0.0035);
+					mesh.setColorAt(i, glintColor.copy(v.color).multiplyScalar(1 + g * 0.65));
+				}
+				mesh.instanceColor.needsUpdate = true;
+			}
 			for (let i = 0; i < list.length; i++) {
 				const v = list[i];
 				if (v.brokenAt >= 0) {

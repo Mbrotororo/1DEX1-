@@ -586,7 +586,8 @@ body{padding-bottom:104px}
 	.case{grid-template-columns:1fr}
 	.case__stage{min-height:250px;border-right:0;border-bottom:2px solid var(--line)}
 	.hero{display:block;min-height:0;padding:calc(var(--topbar) + var(--safe-top)) var(--gutter) 40px}
-	.hero__gl{position:relative;inset:auto;z-index:0;width:calc(100% + var(--gutter)*2);height:min(68svh,600px);margin-inline:calc(var(--gutter)*-1)}
+	/* холст во всю ширину экрана (без max-width, иначе он уже экрана и сдвинут влево) */
+	.hero__gl{position:relative;inset:auto;z-index:0;width:calc(100% + var(--gutter)*2);max-width:none;height:min(68svh,600px);margin-inline:calc(var(--gutter)*-1)}
 	.hero__content{margin:8px 0 0}
 	.hero__fallback{position:static;transform:none;margin:24px 0;text-align:center}
 }
