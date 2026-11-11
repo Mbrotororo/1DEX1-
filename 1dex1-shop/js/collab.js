@@ -3,7 +3,7 @@
 // отталкиваются друг от друга, от аватарки и от краёв. По умолчанию значки чуть в тени;
 // под курсором значок замирает, светлеет и увеличивается, клик открывает сайт визуала.
 
-const SIZE = 84; // диаметр значка
+const SIZE = 42; // диаметр значка
 const SPEED = 28; // скорость полёта, пикселей в секунду
 const PAD = 14; // отступ от рамки виджета
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -37,7 +37,7 @@ export const initCollab = (space, avatar, items, {reducedMotion = false} = {}) =
 		H = r.height;
 		const ar = avatar.getBoundingClientRect();
 		A = {x: ar.left - r.left + ar.width / 2, y: ar.top - r.top + ar.height / 2, r: ar.width / 2 + 10};
-		const size = Math.round(W < 520 ? SIZE * 0.8 : SIZE); // на узком экране значки чуть мельче
+		const size = Math.round(W < 520 ? SIZE * 0.9 : SIZE); // на узком экране значки чуть мельче
 		for (const b of bodies) {
 			b.size = size;
 			b.r = size / 2;
@@ -47,7 +47,7 @@ export const initCollab = (space, avatar, items, {reducedMotion = false} = {}) =
 		}
 	};
 	// пределы для центра значка: внутри рамки, снизу место под подпись
-	const lim = (b) => ({x0: PAD + b.hw, x1: W - PAD - b.hw, y0: PAD + b.r, y1: H - PAD - b.r - 20});
+	const lim = (b) => ({x0: PAD + b.hw, x1: W - PAD - b.hw, y0: PAD + b.r, y1: H - PAD - b.r - 18});
 
 	// начальная расстановка: по кругу вокруг аватарки, на равных углах
 	const place = () => {
@@ -69,7 +69,7 @@ export const initCollab = (space, avatar, items, {reducedMotion = false} = {}) =
 	const labelHit = (b, cx, cy, cr) => {
 		const top = b.y + b.r + 4;
 		const px = clamp(cx, b.x - b.hw, b.x + b.hw);
-		const py = clamp(cy, top, top + 18);
+		const py = clamp(cy, top, top + 15);
 		const dx = px - cx;
 		const dy = py - cy;
 		const d = Math.hypot(dx, dy);

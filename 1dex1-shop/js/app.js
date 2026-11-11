@@ -121,8 +121,6 @@ renderShop();
 		const url = `https://t.me/${nick.slice(1)}`;
 		btn.href = url;
 		$('#collab-name').textContent = nick.slice(1);
-		$('#collab-user').textContent = nick;
-		$('#collab-user').hidden = false;
 		$('#collab-nick').textContent = nick;
 		$('#collab-row').hidden = false;
 		$('#collab-copy').addEventListener('click', async () => {
