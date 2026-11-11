@@ -7,7 +7,8 @@
 //   и кнопки, летит за посетителем, когда тот листает страницу, и показывает эмоции в облачке.
 //   Его можно отлепить и плавно бросить. Сверху на острове — спрыгивает на траву.
 // - С алмазной киркой он ломает стену (бегущую строку) и может летать по всему сайту.
-// - Название «ЖИЗНЬ 1DEX1» из блоков висит на месте, его блоки ломаются кликом.
+// - Посередине экрана — большая надпись «1DEX1 SHOP» из салатовых блоков, остров справа.
+//   Над островом — «ЖИЗНЬ 1DEX1». Блоки обеих надписей ломаются кликом и вырастают снова.
 // - Сзади галактика, а звёзды по всему фону медленно вращаются вокруг её ядра.
 import * as THREE from '../vendor/three.module.min.js';
 import {CROSSHAIR, icon, wordPixels} from './pixel.js';
@@ -731,6 +732,29 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	wordMesh.frustumCulled = false;
 	world.add(wordMesh);
 
+	// ================= БОЛЬШАЯ НАДПИСЬ «1DEX1 SHOP» ПОСЕРЕДИНЕ =================
+	// Висит перед камерой, поэтому всегда в одном месте экрана: на компьютере — посередине
+	// слева от острова, на телефоне — сверху. Чуть наклонена, чтобы были видны верх и бока блоков.
+	const BIG = wordPixels('1DEX1 SHOP');
+	const bigGroup = new THREE.Group();
+	camera.add(bigGroup);
+	scene.add(camera);
+	const bigTop = new THREE.Color('#ccff5c');
+	const bigBottom = new THREE.Color('#62b20c');
+	const bigVoxels = BIG.pixels.map((p) => ({x: p.x - BIG.width / 2 + 0.5, y: p.y - 3, color: bigTop.clone().lerp(bigBottom, p.row / 6), phase: p.x * 0.28, hover: 0, brokenAt: -1, scale: 1}));
+	const bigMesh = new THREE.InstancedMesh(box, new THREE.MeshLambertMaterial({map: tex.voxel, emissive: '#1f2b0e'}), bigVoxels.length);
+	bigVoxels.forEach((v, i) => bigMesh.setColorAt(i, v.color));
+	bigMesh.instanceColor.needsUpdate = true;
+	bigMesh.frustumCulled = false;
+	bigGroup.add(bigMesh);
+	let bigCell = 0.3; // размер блока большой надписи в единицах мира (считается в frame)
+
+	// Все ломающиеся надписи: unit — размер блока, z — глубина, amp — волна, lift — выезд под курсором
+	const SETS = [
+		{mesh: wordMesh, list: voxels, unit: VOXEL, z: -1, amp: 0.07, lift: 0.32},
+		{mesh: bigMesh, list: bigVoxels, unit: 1, z: 0, amp: 0.22, lift: 0.9},
+	];
+
 	// ================= ОСКОЛКИ =================
 	const DEBRIS = 140;
 	const debris = Array.from({length: DEBRIS}, () => ({life: 0, pos: new THREE.Vector3(), vel: new THREE.Vector3(), spin: 0, size: 0}));
@@ -805,7 +829,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 
 	const frame = () => {
 		const wide = width >= 900;
-		const rect = wide ? {x0: 0.47, x1: 0.98, y0: 0.1, y1: 0.95} : {x0: 0.03, x1: 0.97, y0: 0.08, y1: 0.99};
+		// остров: на компьютере справа, на телефоне под большой надписью
+		const rect = wide ? {x0: 0.63, x1: 0.985, y0: 0.07, y1: 0.97} : {x0: 0.04, x1: 0.96, y0: 0.22, y1: 0.995};
 		const aspect = width / height;
 		const tan = Math.tan((camera.fov * Math.PI) / 360);
 		const rw = rect.x1 - rect.x0;
@@ -828,6 +853,16 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		camera.updateProjectionMatrix();
 		camera.updateMatrixWorld();
 		focal = height / 2 / tan;
+		// большая надпись: на компьютере посередине слева от острова, на телефоне — сверху
+		const L = wide ? {cx: 0.36, cy: 0.42, w: 0.5} : {cx: 0.5, cy: 0.11, w: 0.86};
+		const d = dist * 0.8;
+		const viewH = 2 * d * tan;
+		const viewW = viewH * aspect;
+		bigCell = Math.min((L.w * viewW) / BIG.width, (0.2 * viewH) / 7);
+		bigGroup.position.set((L.cx - 0.5) * viewW, (0.5 - L.cy) * viewH, -d);
+		bigGroup.scale.setScalar(bigCell);
+		bigGroup.rotation.set(0.32, -0.08, 0);
+		camera.updateMatrixWorld(true);
 	};
 
 	// экранные пиксели канваса <-> 3D
@@ -979,10 +1014,14 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	const zone = canvas.parentElement;
 	const raycaster = new THREE.Raycaster();
 	const castRay = () => raycaster.setFromCamera(pointerNdc, camera);
+	// блок любой из надписей под курсором: {set, i} или null
 	const pickVoxel = () => {
 		castRay();
-		const hit = raycaster.intersectObject(wordMesh, false)[0];
-		return hit && voxels[hit.instanceId].brokenAt < 0 ? hit.instanceId : -1;
+		for (const set of SETS) {
+			const hit = raycaster.intersectObject(set.mesh, false)[0];
+			if (hit && set.list[hit.instanceId].brokenAt < 0) return {set, i: hit.instanceId};
+		}
+		return null;
 	};
 	const pickPlayer = () => {
 		if (P.mode === 'free') return false;
@@ -1003,13 +1042,15 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	let broken = 0;
 	let tickles = 0;
 
-	const breakVoxel = (i) => {
-		const v = voxels[i];
+	const breakVoxel = ({set, i}) => {
+		const v = set.list[i];
 		v.brokenAt = now;
 		v.hover = 0;
 		broken++;
 		if (P.mode === 'idle') jumpAt = now;
-		spawnDebris(tmp.set(v.x, v.y, -1), `#${v.color.getHexString()}`, 9, 1, 0.7);
+		const big = set.mesh === bigMesh;
+		const at = big ? world.worldToLocal(bigGroup.localToWorld(tmp.set(v.x, v.y, 0))) : tmp.set(v.x, v.y, -1);
+		spawnDebris(at, `#${v.color.getHexString()}`, big ? 12 : 9, 1, big ? (bigCell / VOXEL) * 0.8 : 0.7);
 		on('break', broken);
 	};
 
@@ -1185,7 +1226,6 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	let widgets = [];
 	let widgetsAt = -1;
 	const WIDGETS = [
-		['.hero__content h1', true],
 		['.hero__content .btn', false],
 		['.section .head__label', false],
 		['.section h2', true],
@@ -1201,6 +1241,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const out = [];
 		for (const [sel, isText] of WIDGETS) {
 			document.querySelectorAll(sel).forEach((el) => {
+				if (el.closest('.visually-hidden')) return; // невидимый текст — не сиденье
 				let r;
 				if (isText) {
 					const range = document.createRange();
@@ -1217,6 +1258,10 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const pts = [];
 		for (const x of [-titleW * VOXEL * 0.5, titleW * VOXEL * 0.5]) for (const y of [WORD_Y + 0.1, TITLE_TOP]) pts.push(toPx(world.localToWorld(tmp.set(x, y, -1))));
 		out.push({el: wordMesh, left: Math.min(...pts.map((p) => p.x)) + o.x, right: Math.max(...pts.map((p) => p.x)) + o.x, top: Math.min(...pts.map((p) => p.y)) + o.y, bottom: Math.max(...pts.map((p) => p.y)) + o.y});
+		// и большая «1DEX1 SHOP»
+		const big = [];
+		for (const x of [-BIG.width / 2, BIG.width / 2]) for (const y of [-3.5, 3.5]) big.push(toPx(bigGroup.localToWorld(tmp.set(x, y, 0))));
+		out.push({el: bigMesh, left: Math.min(...big.map((p) => p.x)) + o.x, right: Math.max(...big.map((p) => p.x)) + o.x, top: Math.min(...big.map((p) => p.y)) + o.y, bottom: Math.max(...big.map((p) => p.y)) + o.y});
 		return out;
 	};
 
@@ -1602,7 +1647,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		if (e.target.closest('a, button')) return;
 		updatePointer(e.clientX, e.clientY);
 		downAt = [e.clientX, e.clientY];
-		if (pickVoxel() >= 0) return;
+		if (pickVoxel()) return;
 		if (pickPlayer()) {
 			drag = {x0: e.clientX, y0: e.clientY, started: false, free: false};
 			e.preventDefault(); // иначе браузер начинает выделять текст
@@ -1614,8 +1659,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 8) return;
 		if (e.target.closest('a, button')) return;
 		updatePointer(e.clientX, e.clientY);
-		const i = pickVoxel();
-		if (i >= 0) breakVoxel(i);
+		const hit = pickVoxel();
+		if (hit) breakVoxel(hit);
 		else if (pickPlayer()) {
 			if (P.mode === 'idle') jumpAt = now;
 			if (++tickles === 5) on('tickle');
@@ -2227,34 +2272,42 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		if (heroVisible && pointerInHero && !drag) {
 			const hovered = pickVoxel();
 			let cur = '';
-			if (hovered >= 0) cur = CROSSHAIR;
+			if (hovered) cur = CROSSHAIR;
 			else if (pickPlayer()) cur = 'grab';
 			else if (!busy()) {
 				const b = pickBlock();
 				if (b && canReach(b, standFor(b))) cur = CROSSHAIR;
 			}
 			setCursor(cur);
-			voxels.forEach((v, i) => (v.hoverTarget = i === hovered ? 1 : 0));
-		} else voxels.forEach((v) => (v.hoverTarget = 0));
+			for (const set of SETS) set.list.forEach((v, i) => (v.hoverTarget = hovered && hovered.set === set && hovered.i === i ? 1 : 0));
+		} else for (const set of SETS) set.list.forEach((v) => (v.hoverTarget = 0));
 
-		// блоки названия: своя волна, но не вращаются
-		for (let i = 0; i < voxels.length; i++) {
-			const v = voxels[i];
-			if (v.brokenAt >= 0) {
-				const since = now - v.brokenAt;
-				if (since > RESPAWN + APPEAR) v.brokenAt = -1;
-				v.scale = since < RESPAWN ? 0 : easeOutCubic((since - RESPAWN) / APPEAR);
-			} else v.scale = 1;
-			v.hover = lerp(v.hover, v.hoverTarget || 0, 1 - Math.exp(-dt * 14));
-			const wave = Math.sin(idle * 1.6 + v.phase) * 0.07;
-			dummy.position.set(v.x, v.y + wave, -1 + v.hover * 0.32);
-			dummy.rotation.set(0, 0, 0);
-			const s = VOXEL * v.scale * (1 + v.hover * 0.12);
-			dummy.scale.set(s, s, s * WORD_DEPTH);
-			dummy.updateMatrix();
-			wordMesh.setMatrixAt(i, dummy.matrix);
+		// блоки надписей: своя волна, но не вращаются
+		for (const set of SETS) {
+			const {list, mesh, unit, z, amp, lift} = set;
+			for (let i = 0; i < list.length; i++) {
+				const v = list[i];
+				if (v.brokenAt >= 0) {
+					const since = now - v.brokenAt;
+					if (since > RESPAWN + APPEAR) v.brokenAt = -1;
+					v.scale = since < RESPAWN ? 0 : easeOutCubic((since - RESPAWN) / APPEAR);
+				} else v.scale = 1;
+				v.hover = lerp(v.hover, v.hoverTarget || 0, 1 - Math.exp(-dt * 14));
+				const wave = Math.sin(idle * 1.6 + v.phase) * amp;
+				dummy.position.set(v.x, v.y + wave, z + v.hover * lift);
+				dummy.rotation.set(0, 0, 0);
+				const sc = unit * v.scale * (1 + v.hover * 0.12);
+				dummy.scale.set(sc, sc, sc * WORD_DEPTH);
+				dummy.updateMatrix();
+				mesh.setMatrixAt(i, dummy.matrix);
+			}
+			mesh.instanceMatrix.needsUpdate = true;
+			// границы для попадания курсором считаем по настоящим положениям блоков
+			if (!set.bounded) {
+				mesh.computeBoundingSphere();
+				set.bounded = true;
+			}
 		}
-		wordMesh.instanceMatrix.needsUpdate = true;
 
 		// осколки
 		for (let i = 0; i < DEBRIS; i++) {

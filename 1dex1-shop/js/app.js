@@ -1,9 +1,10 @@
 // Главный файл сайта: собирает страницу из данных в data.js и оживляет её.
-import {CASE, MARQUEE, PRODUCTS, SITE} from './data.js';
+import {CASE, MARQUEE, PRODUCTS, SITE, VISUALS} from './data.js';
 import {ACHIEVEMENTS, count, notify, onChange, renderList, reset, unlock} from './achievements.js';
 import {changePassword, credit, current, fileToAvatar, login, logout, onAuth, openCase, register, update} from './auth.js';
+import {initCollab} from './collab.js';
 import {initFootWord} from './footer.js';
-import {caseArt, coverArt, icon, logoSvg, navIcon} from './pixel.js';
+import {caseArt, coverArt, icon, navIcon} from './pixel.js';
 import {breakSound} from './sound.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -18,10 +19,9 @@ const CLOSE_ICON =
 $$('[data-icon-x]').forEach((el) => (el.innerHTML = CLOSE_ICON));
 $$('[data-nav-icon]').forEach((el) => (el.innerHTML = navIcon(el.dataset.navIcon)));
 
-// ---------- надпись «1DEX1 SHOP» в шапке: пиксельные блоки, как в Minecraft ----------
+// ---------- надпись «1DEX1 SHOP» в шапке ----------
 // На компьютере пульсирует под курсором (это делает CSS), на телефоне — от нажатия.
-$$('[data-mc-logo]').forEach((el) => {
-	el.innerHTML = logoSvg(el.textContent.trim());
+$$('.logo__name').forEach((el) => {
 	const pulse = () => {
 		el.classList.remove('is-pulse');
 		void el.offsetWidth; // перезапуск анимации
@@ -113,12 +113,33 @@ $('#shop-tabs').addEventListener('click', (e) => {
 });
 renderShop();
 
-// ---------- реклама: блок виден, только если указан контакт ----------
-if (SITE.contact) {
-	const c = $('#contact');
-	c.hidden = false;
-	$('a', c).href = `https://t.me/${SITE.contact.replace(/^@/, '')}`;
-	$('b', c).textContent = SITE.contact;
+// ---------- сотрудничество: личный профиль и визуалы вокруг аватарки ----------
+{
+	const nick = SITE.contact.trim().replace(/^@?/, '@');
+	const btn = $('#collab-btn');
+	if (nick.length > 1) {
+		const url = `https://t.me/${nick.slice(1)}`;
+		btn.href = url;
+		$('#collab-user').textContent = nick;
+		$('#collab-user').hidden = false;
+		$('#collab-nick').textContent = nick;
+		$('#collab-row').hidden = false;
+		$('#collab-copy').addEventListener('click', async () => {
+			try {
+				await navigator.clipboard.writeText(nick);
+				notify(`Скопировано: ${nick}`);
+			} catch {
+				notify(nick);
+			}
+		});
+	} else {
+		// ник ещё не указан в data.js — кнопка неактивна
+		btn.removeAttribute('href');
+		btn.setAttribute('aria-disabled', 'true');
+		btn.classList.add('is-off');
+		btn.textContent = 'Ник для связи скоро появится';
+	}
+	initCollab($('#collab-space'), $('.collab__ava'), VISUALS, {reducedMotion});
 }
 
 // ---------- окна (достижения, вход, профиль) ----------
@@ -340,7 +361,9 @@ $$('dialog').forEach((dlg) =>
 	const spy = new IntersectionObserver(
 		(entries) => {
 			entries.forEach((e) => {
-				if (!e.isIntersecting || !slots.some((s) => s.dataset.slot === e.target.id)) return;
+				if (!e.isIntersecting) return;
+				$$('.topnav a').forEach((a) => a.classList.toggle('is-on', a.hash === `#${e.target.id}`));
+				if (!slots.some((s) => s.dataset.slot === e.target.id)) return;
 				sectionSlot = e.target.id;
 				if (performance.now() > lockUntil && !dialogs.some((d) => d.open)) select(sectionSlot);
 			});
@@ -366,7 +389,6 @@ $$('dialog').forEach((dlg) =>
 	const art = $('#case-art');
 	const prizeBox = $('#case-prize');
 	const btn = $('#case-open');
-	const note = $('#case-note');
 	const dot = $('.hotbar__dot');
 	const LOOT_ICON = {money: 'coin', rp: 'gem'};
 	art.innerHTML = caseArt();
@@ -398,15 +420,12 @@ $$('dialog').forEach((dlg) =>
 		if (!current()) {
 			set(btn, 'disabled', false);
 			set(btn, 'textContent', 'Войти и открыть');
-			set(note, 'textContent', 'Кейс открывается в аккаунте: награда идёт на его баланс.');
 		} else if (ms > 0) {
 			set(btn, 'disabled', true);
 			set(btn, 'textContent', `Откроется через ${clock(ms)}`);
-			set(note, 'textContent', 'Новый кейс — каждые 24 часа.');
 		} else {
 			set(btn, 'disabled', false);
 			set(btn, 'textContent', 'Открыть кейс');
-			set(note, 'textContent', 'Кейс готов — открывай!');
 		}
 	};
 	paint();

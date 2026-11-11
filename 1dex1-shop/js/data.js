@@ -9,9 +9,18 @@ export const SITE = {
 	youtubeHandle: '@hw1DEX1',
 	telegram: 'https://t.me/hw1DEX1',
 	telegramHandle: '@hw1DEX1',
-	// Личный контакт для рекламы, например '@username'. Пусто — блок не показывается.
+	// Личный Telegram для рекламы и сотрудничества, например '@username'.
+	// Пока пусто, кнопка «Написать в Telegram» в разделе «Сотрудничество» неактивна.
 	contact: '',
 };
+
+// Визуалы, с которыми сотрудничаешь: их логотипы летают вокруг аватарки
+// в разделе «Сотрудничество», клик открывает сайт. Логотипы лежат в img/visuals/.
+export const VISUALS = [
+	{name: 'Aura', url: 'https://auravisuals.space/', logo: 'img/visuals/aura.svg', fit: 'contain'},
+	{name: 'FadingVisual', url: 'https://fadingvisual.xyz/', logo: 'img/visuals/fading.jpg'},
+	{name: 'Fantasy', url: 'https://fantasyvisuals.cc/', logo: 'img/visuals/fantasy.png', fit: 'contain', pixel: true},
+];
 
 // Слова в бегущей строке под первым экраном
 export const MARQUEE = ['Магазин', 'Моды', 'РП'];

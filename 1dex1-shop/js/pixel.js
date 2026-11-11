@@ -128,23 +128,6 @@ const CASE_BASE = ['kgpppppkkpppppgk', 'kgppppkGgkppppgk', 'kgppppkghkppppgk', '
 export const caseArt = () =>
 	`<span class="case__lid">${pixelSvg(CASE_LID, C)}</span><span class="case__base">${pixelSvg(CASE_BASE, C)}</span>`;
 
-// ---------- надпись в стиле заставки Minecraft ----------
-// Буквы из блоков: тёмная обводка, объём уходит вниз-вправо, как у логотипа игры,
-// на каждом блоке светлый верх, тёмный низ и пара крапинок. Сверху вниз — переход цвета.
-export const logoSvg = (word, {top = '#f2ffc8', mid = '#b8ff3d', bottom = '#6cb312', side = '#4a8a0e', sideDeep = '#2f5c08', line = '#0e1c03'} = {}) => {
-	const {pixels, width, height} = wordPixels(word);
-	const S = 4; // клетка буквы — 4x4 единицы
-	const D = 3; // глубина объёма
-	const cells = (d, grow = 0) =>
-		pixels.map((p) => `M${p.x * S + d - grow + 1} ${(height - 1 - p.y) * S + d - grow + 1}h${S + grow * 2}v${S + grow * 2}h${-S - grow * 2}z`).join('');
-	const W = width * S + D + 2;
-	const H = height * S + D + 2;
-	return `<svg class="mc-logo" viewBox="0 0 ${W} ${H}" shape-rendering="crispEdges" aria-hidden="true"><defs>
-<linearGradient id="mc-logo-g" x1="0" y1="1" x2="0" y2="${height * S + 1}" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="${top}"/><stop offset=".45" stop-color="${mid}"/><stop offset="1" stop-color="${bottom}"/></linearGradient>
-<pattern id="mc-logo-t" x="1" y="1" width="${S}" height="${S}" patternUnits="userSpaceOnUse"><rect width="${S}" height="1" fill="#fff" fill-opacity=".32"/><rect y="${S - 1}" width="${S}" height="1" fill="#000" fill-opacity=".2"/><rect x="1" y="1" width="1" height="1" fill="#fff" fill-opacity=".16"/><rect x="2" y="2" width="1" height="1" fill="#000" fill-opacity=".12"/></pattern></defs>
-<path d="${cells(D, 1)}" fill="${line}"/><path d="${cells(D)}" fill="${sideDeep}"/><path d="${cells(2)}" fill="${sideDeep}"/><path d="${cells(1)}" fill="${side}"/>
-<path d="${cells(0, 1)}" fill="${line}"/><path d="${cells(0)}" fill="url(#mc-logo-g)"/><path d="${cells(0)}" fill="url(#mc-logo-t)"/></svg>`;
-};
 
 // ---------- обложки товаров (12x12), если у товара нет своей картинки ----------
 const MYSTERY = [
