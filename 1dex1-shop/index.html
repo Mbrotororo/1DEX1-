@@ -52,7 +52,7 @@
 
 <main>
 	<!-- ============ ПЕРВЫЙ ЭКРАН ============ -->
-	<section class="hero" id="top">
+	<section class="hero" id="top" data-page="home">
 		<canvas id="hero-sky" class="hero__sky" aria-hidden="true"></canvas>
 		<canvas id="hero-gl" class="hero__gl" aria-hidden="true"></canvas>
 		<div class="hero__fallback" aria-hidden="true">1DEX1</div>
@@ -66,10 +66,10 @@
 		</div>
 	</section>
 
-	<div class="marquee px" id="marquee" aria-hidden="true"></div>
+	<div class="marquee px" id="marquee" aria-hidden="true" data-page="home"></div>
 
 	<!-- ============ МАГАЗИН ============ -->
-	<section class="section" id="shop">
+	<section class="section" id="shop" data-page="shop">
 		<div class="wrap">
 			<header class="head" data-reveal>
 				<div>
@@ -87,7 +87,7 @@
 	</section>
 
 	<!-- ============ КЕЙСЫ ============ -->
-	<section class="section" id="cases">
+	<section class="section" id="cases" data-page="cases">
 		<div class="wrap">
 			<header class="head" data-reveal>
 				<h2>Кейсы</h2>
@@ -108,7 +108,7 @@
 	</section>
 
 	<!-- ============ СОТРУДНИЧЕСТВО ============ -->
-	<section class="section" id="collab">
+	<section class="section" id="collab" data-page="home">
 		<div class="wrap">
 			<header class="head" data-reveal>
 				<h2>Сотрудничество</h2>
@@ -123,7 +123,6 @@
 				<div class="collab__info">
 					<h3 id="collab-name">RodionDex</h3>
 					<p class="collab__user px" id="collab-user" hidden></p>
-					<p class="collab__text">Личный аккаунт для связи: реклама, сотрудничество и вопросы по модам.</p>
 					<div class="collab__row" id="collab-row" hidden>
 						<span class="px">Telegram</span>
 						<b id="collab-nick"></b>
@@ -136,7 +135,7 @@
 	</section>
 
 	<!-- ============ КАНАЛЫ ============ -->
-	<section class="section" id="social">
+	<section class="section" id="social" data-page="home">
 		<div class="wrap">
 			<header class="head" data-reveal>
 				<h2>Каналы</h2>
@@ -161,7 +160,7 @@
 	</section>
 </main>
 
-<footer class="foot">
+<footer class="foot" data-page="home">
 	<div class="wrap">
 		<canvas id="foot-word" class="foot__word" aria-label="1DEX1 SHOP" role="img"></canvas>
 		<div class="foot__row">
@@ -169,7 +168,6 @@
 			<nav class="foot__links px" aria-label="Ссылки">
 				<a data-link="youtube" target="_blank" rel="noopener">YouTube</a>
 				<a data-link="telegram" target="_blank" rel="noopener">Telegram</a>
-				<a href="#top">Наверх</a>
 			</nav>
 		</div>
 	</div>

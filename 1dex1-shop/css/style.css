@@ -66,6 +66,7 @@ main,.foot{position:relative;z-index:1}
 img,svg,canvas{display:block;max-width:100%}
 a{color:inherit}
 button,input{font:inherit;color:inherit}
+a,button{touch-action:manipulation}
 h1,h2,h3,p,ul,figure{margin:0}
 ul{padding:0;list-style:none}
 [hidden]{display:none!important}
@@ -328,7 +329,7 @@ h2{font:400 clamp(26px,4vw,50px)/1.05 var(--font-display);letter-spacing:-.01em;
    (за рамку не вылетают), снизу ник и кнопка «Написать в Telegram». */
 .collab{
 	position:relative;width:min(820px,100%);margin-inline:auto;background:var(--surface);
-	box-shadow:inset 0 0 0 2px var(--line-2),inset 4px 4px 0 rgba(255,255,255,.03),inset -4px -4px 0 rgba(0,0,0,.35);
+	box-shadow:inset 0 0 0 2px var(--line-2);
 	clip-path:polygon(8px 0,calc(100% - 8px) 0,calc(100% - 8px) 4px,calc(100% - 4px) 4px,calc(100% - 4px) 8px,100% 8px,100% calc(100% - 8px),calc(100% - 4px) calc(100% - 8px),calc(100% - 4px) calc(100% - 4px),calc(100% - 8px) calc(100% - 4px),calc(100% - 8px) 100%,8px 100%,8px calc(100% - 4px),4px calc(100% - 4px),4px calc(100% - 8px),0 calc(100% - 8px),0 8px,4px 8px,4px 4px,8px 4px);
 }
 /* салатовые уголки рамки */
@@ -343,20 +344,16 @@ h2{font:400 clamp(26px,4vw,50px)/1.05 var(--font-display);letter-spacing:-.01em;
 }
 /* пространство, где вокруг аватарки летают значки */
 .collab__space{
-	position:relative;height:clamp(300px,30vw,380px);overflow:hidden;border-bottom:2px solid var(--line);
-	background:
-		linear-gradient(rgba(255,255,255,.03) 1px,transparent 1px) 0 0/100% 24px,
-		linear-gradient(90deg,rgba(255,255,255,.03) 1px,transparent 1px) 0 0/24px 100%,
-		radial-gradient(45% 60% at 50% 50%,rgba(154,107,255,.2),transparent 72%),
-		var(--well);
+	position:relative;height:clamp(300px,30vw,380px);overflow:hidden;
+	background:radial-gradient(45% 60% at 50% 50%,rgba(154,107,255,.2),transparent 72%);
 }
 .collab__ava{
 	position:absolute;left:50%;top:50%;z-index:4;width:clamp(124px,12vw,150px);aspect-ratio:1;transform:translate(-50%,-50%);
 	padding:4px;border-radius:50%;background:conic-gradient(from 200deg,var(--lime),var(--purple),var(--gold),var(--lime));
-	box-shadow:0 0 0 6px var(--well),0 24px 60px -12px rgba(154,107,255,.7);
+	box-shadow:0 0 0 6px var(--surface),0 24px 60px -12px rgba(154,107,255,.7);
 }
-.collab__ava img{display:block;width:100%;height:100%;object-fit:cover;border-radius:50%;border:4px solid var(--well)}
-.collab__tg{position:absolute;right:2%;bottom:2%;display:grid;place-items:center;width:32%;aspect-ratio:1;border-radius:50%;background:var(--ink);color:var(--bg);box-shadow:0 0 0 4px var(--well)}
+.collab__ava img{display:block;width:100%;height:100%;object-fit:cover;border-radius:50%;border:4px solid var(--surface)}
+.collab__tg{position:absolute;right:2%;bottom:2%;display:grid;place-items:center;width:32%;aspect-ratio:1;border-radius:50%;background:var(--ink);color:var(--bg);box-shadow:0 0 0 4px var(--surface)}
 .collab__tg svg{width:50%;height:50%}
 /* значок визуала: по умолчанию чуть в тени, под курсором светлеет и увеличивается */
 .visual{position:absolute;left:0;top:0;z-index:2;width:var(--s,84px);text-decoration:none;will-change:transform;-webkit-tap-highlight-color:transparent}
@@ -372,11 +369,11 @@ h2{font:400 clamp(26px,4vw,50px)/1.05 var(--font-display);letter-spacing:-.01em;
 .visual__name{font-size:12.5px;color:var(--muted);white-space:nowrap;text-shadow:2px 2px 0 rgba(0,0,0,.6)}
 .visual:hover .visual__name{color:#fff}
 /* ник и кнопка под пространством со значками */
-.collab__info{display:grid;justify-items:center;padding:24px clamp(20px,4vw,40px) 30px;text-align:center}
-.collab__info h3{font:400 clamp(24px,2.6vw,32px)/1.1 var(--font-display);word-spacing:-.35em}
-.collab__user{margin-top:6px;font-size:15px;color:var(--dim)}
-.collab__text{max-width:420px;margin:12px 0 20px;font-size:15px;color:var(--muted)}
-.collab__row{display:flex;align-items:center;gap:12px;width:min(480px,100%);margin:-4px 0 20px;padding:12px 0;border-block:1px solid var(--line);font-size:15px}
+.collab__info{display:grid;justify-items:center;padding:8px clamp(20px,4vw,40px) 44px;text-align:center}
+/* ник обычными буквами: RodionDex, а не капсом */
+.collab__info h3{font:700 clamp(26px,3vw,34px)/1.15 var(--font-body);letter-spacing:-.01em}
+.collab__user{margin:4px 0 20px;font-size:15px;color:var(--dim)}
+.collab__row{display:flex;align-items:center;gap:12px;width:min(480px,100%);margin:0 0 20px;padding:12px 0;border-block:1px solid var(--line);font-size:15px}
 .collab__row span{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em}
 .collab__row b{margin-left:auto;font-weight:600}
 .collab__copy{display:grid;place-items:center;width:34px;height:34px;padding:0;border:2px solid var(--line-2);background:var(--surface-2);color:var(--muted);cursor:pointer;transition:color .15s,border-color .15s}
@@ -613,6 +610,20 @@ body{padding-bottom:104px}
 	.hotbar__sel{left:max(8px,env(safe-area-inset-left,0px));top:5px;bottom:calc(5px + env(safe-area-inset-bottom,0px));width:calc((100% - max(8px,env(safe-area-inset-left,0px)) - max(8px,env(safe-area-inset-right,0px)))/4)}
 	.hotbar__slot{height:60px;font-size:11.5px}
 }
+
+/* ============ телефон: разделы — отдельные экраны ============
+   Главная (первый экран, сотрудничество, каналы), Магазин и Кейсы показываются по одному,
+   у каждого своя граница прокрутки. На компьютере сайт листается целиком. */
+@media (max-width:700px){
+	html{overscroll-behavior-y:none}
+	html[data-page="home"] [data-page]:not([data-page="home"]),
+	html[data-page="shop"] [data-page]:not([data-page="shop"]),
+	html[data-page="cases"] [data-page]:not([data-page="cases"]){display:none}
+	html[data-page] [data-page]{animation:page-in .35s var(--ease) both}
+	/* на отдельной странице раздел начинается сразу под шапкой */
+	html[data-page="shop"] #shop,html[data-page="cases"] #cases{padding-top:calc(var(--topbar) + var(--safe-top) + 24px)}
+}
+@keyframes page-in{from{opacity:0;transform:translateY(14px)}}
 
 /* ============ узкий телефон ============ */
 @media (max-width:380px){

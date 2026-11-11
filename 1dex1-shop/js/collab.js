@@ -192,6 +192,11 @@ export const initCollab = (space, avatar, items, {reducedMotion = false} = {}) =
 
 	place();
 	draw();
+	// пиксельный шрифт подписей грузится позже — тогда подписи шире, перемеряем
+	document.fonts?.ready.then(() => {
+		measure();
+		draw();
+	});
 	if (reducedMotion) return;
 
 	// считаем, только пока раздел на экране
@@ -209,6 +214,7 @@ export const initCollab = (space, avatar, items, {reducedMotion = false} = {}) =
 		const was = visible;
 		visible = e.isIntersecting;
 		if (visible && !was) {
+			measure(); // раздел мог быть скрыт (другой экран на телефоне) — размеры обновляем
 			last = performance.now();
 			requestAnimationFrame(loop);
 		}

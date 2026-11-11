@@ -1758,6 +1758,12 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	// Порядок важности: несут в руке → летит к стене → ломает стену → сидит на виджете →
 	// летит к виджету, чтобы сесть → просто парит в невесомости и держится рядом с посетителем.
 	const stepFree = (dt) => {
+		// на телефоне открыт другой экран, а стена ещё цела — персонажу некуда лететь, он идёт домой
+		if (!freeWorld && !zone.getClientRects().length) {
+			landOnIsland();
+			drag = null;
+			return;
+		}
 		if (!widgetsAt || now - widgetsAt > 0.25) {
 			widgets = collectWidgets();
 			widgetsAt = now;

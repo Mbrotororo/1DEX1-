@@ -383,6 +383,51 @@ $$('dialog').forEach((dlg) =>
 	);
 	$$('[data-open-profile]').forEach((b) => b.addEventListener('click', () => select('profile')));
 	dialogs.forEach((d) => d.addEventListener('close', () => setTimeout(() => !dialogs.some((x) => x.open) && select(sectionSlot))));
+
+	// ---------- телефон: разделы — отдельные экраны, как на onlyy.shop ----------
+	// Главная (первый экран, сотрудничество, каналы), Магазин и Кейсы показываются по одному,
+	// у каждого своя граница прокрутки. Кнопка «Назад» в телефоне возвращает на прошлый экран.
+	// На компьютере сайт листается целиком, как раньше.
+	const phone = matchMedia('(max-width: 700px)');
+	const PAGE_SLOT = {home: 'top', shop: 'shop', cases: 'cases'};
+	const pageOf = (el) => el?.closest('[data-page]')?.dataset.page || 'home';
+	const showPage = (page, target) => {
+		const html = document.documentElement;
+		const changed = html.dataset.page !== page;
+		html.dataset.page = page;
+		sectionSlot = PAGE_SLOT[page];
+		select(sectionSlot);
+		// другой экран открывается сразу с начала; на том же экране — плавно к нужному месту
+		const behavior = changed ? 'instant' : 'smooth';
+		const go = () => {
+			if (target && page === 'home' && target.id !== 'top') target.scrollIntoView({behavior, block: 'start'});
+			else window.scrollTo({top: 0, behavior});
+		};
+		go();
+		if (changed) requestAnimationFrame(go); // ещё раз, когда новый экран уже нарисован
+	};
+	// прокрутку экранов ведём сами, браузер не должен возвращать старую при «Назад»
+	if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+	document.addEventListener('click', (e) => {
+		if (!phone.matches || e.defaultPrevented) return;
+		const a = e.target.closest('a[href^="#"]');
+		const target = a && document.getElementById(a.hash.slice(1));
+		if (!target) return;
+		e.preventDefault();
+		if (location.hash !== a.hash) history.pushState(null, '', a.hash);
+		showPage(pageOf(target), target);
+	});
+	const fromHash = () => {
+		const target = document.getElementById(location.hash.slice(1));
+		showPage(pageOf(target), target);
+	};
+	addEventListener('popstate', () => phone.matches && fromHash());
+	const syncMode = () => {
+		if (phone.matches) fromHash();
+		else delete document.documentElement.dataset.page;
+	};
+	phone.addEventListener('change', syncMode);
+	syncMode();
 }
 
 // ---------- ежедневный кейс ----------
