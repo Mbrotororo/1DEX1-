@@ -255,6 +255,7 @@ const convexHull = (pts) => {
 
 // Расстояние от точки до края оболочки (минус — точка внутри) и направление наружу
 const hullDistance = (x, y, hull) => {
+	if (!hull.length) return {dist: Infinity, nx: 0, ny: -1};
 	let inside = true;
 	let best = Infinity;
 	let bx = 0;
@@ -295,6 +296,7 @@ const hullDistance = (x, y, hull) => {
 // Пересечение прямоугольника и выпуклого многоугольника (теорема о разделяющей оси).
 // Возвращает, куда и насколько вытолкнуть прямоугольник.
 const boxPoly = (b, poly) => {
+	if (!poly.length) return null;
 	let best = Infinity;
 	let bnx = 0;
 	let bny = 0;
@@ -1230,7 +1232,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				out.push({el, left: r.left + scrollX, right: r.right + scrollX, top: r.top + scrollY + inset, bottom: r.bottom + scrollY});
 			});
 		}
-		// большая «1DEX1 SHOP» из блоков тоже подходит
+		// большая «1DEX1 SHOP» из блоков тоже подходит (если первый экран сейчас показан)
+		if (!zone.getClientRects().length) return out;
 		const o = docOffset();
 		const big = [];
 		for (const x of [-BIG.width / 2, BIG.width / 2]) for (const y of [-3.5, 3.5]) big.push(toPx(bigGroup.localToWorld(tmp.set(x, y, 0))));
@@ -1478,7 +1481,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	let drag = null;
 	let suppressClick = false;
 	const trail = []; // последние положения руки — из них скорость броска
-	const hitFree = () => P.mode === 'free' && Math.abs(pointerDoc.x - PB.x) < PB.hw + 8 && Math.abs(pointerDoc.y - PB.y) < PB.hh + 8;
+	const hitFree = () => P.mode === 'free' && !tp && Math.abs(pointerDoc.x - PB.x) < PB.hw + 8 && Math.abs(pointerDoc.y - PB.y) < PB.hh + 8;
 	const startDrag = () => {
 		if (P.mode !== 'free') leaveIsland();
 		if (PB.perch) {
@@ -1657,6 +1660,100 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		drag = null;
 	});
 
+	// ================= ТЕЛЕФОН: ТЕЛЕПОРТ МЕЖДУ ЭКРАНАМИ =================
+	// На телефоне Главная, Магазин и Кейсы — отдельные экраны. Персонаж не летит через весь сайт,
+	// а телепортируется: вспышка там, где был, и через миг — вспышка там, где появился.
+	// Пока стена цела, дальше первого экрана ему нельзя: телепорт домой на остров,
+	// а когда возвращаешься на Главную — появляется на острове со вспышкой.
+	const TP_GAP = 320; // сколько миллисекунд его нет между вспышками
+	let tp = null; // {until} — летающий персонаж исчез и ждёт, когда появиться
+	let tpHome = false; // телепортировался на остров, пока открыт другой экран
+	let islandTpAt = 0; // когда показать его на острове со вспышкой
+	let popAt = -99; // когда появился: «выпрыгивает» из вспышки
+	const TP_COLORS = ['#ffffff', '#e6d9ff', '#c3a6ff', '#9a6bff', '#5b34c9', '#b8ff3d'];
+	const flash = (x, y) => {
+		const size = Math.max(64, playerK * 4.2);
+		const el = document.createElement('div');
+		el.className = 'tp-flash';
+		el.setAttribute('aria-hidden', 'true');
+		el.style.cssText = `left:${x.toFixed(1)}px;top:${y.toFixed(1)}px;--s:${size.toFixed(0)}px`;
+		let html = '<b></b>';
+		for (let i = 0; i < 16; i++) {
+			const a = (i / 16) * Math.PI * 2 + Math.random() * 0.4;
+			const d = size * (0.45 + Math.random() * 0.5);
+			const c = TP_COLORS[Math.floor(Math.random() * TP_COLORS.length)];
+			html += `<i style="--dx:${(Math.cos(a) * d).toFixed(0)}px;--dy:${(Math.sin(a) * d * 1.25).toFixed(0)}px;--c:${c};--d:${(Math.random() * 0.08).toFixed(2)}s"></i>`;
+		}
+		el.innerHTML = html;
+		document.body.append(el);
+		setTimeout(() => el.remove(), 900);
+	};
+	// мгновенно домой на остров (без прыжка и без ходьбы)
+	const homeNow = () => {
+		P.pos.copy(HOME);
+		P.mode = 'idle';
+		P.queue = [];
+		P.holding = false;
+		P.face = 0.15;
+		PB.held = false;
+		PB.auto = null;
+		PB.perch = null;
+		PB.seek = null;
+		PB.spin = 0;
+		PB.spinV = 0;
+		if (PB.pose === 'wall') crackWall(0);
+		overlay.classList.remove('is-on');
+	};
+	// появиться на новом экране: сразу сесть на виджет, который виден, или парить посередине
+	const appear = () => {
+		measureChrome();
+		widgets = collectWidgets();
+		widgetsAt = now;
+		const B = bounds();
+		const band = visibleBand(B) || {top: scrollY + topbarH + 6, bottom: scrollY + innerHeight - hotbarH - 6};
+		reachableNow = widgets.filter((w) => w.top >= B.top - 10 && w.top <= B.bottom - 10);
+		setPose('float');
+		PB.x = clamp(vw * (0.25 + Math.random() * 0.5), PB.hw + 8, vw - PB.hw - 8);
+		PB.y = band.top + (band.bottom - band.top) * 0.4;
+		PB.vx = 0;
+		PB.vy = 0;
+		PB.lastPerch = null;
+		const seat = findSeat(band, 4000, zone.getClientRects().length ? islandPolyDoc() : []);
+		const w = seat && findWidget(seat);
+		if (w) perchOn(w, w.left + seat.offX);
+		PB.seekAt = now + 3;
+		PB.calm = 1;
+		PB.idleT = 0;
+		PB.clearOfIsland = true;
+		popAt = now;
+		flash(PB.x - scrollX, PB.y - scrollY);
+		if (Math.random() < 0.6) say(oneOf('say.tp', 'say.hi', 'icon:heart'), 1.4);
+	};
+	// app.js сообщает о смене экрана до того, как экран поменялся (координаты ещё старые)
+	addEventListener('dex:page', (e) => {
+		const {from, to} = e.detail || {};
+		if (!from || from === to) return;
+		if (P.mode === 'free') {
+			if (!tp) flash(PB.x - scrollX, PB.y - scrollY);
+			drag = null;
+			talk.at = -99;
+			if (freeWorld) {
+				PB.held = false;
+				PB.perch = null;
+				PB.seek = null;
+				PB.auto = null;
+				PB.spin = 0;
+				PB.spinV = 0;
+				tp = {until: performance.now() + TP_GAP};
+			} else {
+				tp = null;
+				homeNow();
+				tpHome = true;
+				if (to === 'home') islandTpAt = performance.now() + TP_GAP;
+			}
+		} else if (to === 'home' && tpHome) islandTpAt = performance.now() + TP_GAP;
+	});
+
 	// ================= ПЕРСОНАЖ НА ОСТРОВЕ: ОЧЕРЕДЬ ДЕЙСТВИЙ =================
 	const stepIsland = (dt) => {
 		if (P.mode === 'land') {
@@ -1769,6 +1866,13 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			drag = null;
 			return;
 		}
+		// телепорт между экранами: пока его нет — ждёт, потом появляется на новом экране
+		if (tp) {
+			if (performance.now() < tp.until) return;
+			tp = null;
+			appear();
+			return;
+		}
 		if (!widgetsAt || now - widgetsAt > 0.25) {
 			widgets = collectWidgets();
 			widgetsAt = now;
@@ -1776,7 +1880,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		fitPoseBox();
 		const B = bounds();
 		const band = visibleBand(B);
-		const islandPoly = islandPolyDoc();
+		const islandPoly = zone.getClientRects().length ? islandPolyDoc() : [];
 		reachableNow = widgets.filter((w) => w.top >= B.top - 10 && w.top <= B.bottom - 10);
 		// остров тоже «хочет» принять персонажа: насколько ноги над травой
 		const islandTopY = hullTopAt(islandPoly, PB.x);
@@ -2202,8 +2306,20 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		for (const tr of torches) tr.halo.material.opacity = 0.6 + Math.sin(now * 13 + tr.group.position.x * 5) * 0.12;
 
 		// скелет: на острове — в 3D-сцене, вне острова — на прослойке поверх сайта
-		rig.pivot.visible = P.mode !== 'free';
-		oRig.pivot.visible = P.mode === 'free';
+		const islandHidden = islandTpAt > 0 && performance.now() < islandTpAt;
+		if (islandTpAt && !islandHidden && P.mode !== 'free' && heroVisible) {
+			islandTpAt = 0;
+			tpHome = false;
+			popAt = now;
+			const c = toPx(rig.pivot.getWorldPosition(tmp));
+			const r = canvas.getBoundingClientRect();
+			flash(r.left + c.x, r.top + c.y);
+			if (Math.random() < 0.5) say(oneOf('say.tp', 'icon:heart'), 1.4);
+		}
+		const pop = easeOutBack(clamp((now - popAt) / 0.28, 0, 1)) || 0.001;
+		rig.pivot.visible = P.mode !== 'free' && !islandHidden;
+		oRig.pivot.visible = P.mode === 'free' && !tp;
+		rig.pivot.scale.setScalar(P.mode !== 'free' ? pop : 1);
 		if (P.mode !== 'free') {
 			const {jump} = animateRig(rig, dt, idle, camera, pointerInHero ? pointerNdc : null);
 			rig.root.position.y = -BODY - pose.drop;
@@ -2214,7 +2330,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		} else {
 			pointerOverlay.set(((pointerDoc.x - scrollX) / vw) * 2 - 1, -(((pointerDoc.y - scrollY) / vh) * 2 - 1));
 			animateRig(oRig, dt, idle, oCam, pointerOverlay);
-			const s = PLAYER_SCALE * playerK;
+			const s = PLAYER_SCALE * playerK * pop;
 			oRig.root.scale.setScalar(s);
 			oRig.root.position.y = (-BODY - pose.drop) * playerK;
 			const centerAbove = PB.pose === 'lie' || PB.pose === 'sleep' ? 0.6 : BODY;
@@ -2322,6 +2438,9 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 
 	const resize = () => {
 		const r = canvas.getBoundingClientRect();
+		// первый экран скрыт (на телефоне открыт другой раздел) — размеры не трогаем, иначе
+		// летающий персонаж, которому масштаб берётся отсюда, становится крошечным
+		if (r.width < 2 || r.height < 2) return;
 		width = Math.max(1, r.width);
 		height = Math.max(1, r.height);
 		renderer.setPixelRatio(pixelRatio(width));
@@ -2406,6 +2525,19 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				return true;
 			},
 			idle: (sec) => (PB.idleT = sec),
+			// снять с острова и отпустить парить; открыть весь сайт, как после поломки стены
+			takeOff: () => {
+				if (P.mode !== 'free') leaveIsland();
+				PB.held = false;
+				setPose('float');
+				if (!r2) P.mode = 'idle';
+				return P.mode === 'free';
+			},
+			unlockWorld: () => {
+				if (!freeWorld) shatterWall();
+				freeWorld = true;
+			},
+			tp: () => ({tp: !!tp, tpHome, islandTpAt: islandTpAt > 0, visible: P.mode === 'free' ? oRig.pivot.visible : rig.pivot.visible, k: +playerK.toFixed(1)}),
 			mine: (type) => {
 				const b = blocks.find((x) => x.type === type && x.minedAt < 0 && canReach(x, standFor(x)));
 				if (b) startMining(b);

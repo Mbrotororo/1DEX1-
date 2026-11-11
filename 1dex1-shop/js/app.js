@@ -528,6 +528,8 @@ auth.onAuth(renderShop);
 	const showPage = (page, target) => {
 		const html = document.documentElement;
 		const changed = html.dataset.page !== page;
+		// персонаж (hero.js) телепортируется: ему нужно знать, где он был, пока экран старый
+		if (changed) dispatchEvent(new CustomEvent('dex:page', {detail: {from: html.dataset.page, to: page}}));
 		html.dataset.page = page;
 		sectionSlot = PAGE_SLOT[page];
 		select(sectionSlot);
