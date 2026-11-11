@@ -17,7 +17,7 @@ export const initCollab = (space, avatar, items, {reducedMotion = false} = {}) =
 		a.href = it.url;
 		a.target = '_blank';
 		a.rel = 'noopener';
-		a.setAttribute('aria-label', `${it.name} — открыть сайт`);
+		a.dataset.name = it.name; // подпись для читалок экрана ставит app.js на языке сайта
 		a.innerHTML = `<span class="visual__in"><span class="visual__ava${it.pixel ? ' is-pixel' : ''}${it.fit === 'contain' ? ' is-contain' : ''}"><img src="${esc(it.logo)}" alt="" loading="lazy" decoding="async"></span><span class="visual__name px">${esc(it.name)}</span></span>`;
 		space.append(a);
 		const b = {el: a, name: a.querySelector('.visual__name'), size: SIZE, r: SIZE / 2, hw: SIZE / 2, x: 0, y: 0, vx: 0, vy: 0, ang: Math.random() * Math.PI * 2, hover: false};

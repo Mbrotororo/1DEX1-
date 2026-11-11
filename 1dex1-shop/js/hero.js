@@ -11,6 +11,7 @@
 //   на зрителя. Блоки ломаются кликом и вырастают снова. Остров справа.
 // - Сзади галактика, а звёзды по всему фону медленно вращаются вокруг её ядра.
 import * as THREE from '../vendor/three.module.min.js';
+import {t} from './i18n.js';
 import {CROSSHAIR, icon, wordPixels} from './pixel.js';
 
 // ---------- маленькие помощники ----------
@@ -356,10 +357,10 @@ const glowTexture = () => {
 // Кирка из пикселей, как в Minecraft: h — головка, H — блик, s/S — рукоять
 const PICKAXE = ['..hhhhhhh..', '.hHHHHHHHh.', 'hHh.hSh.hHh', 'hh...S...hh', 'h....s....h', '.....S.....', '.....s.....', '.....S.....', '.....s.....', '.....S.....'];
 export const TIERS = [
-	{id: 'wood', name: 'деревянная', head: '#9c7440', hi: '#c69a5c'},
-	{id: 'stone', name: 'каменная', head: '#76767c', hi: '#a9a9b0'},
-	{id: 'iron', name: 'железная', head: '#cfcfd6', hi: '#ffffff'},
-	{id: 'diamond', name: 'алмазная', head: '#26cfc0', hi: '#a6fff2'},
+	{id: 'wood', head: '#9c7440', hi: '#c69a5c'},
+	{id: 'stone', head: '#76767c', hi: '#a9a9b0'},
+	{id: 'iron', head: '#cfcfd6', hi: '#ffffff'},
+	{id: 'diamond', head: '#26cfc0', hi: '#a6fff2'},
 ];
 // какую кирку нужно иметь, чтобы добыть блок, и что даёт добыча
 const NEED = {iron: 1, gold: 2, diamond: 2};
@@ -1106,7 +1107,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const stand = standFor(b);
 		if (!canReach(b, stand)) return warn('far');
 		const need = NEED[b.type] || 0;
-		if (progress.tier < need) return warn('need', TIERS[need].name);
+		if (progress.tier < need) return warn('need', TIERS[need].id);
 		// сходить к сундуку за киркой, добыть блок, вернуть кирку, вернуться домой
 		P.queue = [walkTo(CHEST_SPOT), {type: 'chest', take: true}, walkTo(stand), {type: 'mine', block: b}, walkTo(CHEST_SPOT), {type: 'chest', take: false}, walkTo(HOME)];
 		activeBlocks.add(b);
@@ -1121,8 +1122,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			progress.tier = up;
 			paintPickaxe();
 			saveProgress(progress);
-			on('tier', TIERS[up].name);
-			say(up === 3 ? 'Алмазная!' : 'Ура!', 1.6);
+			on('tier', TIERS[up].id);
+			say(up === 3 ? 'say.diamond' : 'say.yay', 1.6);
 			if (up === 3) on('diamond');
 		}
 		if (b.type === 'coal' && progress.torches < 4) {
@@ -1170,7 +1171,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	const talk = {at: -99, dur: 0};
 	const say = (what, dur = 1.7) => {
 		if (what.startsWith('icon:')) bubble.innerHTML = icon(what.slice(5));
-		else bubble.textContent = what;
+		else bubble.textContent = what.startsWith('say.') ? t(what) : what; // текст — на языке сайта
 		talk.at = now;
 		talk.dur = dur;
 	};
@@ -1410,7 +1411,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		PB.spin = 0;
 		PB.spinV = 0;
 		overlay.classList.remove('is-on');
-		if (Math.random() < 0.5) say(oneOf('Дома!', 'icon:heart'), 1.5);
+		if (Math.random() < 0.5) say(oneOf('say.home', 'icon:heart'), 1.5);
 	};
 
 	// --- стена (бегущая строка «Магазин · Моды · РП») ---
@@ -1451,7 +1452,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		wall.style.cursor = CROSSHAIR;
 		wall.addEventListener('click', (e) => {
 			if (freeWorld) return;
-			if (progress.tier < 3) return warn('wallNeed', TIERS[progress.tier].name);
+			if (progress.tier < 3) return warn('wallNeed', TIERS[progress.tier].id);
 			if (P.mode === 'free') {
 				// уже летает — летит к стене сразу, даже если сидел на виджете
 				PB.held = false;
@@ -1460,7 +1461,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				setPose('fly');
 				PB.auto = {x: e.clientX + scrollX, y: wall.getBoundingClientRect().top + scrollY - PB.hh - 4, then: 'wall'};
 				P.holding = true;
-				say('Ломаю!', 1.4);
+				say('say.break', 1.4);
 				return;
 			}
 			if (P.mode !== 'idle' && P.mode !== 'walk') return warn('busy');
@@ -1507,7 +1508,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			drag = null;
 			return;
 		}
-		if (Math.random() < 0.45) say(oneOf('Эй!', '!', 'Ой!'), 1.1);
+		if (Math.random() < 0.45) say(oneOf('say.hey', '!', 'say.oops'), 1.1);
 		on('drag');
 	};
 	// отпустили: если рука двигалась — летит с той же скоростью и плавно тормозит
@@ -1543,7 +1544,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		setPose('float');
 		if (sp > 700) {
 			PB.spinV = Math.sign(vx || vy || 1) * Math.min(12, sp / 220); // кувыркается
-			say(oneOf('Уиии!', 'Йо-хо!', 'Лечу!'), 1.4);
+			say(oneOf('say.wee', 'say.yoho', 'say.fly'), 1.4);
 		}
 	};
 	// просто ткнули в персонажа
@@ -1558,14 +1559,14 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				return;
 			}
 			const r = Math.random();
-			if (r < 0.34) say('Хи-хи', 1.3);
+			if (r < 0.34) say('say.giggle', 1.3);
 			else if (r < 0.67) {
 				say('icon:heart', 1.6);
 				setPose('wave', 2.2);
 			} else say('!', 1);
 		} else {
 			PB.spinV = (Math.random() < 0.5 ? -1 : 1) * 8;
-			say(oneOf('Уиии!', 'Хи-хи'), 1.3);
+			say(oneOf('say.wee', 'say.giggle'), 1.3);
 		}
 	};
 
@@ -1636,7 +1637,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		else if (pickPlayer()) {
 			if (P.mode === 'idle') jumpAt = now;
 			if (++tickles === 5) on('tickle');
-			if (Math.random() < 0.6) say(oneOf('Хи-хи', 'icon:heart', 'Привет!'), 1.4);
+			if (Math.random() < 0.6) say(oneOf('say.giggle', 'icon:heart', 'say.hi'), 1.4);
 		} else {
 			const b = pickBlock();
 			if (b) startMining(b);
@@ -1844,7 +1845,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				PB.vy = 60;
 				PB.calm = 0;
 				PB.seekAt = now + 2.5;
-				say('Свобода!', 1.8);
+				say('say.free', 1.8);
 				on('free');
 			}
 		} else if (PB.perch) {
@@ -1862,7 +1863,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				PB.outT = out ? PB.outT + dt : 0;
 				if (PB.outT > 0.3) {
 					unperch(0.9);
-					if (Math.random() < 0.6) say(oneOf('Подожди!', 'Я с тобой!', 'Лечу!'), 1.5);
+					if (Math.random() < 0.6) say(oneOf('say.wait', 'say.withYou', 'say.fly'), 1.5);
 				} else {
 					PB.poseT += dt;
 					const near = Math.hypot(pointerDoc.x - PB.x, pointerDoc.y - PB.y) < 170;
@@ -1878,7 +1879,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 					} else if (near && now - PB.greetAt > 16 && PB.pose !== 'wave') {
 						PB.greetAt = now;
 						setPose('wave', 2.4);
-						say('Привет!', 1.6);
+						say('say.hi', 1.6);
 					} else if (PB.poseT > PB.poseDur) perchPose();
 				}
 			}
@@ -1929,7 +1930,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			if (band && !following && now > PB.seekAt && speed < 260 && PB.dizzy <= 0 && now - PB.seekTry > 0.4) {
 				PB.seekTry = now;
 				PB.seek = findSeat(band, now - PB.seekAt < 3 ? 320 : 900, islandPoly);
-				if (PB.seek && Math.random() < 0.3) say(oneOf('!', 'Сяду тут'), 1.3);
+				if (PB.seek && Math.random() < 0.3) say(oneOf('!', 'say.sitHere'), 1.3);
 			}
 			PB.x += PB.vx * dt;
 			PB.y += PB.vy * dt;
@@ -1958,7 +1959,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const bump = (v) => {
 			if (Math.abs(v) > 1000 && !PB.held) {
 				PB.dizzy = 1.4;
-				say('Ой!', 1.1);
+				say('say.oops', 1.1);
 			}
 		};
 		if (PB.x - PB.hw < B.left) {
@@ -2382,7 +2383,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		return {x: r.left + pt.x, y: r.top + pt.y};
 	};
 	return {
-		tier: () => TIERS[progress.tier].name,
+		tier: () => TIERS[progress.tier].id,
 		debug: {
 			blockPx: (type) => {
 				const b = blocks.find((x) => x.type === type && x.minedAt < 0 && canReach(x, standFor(x)) && (() => {

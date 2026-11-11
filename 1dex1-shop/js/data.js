@@ -22,14 +22,22 @@ export const VISUALS = [
 	{name: 'Fantasy', url: 'https://fantasyvisuals.cc/', logo: 'img/visuals/fantasy.png', fit: 'contain', pixel: true},
 ];
 
-// Слова в бегущей строке под первым экраном
-export const MARQUEE = ['Магазин', 'Моды', 'РП'];
+// Слова в бегущей строке под первым экраном — для русской и английской версии
+export const MARQUEE = {
+	ru: ['Магазин', 'Моды', 'РП'],
+	en: ['Shop', 'Mods', 'RP'],
+};
 
 // ------------------------------------------------------------
-//  ТОВАРЫ. Сейчас список пустой — на сайте стоит заглушка «Товаров пока нет».
+//  ТОВАРЫ для сайта без сервера. Когда сайт запущен с сервером (папка server/),
+//  товары берутся из базы данных, а этот список не используется — товар в базу
+//  добавляет команда: node server/admin.js product add ... (см. README).
+//
+//  Сейчас список пустой — на сайте стоит заглушка «Товаров пока нет».
 //  Чтобы добавить товар, скопируй пример ниже внутрь квадратных скобок
 //  и убери две косые черты в начале каждой строки.
 //
+//  titleEn, descEn — название и описание для английской версии (можно не писать)
 //  kind:   'mod' — мод, 'rp' — ресурс-пак
 //  status: 'soon' — в разработке, 'ready' — готов
 //  price:  число в рублях или null (покажет «Цена позже»)
@@ -43,7 +51,9 @@ export const PRODUCTS = [
 	// 	kind: 'mod',
 	// 	status: 'soon',
 	// 	title: 'Название мода',
+	// 	titleEn: 'Mod name',
 	// 	desc: 'Короткое описание в одну-две строки.',
+	// 	descEn: 'A short description.',
 	// 	tags: ['1.21', 'Fabric'],
 	// 	price: null,
 	// 	cover: null,
@@ -57,14 +67,30 @@ export const PRODUCTS = [
 //  kind:   'money' — деньги на баланс (amount — сколько рублей),
 //          'rp'    — купон на любой ресурс-пак бесплатно
 //  rarity: цвет в списке наград: common, uncommon, rare, legendary
+//  Тексты наград — в js/i18n.js (ключи loot.<id>), там же английская версия.
+//  Если сайт запущен с сервером, награду выбирает сервер по этим же шансам.
 // ------------------------------------------------------------
 export const CASE = {
-	title: 'Ежедневный кейс',
 	cooldownHours: 24,
 	loot: [
-		{id: 'rub5', kind: 'money', amount: 5, title: '+5 ₽ на баланс', chance: 55, rarity: 'common'},
-		{id: 'rub10', kind: 'money', amount: 10, title: '+10 ₽ на баланс', chance: 27, rarity: 'uncommon'},
-		{id: 'rub15', kind: 'money', amount: 15, title: '+15 ₽ на баланс', chance: 13, rarity: 'rare'},
-		{id: 'rp', kind: 'rp', title: 'Любой ресурс-пак бесплатно', chance: 5, rarity: 'legendary'},
+		{id: 'rub5', kind: 'money', amount: 5, chance: 55, rarity: 'common'},
+		{id: 'rub10', kind: 'money', amount: 10, chance: 27, rarity: 'uncommon'},
+		{id: 'rub15', kind: 'money', amount: 15, chance: 13, rarity: 'rare'},
+		{id: 'rp', kind: 'rp', chance: 5, rarity: 'legendary'},
 	],
 };
+
+// ------------------------------------------------------------
+//  ЗАДАНИЯ. За каждое выполненное — бесплатный кейс (reward — сколько кейсов).
+//  kind:  'link'     — подписаться: открыть ссылку (youtube / telegram из SITE)
+//                      и вернуться за наградой,
+//         'purchase' — купить любой платный товар,
+//         'topup'    — пополнить баланс в сумме от amount рублей.
+//  Тексты заданий — в js/i18n.js (ключи task.<id>.t и task.<id>.d).
+// ------------------------------------------------------------
+export const TASKS = [
+	{id: 'youtube', kind: 'link', link: 'youtube', reward: 1},
+	{id: 'telegram', kind: 'link', link: 'telegram', reward: 1},
+	{id: 'buy', kind: 'purchase', reward: 1},
+	{id: 'topup50', kind: 'topup', amount: 50, reward: 1},
+];

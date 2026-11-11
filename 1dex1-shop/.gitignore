@@ -1,0 +1,4 @@
+# база данных, письма в режиме проверки и файлы товаров — не в git
+server/data/
+server/files/
+server/.env

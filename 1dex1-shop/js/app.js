@@ -1,16 +1,33 @@
 // Главный файл сайта: собирает страницу из данных в data.js и оживляет её.
-import {CASE, MARQUEE, PRODUCTS, SITE, VISUALS} from './data.js';
 import {ACHIEVEMENTS, count, notify, onChange, renderList, reset, unlock} from './achievements.js';
-import {changePassword, credit, current, fileToAvatar, login, logout, onAuth, openCase, register, update} from './auth.js';
+import * as auth from './auth.js';
 import {initCollab} from './collab.js';
+import {CASE, MARQUEE, SITE, TASKS, VISUALS} from './data.js';
 import {initFootWord} from './footer.js';
+import {applyI18n, getLang, locale, onLang, setLang, t} from './i18n.js';
 import {caseArt, coverArt, icon, navIcon} from './pixel.js';
 import {breakSound} from './sound.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[c]);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[c]);
+const money = (v) => Number(v || 0).toLocaleString(locale(), {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const price = (v) => `${Number.isInteger(v) ? v : money(v)} ₽`;
+const date = (iso, year = false) => new Date(iso).toLocaleDateString(locale(), year ? {day: 'numeric', month: 'long', year: 'numeric'} : {day: 'numeric', month: 'long'});
+// текст ошибки по коду; неизвестный код — общая ошибка
+const errText = (code) => {
+	const s = t(`err.${code}`);
+	return s === `err.${code}` ? t('err.server') : s;
+};
+
+// ---------- язык: тексты страницы и переключатель RU / EN ----------
+applyI18n();
+document.documentElement.classList.remove('pre-i18n');
+const paintLangButtons = () => $$('[data-lang]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lang === getLang())));
+$$('[data-lang]').forEach((b) => b.addEventListener('click', () => setLang(b.dataset.lang)));
+paintLangButtons();
+onLang(paintLangButtons);
 
 // ---------- пиксельные иконки в разметке: <span data-icon="trophy"> ----------
 $$('[data-icon]').forEach((el) => (el.innerHTML = icon(el.dataset.icon)));
@@ -40,15 +57,18 @@ $$('[data-text]').forEach((el) => {
 	const v = {yt: SITE.youtubeHandle, tg: SITE.telegramHandle}[el.dataset.text];
 	if (v) el.textContent = v;
 });
-document.addEventListener('click', (e) => e.target.closest('a[data-link]') && unlock('contact'));
+document.addEventListener('click', (e) => e.target.closest('a[data-link], a[data-task-open]') && unlock('contact'));
 
 // ---------- бегущая строка ----------
-{
+const renderMarquee = () => {
+	const list = MARQUEE[getLang()] || MARQUEE.ru;
 	// слов мало, поэтому повторяем их много раз: лента должна быть шире экрана
-	const words = Array.from({length: 24}, (_, i) => MARQUEE[i % MARQUEE.length]);
+	const words = Array.from({length: 24}, (_, i) => list[i % list.length]);
 	const half = words.map((w, i) => `<span class="${i % 2 ? 'is-outline' : ''}">${esc(w)}</span><i></i>`).join('');
 	$('#marquee').innerHTML = `<div class="marquee__track">${half}${half}</div>`;
-}
+};
+renderMarquee();
+onLang(renderMarquee);
 
 // ---------- сломанные блоки: общий счётчик для достижений ----------
 let blocksBroken = 0;
@@ -58,49 +78,65 @@ const blockBroken = (first) => {
 	if (++blocksBroken >= 30) unlock('mason');
 };
 
+// ---------- окна (достижения, вход, профиль) ----------
+const openDialog = (dlg) => !dlg.open && dlg.showModal();
+$$('dialog').forEach((dlg) =>
+	dlg.addEventListener('click', (e) => {
+		if (e.target === dlg || e.target.closest('[data-close]')) dlg.close();
+	}),
+);
+const authDlg = $('#auth-dialog');
+const profileDlg = $('#profile-dialog');
+let openAuth = () => {}; // заполняется в блоке аккаунта
+
 // ---------- магазин ----------
-const KIND = {mod: 'Мод', rp: 'Ресурс-пак'};
+let products = [];
 let filter = 'all';
 const seenTabs = new Set();
+const titleOf = (p) => (getLang() === 'en' && p.titleEn) || p.title;
+const descOf = (p) => (getLang() === 'en' && p.descEn) || p.desc || '';
 
 const card = (p, i) => {
-	const hasPrice = typeof p.price === 'number';
+	const user = auth.current();
+	const order = user?.orders?.find((o) => o.productId === p.id);
+	const priceText = p.price === null ? t('price.later') : p.price === 0 ? t('price.free') : price(p.price);
+	let action;
+	if (p.status !== 'ready' || p.price === null) action = `<span class="item__soon px">${t('item.soon')}</span>`;
+	else if (order) {
+		const url = auth.downloadUrl(order);
+		action = url ? `<a class="btn btn--lime btn--sm" href="${esc(url)}" target="_blank" rel="noopener">${t('item.download')}</a>` : '<span class="item__soon px">✓</span>';
+	} else if (p.price === 0) action = `<button class="btn btn--lime btn--sm" data-buy="${esc(p.id)}">${t('item.download')}</button>`;
+	else {
+		const coupon = p.kind === 'rp' && user?.coupons?.some((c) => c.kind === 'rp');
+		action = `${coupon ? `<button class="btn btn--gold btn--sm" data-buy="${esc(p.id)}" data-coupon>${t('item.coupon')}</button>` : ''}<button class="btn btn--lime btn--sm" data-buy="${esc(p.id)}">${t('item.buy')}</button>`;
+	}
 	const cover = p.cover ? `<img src="${esc(p.cover)}" alt="" loading="lazy">` : coverArt(p.kind, i);
-	const action = p.link
-		? `<a class="btn btn--lime btn--sm" href="${esc(p.link)}" target="_blank" rel="noopener">${hasPrice ? 'Купить' : 'Скачать'}</a>`
-		: '<span class="item__soon px">Скоро</span>';
-	return `<article class="item card" data-kind="${p.kind}" style="--i:${i}">
+	return `<article class="item card" data-kind="${esc(p.kind)}" style="--i:${i}">
 		<div class="item__cover ${p.cover ? '' : 'is-art'}">${cover}
-			<span class="tag ${p.status === 'ready' ? 'tag--lime' : 'tag--gold'} px">${p.status === 'ready' ? 'Готово' : 'В разработке'}</span>
+			<span class="tag ${p.status === 'ready' ? 'tag--lime' : 'tag--gold'} px">${t(p.status === 'ready' ? 'status.ready' : 'status.soon')}</span>
 		</div>
 		<div class="item__body">
-			<span class="item__kind px">${KIND[p.kind] || ''}</span>
-			<h3 class="item__title">${esc(p.title)}</h3>
-			<p class="item__desc">${esc(p.desc)}</p>
-			${p.tags?.length ? `<ul class="item__tags px">${p.tags.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
+			<span class="item__kind px">${t(`kind.${p.kind}`)}</span>
+			<h3 class="item__title">${esc(titleOf(p))}</h3>
+			<p class="item__desc">${esc(descOf(p))}</p>
+			${p.tags?.length ? `<ul class="item__tags px">${p.tags.map((tag) => `<li>${esc(tag)}</li>`).join('')}</ul>` : ''}
 			<div class="item__foot">
-				<span class="item__price px ${hasPrice ? 'has-price' : ''}">${hasPrice ? `${p.price} ₽` : 'Цена позже'}</span>
-				${action}
+				<span class="item__price px ${p.price ? 'has-price' : ''}">${priceText}</span>
+				<span class="item__actions">${action}</span>
 			</div>
 		</div>
 	</article>`;
 };
-
 const renderShop = () => {
-	const list = PRODUCTS.filter((p) => filter === 'all' || p.kind === filter);
-	const emptyText = {
-		all: ['Товаров пока нет', 'Моды и ресурс-паки скоро появятся здесь.'],
-		mod: ['Модов пока нет', 'Первые моды скоро появятся здесь.'],
-		rp: ['Ресурс-паков пока нет', 'Первые паки скоро появятся здесь.'],
-	}[filter];
+	const list = products.filter((p) => filter === 'all' || p.kind === filter);
 	$('#shop-grid').innerHTML = list.length
 		? list.map(card).join('')
-		: `<div class="empty card"><span class="empty__icon">${icon('chest')}</span><b>${emptyText[0]}</b><p>${emptyText[1]}</p></div>`;
+		: `<div class="empty card"><span class="empty__icon">${icon('chest')}</span><b>${t(`empty.${filter}.t`)}</b><p>${t(`empty.${filter}.p`)}</p></div>`;
 	$$('#shop-tabs [data-filter]').forEach((b) => {
 		const kind = b.dataset.filter;
 		b.classList.toggle('is-active', kind === filter);
 		b.setAttribute('aria-selected', kind === filter);
-		$('b', b).textContent = PRODUCTS.filter((p) => kind === 'all' || p.kind === kind).length;
+		$('b', b).textContent = products.filter((p) => kind === 'all' || p.kind === kind).length;
 	});
 };
 $('#shop-tabs').addEventListener('click', (e) => {
@@ -111,22 +147,35 @@ $('#shop-tabs').addEventListener('click', (e) => {
 	if (seenTabs.has('mod') && seenTabs.has('rp')) unlock('showcase');
 	renderShop();
 });
+// покупка: за баланс, по купону или бесплатно
+$('#shop-grid').addEventListener('click', async (e) => {
+	const b = e.target.closest('[data-buy]');
+	if (!b) return;
+	if (!auth.current()) return openAuth('register');
+	b.disabled = true;
+	const res = await auth.buy(b.dataset.buy, {coupon: b.hasAttribute('data-coupon')});
+	b.disabled = false;
+	if (res.error === 'login') return openAuth('login');
+	if (res.error) return notify(errText(res.error));
+	notify(t('toast.bought'));
+});
 renderShop();
+onLang(renderShop);
+auth.onAuth(renderShop);
 
 // ---------- сотрудничество: личный профиль и визуалы вокруг аватарки ----------
 {
 	const nick = SITE.contact.trim().replace(/^@?/, '@');
 	const btn = $('#collab-btn');
 	if (nick.length > 1) {
-		const url = `https://t.me/${nick.slice(1)}`;
-		btn.href = url;
+		btn.href = `https://t.me/${nick.slice(1)}`;
 		$('#collab-name').textContent = nick.slice(1);
 		$('#collab-nick').textContent = nick;
 		$('#collab-row').hidden = false;
 		$('#collab-copy').addEventListener('click', async () => {
 			try {
 				await navigator.clipboard.writeText(nick);
-				notify(`Скопировано: ${nick}`);
+				notify(t('collab.copied', {nick}));
 			} catch {
 				notify(nick);
 			}
@@ -136,18 +185,14 @@ renderShop();
 		btn.removeAttribute('href');
 		btn.setAttribute('aria-disabled', 'true');
 		btn.classList.add('is-off');
-		btn.textContent = 'Ник для связи скоро появится';
+		btn.dataset.i18n = 'collab.soon';
+		btn.textContent = t('collab.soon');
 	}
 	initCollab($('#collab-space'), $('.collab__ava'), VISUALS, {reducedMotion});
+	const labelVisuals = () => $$('.visual').forEach((a) => a.setAttribute('aria-label', t('visual.open', {name: a.dataset.name})));
+	labelVisuals();
+	onLang(labelVisuals);
 }
-
-// ---------- окна (достижения, вход, профиль) ----------
-const openDialog = (dlg) => !dlg.open && dlg.showModal();
-$$('dialog').forEach((dlg) =>
-	dlg.addEventListener('click', (e) => {
-		if (e.target === dlg || e.target.closest('[data-close]')) dlg.close();
-	}),
-);
 
 // ---------- достижения ----------
 {
@@ -159,6 +204,7 @@ $$('dialog').forEach((dlg) =>
 		renderList($('#ach-list'));
 	};
 	onChange(paint);
+	onLang(paint);
 	paint();
 	$$('[data-open-ach]').forEach((b) =>
 		b.addEventListener('click', () => {
@@ -168,27 +214,36 @@ $$('dialog').forEach((dlg) =>
 	);
 	$('#ach-reset').addEventListener('click', () => {
 		reset();
-		notify('Достижения сброшены');
+		notify(t('toast.achReset'));
 	});
 }
 
-// ---------- аккаунт: регистрация, вход, профиль ----------
+// ---------- аккаунт: регистрация, вход, подтверждение почты, профиль ----------
 {
-	const authDlg = $('#auth-dialog');
-	const profileDlg = $('#profile-dialog');
 	const form = $('#auth-form');
 	const error = $('#auth-error');
+	const submit = $('#auth-submit');
+	const resend = $('#auth-resend');
 	let mode = 'register';
+	let pendingEmail = '';
+	let resendAt = 0;
+	let fromRegister = false;
 
 	// по умолчанию аватарка — первая буква ника на цветном фоне (цвет зависит от ника)
 	const nickHue = (nick) => [...nick.toLowerCase()].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
 	const avatarHtml = (user) => {
-		if (user.avatar) return `<img src="${user.avatar}" alt="">`;
+		if (user.avatar) return `<img src="${esc(user.avatar)}" alt="">`;
 		const h = nickHue(user.nick);
 		return `<span class="ava-letter" style="--h1:${h};--h2:${(h + 50) % 360}">${esc(user.nick[0].toUpperCase())}</span>`;
 	};
-	const money = (v) => Number(v || 0).toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-	const walletId = (nick) => String(1000 + (nickHue(nick) * 37 + nick.length * 911) % 9000);
+	const walletId = (nick) => String(1000 + ((nickHue(nick) * 37 + nick.length * 911) % 9000));
+
+	const paintResend = () => {
+		const left = Math.ceil((resendAt - Date.now()) / 1000);
+		resend.disabled = left > 0;
+		resend.textContent = left > 0 ? t('auth.resendIn', {s: left}) : t('auth.resend');
+	};
+	setInterval(() => mode === 'verify' && paintResend(), 1000);
 
 	const setMode = (next) => {
 		mode = next;
@@ -197,75 +252,138 @@ $$('dialog').forEach((dlg) =>
 			b.classList.toggle('is-active', b.dataset.authTab === mode);
 			b.setAttribute('aria-selected', b.dataset.authTab === mode);
 		});
-		$('#auth-title').textContent = mode === 'register' ? 'Создай аккаунт' : 'С возвращением';
-		$('#auth-submit').textContent = mode === 'register' ? 'Зарегистрироваться' : 'Войти';
-		// поля, которых нет в этом режиме, выключаем, чтобы форма их не проверяла
+		$('#auth-title').textContent = t({register: 'auth.titleReg', login: 'auth.titleLogin', verify: 'auth.titleVerify'}[mode]);
+		submit.textContent = t({register: 'auth.submitReg', login: 'auth.submitLogin', verify: 'auth.submitVerify'}[mode]);
+		// поля, которых нет в этом шаге, прячем и выключаем, чтобы форма их не проверяла
 		$$('[data-only]', form).forEach((row) => {
-			const on = row.dataset.only === mode;
+			const on = row.dataset.only.split(' ').includes(mode);
 			row.hidden = !on;
 			$$('input', row).forEach((i) => (i.disabled = !on));
 		});
 		$('#auth-password').autocomplete = mode === 'register' ? 'new-password' : 'current-password';
+		$('#auth-lead').textContent = mode === 'verify' ? t('auth.codeSent', {email: pendingEmail}) : '';
+		$('#auth-note').textContent = mode === 'register' ? t(auth.serverMode ? 'auth.noteServer' : 'auth.noteLocal') : '';
 		error.textContent = '';
+		if (mode === 'verify') {
+			paintResend();
+			setTimeout(() => $('#auth-code').focus(), 50);
+		}
+	};
+	openAuth = (next = 'register') => {
+		setMode(next);
+		openDialog(authDlg);
 	};
 	authDlg.addEventListener('click', (e) => {
 		const tab = e.target.closest('[data-auth-tab]');
 		if (tab) setMode(tab.dataset.authTab);
 	});
+	onLang(() => setMode(mode));
+
+	const toVerify = (email) => {
+		pendingEmail = email;
+		resendAt = Date.now() + 60e3;
+		setMode('verify');
+	};
+	const done = (user, greeting) => {
+		form.reset();
+		authDlg.close();
+		if (greeting === 'toast.welcome') unlock('newcomer');
+		notify(t(greeting, {nick: user.nick}));
+		openDialog(profileDlg);
+	};
 
 	form.addEventListener('submit', async (e) => {
 		e.preventDefault();
+		if (submit.disabled) return;
 		error.textContent = '';
 		const data = Object.fromEntries(new FormData(form));
-		const res = mode === 'register' ? await register(data) : await login(data);
+		submit.disabled = true;
+		let res;
+		try {
+			if (mode === 'register') res = await auth.register(data, getLang());
+			else if (mode === 'login') res = await auth.login(data, getLang());
+			else res = await auth.verifyEmail({email: pendingEmail, code: data.code});
+		} finally {
+			submit.disabled = false;
+		}
+		if (res.verify) {
+			fromRegister = true;
+			return toVerify(res.email);
+		}
+		if (res.error === 'not_verified') {
+			fromRegister = false;
+			notify(t('toast.codeSent'));
+			return toVerify(res.email);
+		}
 		if (res.error) {
-			error.textContent = res.error;
+			error.textContent = errText(res.error);
 			if (res.field) $(`#auth-${res.field}`)?.focus();
 			return;
 		}
-		form.reset();
-		authDlg.close();
-		if (mode === 'register') unlock('newcomer');
-		notify(mode === 'register' ? `Аккаунт создан. Привет, ${res.user.nick}!` : `С возвращением, ${res.user.nick}!`);
-		openDialog(profileDlg);
+		done(res.user, mode === 'register' || (mode === 'verify' && fromRegister) ? 'toast.welcome' : 'toast.welcomeBack');
+	});
+	resend.addEventListener('click', async () => {
+		resend.disabled = true;
+		const res = await auth.resendCode({email: pendingEmail}, getLang());
+		if (res.error) {
+			error.textContent = errText(res.error);
+			resendAt = Date.now() + (res.wait || 15e3);
+		} else {
+			notify(t('toast.codeSent'));
+			resendAt = Date.now() + 60e3;
+		}
+		paintResend();
 	});
 
+	const HIST_ICON = {case: 'chest', reward: 'trophy', topup: 'coin', admin: 'coin', purchase: 'cube'};
+	const histTitle = (h) => (h.kind === 'purchase' || (h.kind === 'admin' && h.title) ? h.title : t(`hist.${h.kind}`));
 	const paint = () => {
-		const user = current();
-		document.documentElement.classList.toggle('is-authed', !!user);
-		$$('[data-auth-label]').forEach((el) => (el.textContent = user ? user.nick : el.dataset.authLabel));
+		const user = auth.current();
+		document.documentElement.classList.toggle('is-authed', Boolean(user));
+		$$('[data-auth-label]').forEach((el) => (el.textContent = user ? user.nick : t('auth.signin')));
 		$$('[data-auth-avatar]').forEach((el) => (el.innerHTML = user ? avatarHtml(user) : icon('user')));
-		if (!user) return;
+		if (!user) {
+			if (profileDlg.open) profileDlg.close();
+			return;
+		}
 		$('#profile-avatar').innerHTML = avatarHtml(user);
 		$('#profile-nick').textContent = user.nick;
 		$('#profile-email').textContent = user.email;
-		$('#profile-since').textContent = new Date(user.createdAt).toLocaleDateString('ru-RU', {day: 'numeric', month: 'long', year: 'numeric'});
+		$('#profile-since').textContent = t('profile.since', {date: date(user.createdAt, true)});
 		$('#profile-balance').textContent = money(user.balance);
 		$('#wallet-id').textContent = `ID •••• ${walletId(user.nick)}`;
 		$('#wallet-owner').textContent = user.nick;
-		// история видна, только когда в ней что-то есть
+		const bonus = $('#wallet-bonus');
+		bonus.hidden = !user.bonusCases;
+		bonus.innerHTML = `${icon('chest')}${esc(t('wallet.bonus', {n: user.bonusCases}))}`;
+		// покупки, история и купоны видны, только когда в них что-то есть
+		$('#orders-box').hidden = !user.orders.length;
+		$('#orders').innerHTML = user.orders
+			.map((o) => {
+				const url = auth.downloadUrl(o);
+				return `<li><span class="wallet__op">${icon('cube')}</span><span class="wallet__what"><b>${esc((getLang() === 'en' && o.titleEn) || o.title)}</b><time>${date(o.at)}</time></span>${url ? `<a class="wallet__dl" href="${esc(url)}" target="_blank" rel="noopener">${t('order.download')}</a>` : ''}</li>`;
+			})
+			.join('');
 		$('#wallet-history-box').hidden = !user.history.length;
 		$('#wallet-history').innerHTML = user.history
 			.map(
-				(h) => `<li><span class="wallet__op">${icon(h.kind === 'case' ? 'chest' : 'trophy')}</span><span class="wallet__what"><b>${esc(h.title)}</b><time>${new Date(h.at).toLocaleDateString('ru-RU', {day: 'numeric', month: 'long'})}</time></span><span class="wallet__amount">+${money(h.amount)} ₽</span></li>`,
+				(h) =>
+					`<li><span class="wallet__op">${icon(HIST_ICON[h.kind] || 'coin')}</span><span class="wallet__what"><b>${esc(histTitle(h))}</b><time>${date(h.at)}</time></span><span class="wallet__amount ${h.amount < 0 ? 'is-minus' : ''}">${h.amount < 0 ? '−' : '+'}${money(Math.abs(h.amount))} ₽</span></li>`,
 			)
 			.join('');
-		// купоны из кейса (например, любой ресурс-пак бесплатно)
 		$('#coupons-box').hidden = !user.coupons.length;
 		$('#coupons').innerHTML = user.coupons
-			.map(
-				(c) => `<li><span class="wallet__op wallet__op--gem">${icon('gem')}</span><span class="wallet__what"><b>${esc(c.title)}</b><time>Из кейса, ${new Date(c.at).toLocaleDateString('ru-RU', {day: 'numeric', month: 'long'})}. Обменяешь, когда в магазине появятся ресурс-паки</time></span><span class="wallet__tag">Купон</span></li>`,
-			)
+			.map((c) => `<li><span class="wallet__op wallet__op--gem">${icon('gem')}</span><span class="wallet__what"><b>${esc(t('loot.rp'))}</b><time>${esc(t('coupon.note', {date: date(c.at)}))}</time></span><span class="wallet__tag">${t('coupon.tag')}</span></li>`)
 			.join('');
 	};
-	onAuth(paint);
+	auth.onAuth(paint);
+	onLang(paint);
 	paint();
 
 	$$('[data-open-profile]').forEach((b) =>
 		b.addEventListener('click', () => {
-			if (current()) return openDialog(profileDlg);
-			setMode('register');
-			openDialog(authDlg);
+			if (auth.current()) return openDialog(profileDlg);
+			openAuth('register');
 		}),
 	);
 
@@ -275,46 +393,48 @@ $$('dialog').forEach((dlg) =>
 		e.target.value = '';
 		if (!file) return;
 		try {
-			const avatar = await fileToAvatar(file);
-			if (!update({avatar})) throw new Error('Браузер не дал сохранить картинку');
+			const res = await auth.update({avatar: await auth.fileToAvatar(file)});
+			if (res.error) throw new Error(res.error);
 			unlock('face');
-			notify('Аватарка обновлена');
+			notify(t('toast.avatar'));
 		} catch (err) {
-			notify(err.message);
+			notify(errText(err.message));
 		}
 	});
 	// смена пароля
 	const pwForm = $('#pw-form');
 	pwForm.addEventListener('submit', async (e) => {
 		e.preventDefault();
-		const res = await changePassword(Object.fromEntries(new FormData(pwForm)));
-		$('#pw-error').textContent = res.error || '';
+		const res = await auth.changePassword(Object.fromEntries(new FormData(pwForm)));
+		$('#pw-error').textContent = res.error ? errText(res.error) : '';
 		if (res.error) {
 			$(res.field === 'old' ? '#pw-old' : '#pw-new').focus();
 			return;
 		}
 		pwForm.reset();
 		pwForm.closest('details').open = false;
-		notify('Пароль изменён');
+		notify(t('toast.pw'));
 	});
-
-	$('#logout').addEventListener('click', () => {
+	$('#logout').addEventListener('click', async () => {
 		profileDlg.close();
-		logout();
-		notify('Ты вышел из аккаунта');
+		await auth.logout();
+		notify(t('toast.logout'));
 	});
 	setMode('register');
 }
 
 // ---------- награда: 5 ₽ на баланс за все достижения (один раз на аккаунт) ----------
 {
-	const reward = () => {
-		if (count() < ACHIEVEMENTS.length || !current()) return;
-		if (credit({id: 'all-achievements', amount: 5, title: 'Награда за все достижения'})) notify('+5 ₽ на баланс за все достижения!');
+	const tried = new Set();
+	const reward = async () => {
+		const user = auth.current();
+		if (count() < ACHIEVEMENTS.length || !user || tried.has(user.nick)) return;
+		tried.add(user.nick);
+		const res = await auth.claimAchievements();
+		if (res.ok) notify(t('toast.reward5'));
 	};
 	onChange(reward);
-	onAuth(reward);
-	reward();
+	auth.onAuth(reward);
 }
 
 // ---------- появление блоков при прокрутке ----------
@@ -340,11 +460,11 @@ $$('dialog').forEach((dlg) =>
 	addEventListener('scroll', onScroll, {passive: true});
 	onScroll();
 
-	// хотбар: рамка выделения стоит на разделе, который сейчас на экране,
+	// хотбар (на телефоне): рамка выделения стоит на разделе, который сейчас на экране,
 	// а пока открыто окно профиля или входа — на «Профиле»
 	const bar = $('#hotbar');
 	const slots = $$('.hotbar__slot', bar);
-	const dialogs = [$('#profile-dialog'), $('#auth-dialog')];
+	const dialogs = [profileDlg, authDlg];
 	let sectionSlot = 'top';
 	let lockUntil = 0;
 	const select = (name) => {
@@ -385,7 +505,7 @@ $$('dialog').forEach((dlg) =>
 	// ---------- телефон: разделы — отдельные экраны, как на onlyy.shop ----------
 	// Главная (первый экран, сотрудничество, каналы), Магазин и Кейсы показываются по одному,
 	// у каждого своя граница прокрутки. Кнопка «Назад» в телефоне возвращает на прошлый экран.
-	// На компьютере сайт листается целиком, как раньше.
+	// На компьютере сайт листается целиком.
 	const phone = matchMedia('(max-width: 700px)');
 	const PAGE_SLOT = {home: 'top', shop: 'shop', cases: 'cases'};
 	const pageOf = (el) => el?.closest('[data-page]')?.dataset.page || 'home';
@@ -428,27 +548,30 @@ $$('dialog').forEach((dlg) =>
 	syncMode();
 }
 
-// ---------- ежедневный кейс ----------
+// ---------- кейс: ежедневный и бесплатные за задания ----------
+let paintCase = () => {};
 {
 	const art = $('#case-art');
 	const prizeBox = $('#case-prize');
 	const btn = $('#case-open');
-	const dot = $('.hotbar__dot');
+	const dots = [$('.hotbar__dot'), $('.topnav__dot')].filter(Boolean);
 	const LOOT_ICON = {money: 'coin', rp: 'gem'};
 	art.innerHTML = caseArt();
-	$('#case-title').textContent = CASE.title;
 	const total = CASE.loot.reduce((sum, l) => sum + l.chance, 0);
 	const pct = (c) => {
 		const v = (c / total) * 100;
 		return `${v < 1 ? v.toFixed(1) : Math.round(v)}%`;
 	};
-	$('#case-loot').innerHTML = CASE.loot
-		.map((l) => `<li data-rarity="${l.rarity}">${icon(LOOT_ICON[l.kind] || 'gem')}<span><b>${esc(l.title)}</b><small>Шанс ${pct(l.chance)}</small></span></li>`)
-		.join('');
+	const renderLoot = () =>
+		($('#case-loot').innerHTML = CASE.loot
+			.map((l) => `<li data-rarity="${l.rarity}">${icon(LOOT_ICON[l.kind] || 'gem')}<span><b>${esc(t(`loot.${l.id}`))}</b><small>${t('case.chance', {p: pct(l.chance)})}</small></span></li>`)
+			.join(''));
+	renderLoot();
+	onLang(renderLoot);
 
 	const wait = CASE.cooldownHours * 3600e3;
 	const left = () => {
-		const u = current();
+		const u = auth.current();
 		return u && u.caseAt ? Math.max(0, u.caseAt + wait - Date.now()) : 0;
 	};
 	const clock = (ms) => {
@@ -457,43 +580,54 @@ $$('dialog').forEach((dlg) =>
 	};
 	const set = (el, prop, value) => el[prop] !== value && (el[prop] = value);
 	let opening = false;
-	const paint = () => {
+	paintCase = () => {
 		if (opening) return;
+		const user = auth.current();
 		const ms = left();
-		dot.hidden = ms > 0;
-		if (!current()) {
+		const bonus = user?.bonusCases || 0;
+		dots.forEach((d) => (d.hidden = Boolean(user) && ms > 0 && !bonus));
+		if (!user) {
 			set(btn, 'disabled', false);
-			set(btn, 'textContent', 'Войти и открыть');
-		} else if (ms > 0) {
-			set(btn, 'disabled', true);
-			set(btn, 'textContent', `Откроется через ${clock(ms)}`);
+			set(btn, 'textContent', t('case.login'));
+		} else if (ms === 0) {
+			set(btn, 'disabled', false);
+			set(btn, 'textContent', t('case.open'));
+		} else if (bonus > 0) {
+			set(btn, 'disabled', false);
+			set(btn, 'textContent', t('case.openBonus', {n: bonus}));
 		} else {
-			set(btn, 'disabled', false);
-			set(btn, 'textContent', 'Открыть кейс');
+			set(btn, 'disabled', true);
+			set(btn, 'textContent', t('case.wait', {t: clock(ms)}));
 		}
 	};
-	paint();
-	onAuth(paint);
-	setInterval(paint, 1000);
+	paintCase();
+	auth.onAuth(paintCase);
+	onLang(paintCase);
+	setInterval(paintCase, 1000);
 
+	let lastPrize = null;
+	const prizeHtml = (p) =>
+		p.kind === 'money' ? `${icon('coin')}<b>+${p.amount} ₽</b><span>${t('case.money')}</span>` : `${icon('gem')}<b>${t('case.rp')}</b><span>${t('case.rpText')}</span>`;
 	const showPrize = (p) => {
+		lastPrize = p;
 		prizeBox.dataset.rarity = p.rarity;
-		prizeBox.innerHTML =
-			p.kind === 'money'
-				? `${icon('coin')}<b>+${p.amount} ₽</b><span>Зачислено на баланс</span>`
-				: `${icon('gem')}<b>Ресурс-пак</b><span>Любой ресурс-пак бесплатно. Купон лежит в профиле</span>`;
+		prizeBox.innerHTML = prizeHtml(p);
 		prizeBox.hidden = false;
-		notify(p.kind === 'money' ? `Кейс: +${p.amount} ₽ на баланс!` : 'Кейс: любой ресурс-пак бесплатно! Купон — в профиле');
+		notify(p.kind === 'money' ? t('toast.caseMoney', {n: p.amount}) : t('toast.caseRp'));
 	};
-	const open = () => {
+	onLang(() => lastPrize && !prizeBox.hidden && (prizeBox.innerHTML = prizeHtml(lastPrize)));
+	const open = async () => {
 		if (opening) return;
-		if (!current()) return $('[data-slot="profile"]').click(); // откроется окно входа
-		const res = openCase(CASE);
-		if (res.error === 'wait') return paint();
-		if (res.error) return notify('Браузер не дал сохранить награду. Выключи приватный режим и попробуй ещё раз.');
+		if (!auth.current()) return openAuth('register');
 		opening = true;
 		btn.disabled = true;
-		btn.textContent = 'Открываем…';
+		btn.textContent = t('case.opening');
+		const res = await auth.openCase();
+		if (res.error) {
+			opening = false;
+			if (res.error !== 'wait') notify(errText(res.error));
+			return paintCase();
+		}
 		// на телефоне сундук выше кнопки — подкручиваем страницу, чтобы награду было видно
 		const stage = art.parentElement.getBoundingClientRect();
 		if (stage.top < 70 || stage.bottom > innerHeight - 80) art.parentElement.scrollIntoView({behavior: reducedMotion ? 'auto' : 'smooth', block: 'center'});
@@ -507,7 +641,7 @@ $$('dialog').forEach((dlg) =>
 				breakSound();
 				showPrize(res.prize);
 				opening = false;
-				paint();
+				paintCase();
 			},
 			reducedMotion ? 50 : 1100,
 		);
@@ -521,14 +655,70 @@ $$('dialog').forEach((dlg) =>
 	});
 }
 
+// ---------- задания: за каждое — бесплатный кейс ----------
+{
+	const list = $('#tasks');
+	const LINK_ICON = {
+		youtube: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18v10H3z" fill="#ff3d3d"/><path d="M10 9.5v5l4.5-2.5z" fill="#fff"/></svg>',
+		telegram: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 4 2.5 11.2l5.6 2 2.1 6.3 3.1-3.7 4.7 3.5z" fill="#c3a6ff"/><path d="m8.1 13.2 9.3-6.4-6.9 7.8-.3 4.9z" fill="#5b34c9"/></svg>',
+	};
+	const iconOf = (task) => (task.kind === 'link' ? LINK_ICON[task.link] : icon(task.kind === 'purchase' ? 'chest' : 'coin'));
+	const render = () => {
+		const user = auth.current();
+		list.innerHTML = TASKS.map((task) => {
+			const st = user?.tasks?.[task.id] || {state: 'todo'};
+			const desc = t(`task.${task.id}.d`, {n: Number(st.progress || 0).toLocaleString(locale()), goal: task.amount});
+			let action;
+			if (!user) action = `<button class="btn btn--purple btn--sm task__btn" type="button" data-task-login>${t('task.login')}</button>`;
+			else if (st.state === 'claimed') action = `<span class="btn btn--sm task__btn">✓ ${t('task.done')}</span>`;
+			else if (st.state === 'ready' || st.state === 'opened') action = `<button class="btn btn--gold btn--sm task__btn" type="button" data-task-claim="${task.id}">${t('task.claim')}</button>`;
+			else if (task.kind === 'link') action = `<a class="btn btn--purple btn--sm task__btn" href="${esc(SITE[task.link])}" target="_blank" rel="noopener" data-task-open="${task.id}">${t('task.go')}</a>`;
+			else if (task.kind === 'purchase') action = `<a class="btn btn--purple btn--sm task__btn" href="#shop">${t('task.toShop')}</a>`;
+			else action = `<button class="btn btn--purple btn--sm task__btn" type="button" disabled title="${esc(t('wallet.soon'))}">${t('task.topup')}</button>`;
+			return `<li class="task ${st.state === 'claimed' ? 'is-done' : ''}">
+				<span class="task__icon">${iconOf(task)}</span>
+				<span class="task__text"><b>${t(`task.${task.id}.t`)}</b><small>${esc(desc)} · <span class="task__reward">${t('task.reward')}</span></small></span>
+				${action}
+			</li>`;
+		}).join('');
+	};
+	render();
+	auth.onAuth(render);
+	onLang(render);
+	list.addEventListener('click', async (e) => {
+		if (e.target.closest('[data-task-login]')) return openAuth('register');
+		const opened = e.target.closest('[data-task-open]');
+		if (opened) {
+			// ссылка открывается в новой вкладке, а здесь запоминаем переход
+			const res = await auth.openTask(opened.dataset.taskOpen);
+			if (!res.error) notify(t('toast.taskWait'));
+			return;
+		}
+		const claim = e.target.closest('[data-task-claim]');
+		if (!claim) return;
+		claim.disabled = true;
+		const res = await auth.claimTask(claim.dataset.taskClaim);
+		claim.disabled = false;
+		if (res.error) return notify(errText(res.error));
+		breakSound();
+		notify(t('toast.taskClaimed'));
+	});
+}
+
 // ---------- подвал: надпись «1DEX1 SHOP» из ломающихся блоков ----------
 initFootWord($('#foot-word'), {reducedMotion, on: () => blockBroken('digger')});
-
 $('#year').textContent = new Date().getFullYear();
+
+// ---------- запуск: узнать, есть ли сервер, загрузить вошедшего и товары ----------
+auth.init().then(async () => {
+	products = await auth.loadProducts();
+	renderShop();
+});
 
 // ---------- 3D-сцена первого экрана (грузится последней, чтобы не тормозить страницу) ----------
 import('./hero.js')
 	.then(({initHero}) => {
+		const tier = (id) => t(`tier.${id}`);
 		const ok = initHero($('#hero-gl'), {
 			reducedMotion,
 			wall: $('#marquee'),
@@ -543,33 +733,33 @@ import('./hero.js')
 						breakSound();
 						break;
 					case 'tier':
-						notify(`Новая кирка: ${data}!`);
+						notify(t('toast.tier', {name: tier(data)}));
 						break;
 					case 'diamond':
 						unlock('treasure');
-						setTimeout(() => notify('С алмазной киркой можно сломать стену «Магазин · Моды · РП»'), 1800);
+						setTimeout(() => notify(t('toast.diamond', {wall: (MARQUEE[getLang()] || MARQUEE.ru).join(' · ')})), 1800);
 						break;
 					case 'torch':
-						notify(data === 1 ? 'Уголь! На дереве загорелся факел' : 'Ещё один факел на дереве');
+						notify(t(data === 1 ? 'toast.torch1' : 'toast.torchN'));
 						break;
 					case 'need':
-						notify(`Нужна ${data} кирка`);
+						notify(t('toast.need', {name: tier(data)}));
 						break;
 					case 'far':
-						notify('Не дотянуться — блок слишком глубоко');
+						notify(t('toast.far'));
 						break;
 					case 'busy':
-						notify('Сначала закончит с прошлым блоком');
+						notify(t('toast.busy'));
 						break;
 					case 'away':
-						notify('Сначала верни персонажа на остров');
+						notify(t('toast.away'));
 						break;
 					case 'wallNeed':
-						notify(`Стену ломает только алмазная кирка. Сейчас — ${data}`);
+						notify(t('toast.wallNeed', {name: tier(data)}));
 						break;
 					case 'free':
 						breakSound();
-						notify('Стена сломана — теперь можно летать по всему сайту');
+						notify(t('toast.free'));
 						break;
 					case 'drag':
 						unlock('telekinesis');

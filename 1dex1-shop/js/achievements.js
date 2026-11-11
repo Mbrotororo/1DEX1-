@@ -1,20 +1,22 @@
 // Достижения: 8 обычных и 2 секретных. Хранятся в браузере посетителя
 // (localStorage), сервер для них не нужен.
+import {t} from './i18n.js';
 import {icon} from './pixel.js';
 
 const KEY = 'dex.achievements.v2';
 
+// Названия и описания — в js/i18n.js (ключи a.<id>.t и a.<id>.d), на двух языках
 export const ACHIEVEMENTS = [
-	{id: 'kirka', icon: 'pick', title: 'Кирка в деле', desc: 'Сломай блок в названии магазина'},
-	{id: 'mason', icon: 'boom', title: 'Каменотёс', desc: 'Сломай 30 блоков на сайте'},
-	{id: 'telekinesis', icon: 'cube', title: 'Телекинез', desc: 'Сними персонажа с острова'},
-	{id: 'showcase', icon: 'chest', title: 'Витрина', desc: 'Загляни в разделы «Моды» и «РП»'},
-	{id: 'newcomer', icon: 'home', title: 'Новосёл', desc: 'Зарегистрируйся в магазине'},
-	{id: 'face', icon: 'face', title: 'Своё лицо', desc: 'Поставь аватарку в профиле'},
-	{id: 'contact', icon: 'plane', title: 'На связи', desc: 'Открой YouTube или Telegram'},
-	{id: 'digger', icon: 'shovel', title: 'Землекоп', desc: 'Сломай блок в самом низу сайта'},
-	{id: 'treasure', icon: 'gem', title: 'Алмазы!', desc: 'Добудь алмаз и получи алмазную кирку', hidden: true},
-	{id: 'tickle', icon: 'feather', title: 'Щекотка', desc: 'Пять раз ткни в скин', hidden: true},
+	{id: 'kirka', icon: 'pick'},
+	{id: 'mason', icon: 'boom'},
+	{id: 'telekinesis', icon: 'cube'},
+	{id: 'showcase', icon: 'chest'},
+	{id: 'newcomer', icon: 'home'},
+	{id: 'face', icon: 'face'},
+	{id: 'contact', icon: 'plane'},
+	{id: 'digger', icon: 'shovel'},
+	{id: 'treasure', icon: 'gem', hidden: true},
+	{id: 'tickle', icon: 'feather', hidden: true},
 ];
 
 const load = () => {
@@ -44,7 +46,7 @@ const showToast = (a) => {
 	const el = document.createElement('div');
 	el.className = 'toast';
 	el.setAttribute('role', 'status');
-	el.innerHTML = `<span class="toast__icon">${icon(a.icon)}</span><span class="toast__text"><b class="px">${a.hidden ? 'Секретное достижение!' : 'Достижение получено!'}</b><span>${a.title}</span></span>`;
+	el.innerHTML = `<span class="toast__icon">${icon(a.icon)}</span><span class="toast__text"><b class="px">${t(a.hidden ? 'toast.achSecret' : 'toast.ach')}</b><span>${t(`a.${a.id}.t`)}</span></span>`;
 	toastHost().append(el);
 	setTimeout(() => el.classList.add('out'), 4200);
 	setTimeout(() => el.remove(), 4700);
@@ -85,8 +87,8 @@ export const renderList = (host) => {
 		const secret = a.hidden && !open;
 		return `<li class="ach ${open ? 'is-open' : ''}">
 			<span class="ach__icon">${icon(open ? a.icon : 'lock')}</span>
-			<span class="ach__text"><b>${secret ? '???' : a.title}</b><span>${secret ? 'Секретное достижение' : a.desc}</span></span>
-			<span class="ach__state px">${open ? 'получено' : 'закрыто'}</span>
+			<span class="ach__text"><b>${secret ? '???' : t(`a.${a.id}.t`)}</b><span>${secret ? t('ach.secret') : t(`a.${a.id}.d`)}</span></span>
+			<span class="ach__state px">${t(open ? 'ach.got' : 'ach.locked')}</span>
 		</li>`;
 	}).join('');
 };

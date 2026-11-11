@@ -1,13 +1,51 @@
-// Аккаунты: регистрация, вход, выход, аватарка и баланс.
+// Аккаунты, баланс, кейсы, задания и покупки.
 //
-// ВАЖНО: у сайта пока нет сервера, поэтому аккаунты хранятся в браузере
-// посетителя (localStorage). Аккаунт, созданный на одном устройстве, не виден
-// на другом. Когда появится сервер, менять нужно только этот файл: остальной
-// сайт пользуется функциями register / login / logout / current / update.
+// Два режима работы — остальной сайт пользуется одними и теми же функциями:
+//  • С СЕРВЕРОМ (папка server/, запуск: npm start). Всё хранится в SQL-базе на сервере,
+//    при регистрации на почту приходит код — без него аккаунт не заработает. Награду
+//    из кейса и выполнение заданий проверяет сервер.
+//  • БЕЗ СЕРВЕРА (просто открытые файлы сайта, например на GitHub Pages). Аккаунты
+//    живут в браузере посетителя (localStorage), почта не проверяется.
+// Режим определяется сам: если по адресу api/health отвечает сервер магазина — с сервером.
 
+import {CASE, PRODUCTS, TASKS} from './data.js';
+
+export let serverMode = false;
+let cached = null; // текущий пользователь (или null), чтобы current() отвечал мгновенно
+
+const listeners = new Set();
+export const onAuth = (fn) => listeners.add(fn);
+const emit = () => listeners.forEach((fn) => fn(cached));
+export const current = () => cached;
+
+// =====================================================================
+//  С СЕРВЕРОМ
+// =====================================================================
+const api = async (path, body) => {
+	try {
+		const res = await fetch(`api/${path}`, body === undefined ? {credentials: 'same-origin'} : {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+		let data = null;
+		try {
+			data = await res.json();
+		} catch {
+			// не JSON — ошибка сервера
+		}
+		if (!res.ok || !data) return {error: data?.error || 'server', ...data};
+		if ('user' in data) {
+			cached = data.user;
+			emit();
+		}
+		return data;
+	} catch {
+		return {error: 'network'};
+	}
+};
+
+// =====================================================================
+//  БЕЗ СЕРВЕРА (localStorage)
+// =====================================================================
 const USERS = 'dex.users';
 const SESSION = 'dex.session';
-
 const read = (key, fallback) => {
 	try {
 		return JSON.parse(localStorage.getItem(key)) ?? fallback;
@@ -23,15 +61,13 @@ const write = (key, value) => {
 		return false;
 	}
 };
-
-// Пароль не хранится в открытом виде: сохраняется только его хэш с «солью»
+// Пароль не хранится в открытом виде: только хэш с «солью»
 const hashPassword = async (password, salt) => {
 	const text = `${salt}:${password}`;
 	if (window.crypto?.subtle) {
 		const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
 		return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
 	}
-	// запасной вариант для старых браузеров
 	let h1 = 0xdeadbeef;
 	let h2 = 0x41c6ce57;
 	for (let i = 0; i < text.length; i++) {
@@ -43,145 +79,265 @@ const hashPassword = async (password, salt) => {
 };
 const makeSalt = () => {
 	const bytes = new Uint8Array(12);
-	(window.crypto || {getRandomValues: (a) => a.forEach((_, i) => (a[i] = Math.floor(Math.random() * 256)))}).getRandomValues(bytes);
+	crypto.getRandomValues(bytes);
 	return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
 };
+const NICK_RE = /^[A-Za-z0-9_]{3,16}$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const money = (v) => Math.round(v * 100) / 100;
+const localProducts = () => PRODUCTS.map((p) => ({...p, price: typeof p.price === 'number' ? p.price : null}));
 
-const listeners = new Set();
-export const onAuth = (fn) => listeners.add(fn);
-const emit = () => listeners.forEach((fn) => fn(current()));
-
+// задания: в каком состоянии у этого пользователя
+const taskStates = (u) => {
+	const out = {};
+	const paid = (u.orders || []).filter((o) => o.price > 0).length;
+	for (const task of TASKS) {
+		const rec = u.tasks?.[task.id] || {};
+		let state = 'todo';
+		const progress = task.kind === 'topup' ? money(u.topups || 0) : undefined;
+		if (rec.claimed) state = 'claimed';
+		else if (task.kind === 'link') state = rec.opened ? 'opened' : 'todo';
+		else if (task.kind === 'purchase') state = paid > 0 ? 'ready' : 'todo';
+		else if (task.kind === 'topup') state = progress >= task.amount ? 'ready' : 'todo';
+		out[task.id] = {state, progress};
+	}
+	return out;
+};
 const publicUser = (u) =>
-	u && {nick: u.nick, email: u.email, avatar: u.avatar, balance: u.balance || 0, history: u.history || [], coupons: u.coupons || [], caseAt: u.caseAt || 0, createdAt: u.createdAt};
-
-export const current = () => {
+	u && {
+		nick: u.nick,
+		email: u.email,
+		avatar: u.avatar,
+		verified: true,
+		balance: u.balance || 0,
+		bonusCases: u.bonusCases || 0,
+		caseAt: u.caseAt || 0,
+		createdAt: u.createdAt,
+		history: u.history || [],
+		coupons: (u.coupons || []).filter((c) => !c.used),
+		orders: u.orders || [],
+		tasks: taskStates(u),
+	};
+const localSession = () => {
 	const key = read(SESSION, null);
-	return key ? publicUser(read(USERS, {})[key]) || null : null;
+	const users = read(USERS, {});
+	return {key, users, user: key ? users[key] : null};
+};
+const localSave = (users) => {
+	if (!write(USERS, users)) return false;
+	cached = publicUser(localSession().user) || null;
+	emit();
+	return true;
 };
 
-export const register = async ({nick, email, password}) => {
+// =====================================================================
+//  ОБЩИЕ ФУНКЦИИ
+// =====================================================================
+
+// Запуск: узнать режим и загрузить вошедшего пользователя
+export const init = async () => {
+	try {
+		const ctrl = new AbortController();
+		const timer = setTimeout(() => ctrl.abort(), 2500);
+		const res = await fetch('api/health', {cache: 'no-store', signal: ctrl.signal});
+		clearTimeout(timer);
+		const data = res.ok ? await res.json() : null;
+		serverMode = data?.app === '1dex1-shop';
+	} catch {
+		serverMode = false;
+	}
+	if (serverMode) {
+		const data = await api('me');
+		cached = data.user || null;
+	} else cached = publicUser(localSession().user) || null;
+	emit();
+};
+
+// Регистрация. С сервером ответ {verify: true, email} — нужен код из письма.
+export const register = async ({nick, email, password}, lang) => {
 	nick = String(nick || '').trim();
 	email = String(email || '').trim().toLowerCase();
 	password = String(password || '');
-	if (!/^[A-Za-z0-9_]{3,16}$/.test(nick)) return {error: 'Ник: от 3 до 16 символов — латиница, цифры и «_»', field: 'nick'};
-	if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return {error: 'Проверь почту: в ней ошибка', field: 'email'};
-	if (password.length < 6) return {error: 'Пароль: минимум 6 символов', field: 'password'};
+	if (!NICK_RE.test(nick)) return {error: 'nick', field: 'nick'};
+	if (!EMAIL_RE.test(email)) return {error: 'email', field: 'email'};
+	if (password.length < 6) return {error: 'password', field: 'password'};
+	if (serverMode) return api('register', {nick, email, password, lang});
 
 	const users = read(USERS, {});
 	const key = nick.toLowerCase();
-	if (users[key]) return {error: 'Такой ник уже занят', field: 'nick'};
-	if (Object.values(users).some((u) => u.email === email)) return {error: 'Эта почта уже зарегистрирована', field: 'email'};
-
+	if (users[key]) return {error: 'nick_taken', field: 'nick'};
+	if (Object.values(users).some((u) => u.email === email)) return {error: 'email_taken', field: 'email'};
 	const salt = makeSalt();
 	users[key] = {nick, email, salt, hash: await hashPassword(password, salt), avatar: null, balance: 0, createdAt: new Date().toISOString()};
-	if (!write(USERS, users)) return {error: 'Браузер не дал сохранить аккаунт. Выключи приватный режим и попробуй ещё раз.'};
-	write(SESSION, key);
-	emit();
-	return {user: current()};
+	if (!write(USERS, users) || !write(SESSION, key)) return {error: 'save'};
+	localSave(users);
+	return {user: cached};
 };
 
-export const login = async ({login: name, password}) => {
+// Подтверждение почты кодом из письма (только с сервером)
+export const verifyEmail = ({email, code}) => api('verify', {email, code: String(code || '').replace(/\D/g, '')});
+export const resendCode = ({email}, lang) => api('resend', {email, lang});
+
+// Вход. С сервером, если почта не подтверждена: {error: 'not_verified', email}
+export const login = async ({login: name, password}, lang) => {
 	name = String(name || '').trim().toLowerCase();
+	password = String(password || '');
+	if (serverMode) return api('login', {login: name, password, lang});
 	const users = read(USERS, {});
 	const key = users[name] ? name : Object.keys(users).find((k) => users[k].email === name);
 	const user = key && users[key];
-	if (!user || user.hash !== (await hashPassword(String(password || ''), user.salt))) {
-		return {error: 'Неверный ник или пароль'};
-	}
+	if (!user || user.hash !== (await hashPassword(password, user.salt))) return {error: 'bad_login'};
 	write(SESSION, key);
+	cached = publicUser(user);
 	emit();
-	return {user: current()};
+	return {user: cached};
 };
 
-export const logout = () => {
-	try {
-		localStorage.removeItem(SESSION);
-	} catch {
-		// нечего удалять
+export const logout = async () => {
+	if (serverMode) await api('logout', {});
+	else {
+		try {
+			localStorage.removeItem(SESSION);
+		} catch {
+			// нечего удалять
+		}
 	}
+	cached = null;
 	emit();
 };
 
-// Смена пароля: нужен старый пароль
 export const changePassword = async ({oldPassword, newPassword}) => {
-	const key = read(SESSION, null);
-	const users = read(USERS, {});
-	const user = key && users[key];
-	if (!user) return {error: 'Сначала войди в аккаунт'};
-	if (user.hash !== (await hashPassword(String(oldPassword || ''), user.salt))) return {error: 'Старый пароль не подходит', field: 'old'};
 	newPassword = String(newPassword || '');
-	if (newPassword.length < 6) return {error: 'Новый пароль: минимум 6 символов', field: 'new'};
-	if (newPassword === oldPassword) return {error: 'Новый пароль совпадает со старым', field: 'new'};
+	if (newPassword.length < 6) return {error: 'new_password', field: 'new'};
+	if (newPassword === oldPassword) return {error: 'same_password', field: 'new'};
+	if (serverMode) {
+		const res = await api('password', {oldPassword, newPassword});
+		return res.error === 'old_password' ? {...res, field: 'old'} : res;
+	}
+	const {users, user} = localSession();
+	if (!user) return {error: 'login'};
+	if (user.hash !== (await hashPassword(String(oldPassword || ''), user.salt))) return {error: 'old_password', field: 'old'};
 	user.salt = makeSalt();
 	user.hash = await hashPassword(newPassword, user.salt);
-	if (!write(USERS, users)) return {error: 'Браузер не дал сохранить пароль'};
-	return {ok: true};
+	return write(USERS, users) ? {ok: true} : {error: 'save'};
 };
 
-// Зачислить деньги на баланс. id защищает от повторного начисления одной и той же награды.
-export const credit = ({id, amount, title}) => {
-	const key = read(SESSION, null);
-	const users = read(USERS, {});
-	const user = key && users[key];
-	if (!user) return false;
-	user.history ||= [];
-	if (user.history.some((h) => h.id === id)) return false;
-	user.balance = Math.round(((user.balance || 0) + amount) * 100) / 100;
-	user.history.unshift({id, amount, title, at: new Date().toISOString()});
-	const ok = write(USERS, users);
-	if (ok) emit();
-	return ok;
+// Сменить аватарку
+export const update = async ({avatar}) => {
+	if (serverMode) return api('avatar', {avatar});
+	const {users, user} = localSession();
+	if (!user) return {error: 'login'};
+	user.avatar = avatar;
+	return localSave(users) ? {ok: true} : {error: 'save'};
 };
 
-// Ежедневный кейс: открыть можно раз в cooldownHours часов. Награда выпадает по шансам
-// из loot: деньги сразу идут на баланс, ресурс-пак — купоном в профиль.
-// Когда появится сервер, награду должен выбирать он, а не браузер.
-export const openCase = ({loot, cooldownHours, title}) => {
-	const key = read(SESSION, null);
-	const users = read(USERS, {});
-	const user = key && users[key];
+// Открыть кейс: сначала ежедневный, если он ещё не готов — бесплатный за задания
+export const openCase = async () => {
+	if (serverMode) return api('case/open', {});
+	const {users, user} = localSession();
 	if (!user) return {error: 'login'};
 	const now = Date.now();
-	const wait = cooldownHours * 3600e3;
-	if (user.caseAt && now - user.caseAt < wait) return {error: 'wait', next: user.caseAt + wait};
-	let roll = Math.random() * loot.reduce((sum, l) => sum + l.chance, 0);
-	const prize = loot.find((l) => (roll -= l.chance) < 0) || loot[0];
+	const wait = CASE.cooldownHours * 3600e3;
+	if (!user.caseAt || now - user.caseAt >= wait) user.caseAt = now;
+	else if (user.bonusCases > 0) user.bonusCases--;
+	else return {error: 'wait', next: user.caseAt + wait};
+	let roll = Math.random() * CASE.loot.reduce((sum, l) => sum + l.chance, 0);
+	const prize = CASE.loot.find((l) => (roll -= l.chance) < 0) || CASE.loot[0];
 	const id = `case-${now}`;
 	const at = new Date(now).toISOString();
-	user.caseAt = now;
 	if (prize.kind === 'money') {
 		user.history ||= [];
-		user.balance = Math.round(((user.balance || 0) + prize.amount) * 100) / 100;
-		user.history.unshift({id, amount: prize.amount, title, kind: 'case', at});
+		user.balance = money((user.balance || 0) + prize.amount);
+		user.history.unshift({id, amount: prize.amount, kind: 'case', at});
 	} else {
 		user.coupons ||= [];
-		user.coupons.unshift({id, kind: prize.kind, title: prize.title, at});
+		user.coupons.unshift({id, kind: prize.kind, at});
 	}
-	if (!write(USERS, users)) return {error: 'save'};
-	emit();
-	return {prize, next: now + wait};
+	if (!localSave(users)) return {error: 'save'};
+	return {prize, user: cached};
 };
 
-// Изменить свой профиль (сейчас — только аватарку)
-export const update = (patch) => {
-	const key = read(SESSION, null);
-	const users = read(USERS, {});
-	if (!key || !users[key]) return false;
-	if ('avatar' in patch) users[key].avatar = patch.avatar;
-	const ok = write(USERS, users);
-	if (ok) emit();
-	return ok;
+// Задание «подписаться»: посетитель открыл ссылку — запоминаем, потом можно забрать кейс
+export const openTask = async (id) => {
+	if (serverMode) return api('tasks/open', {task: id});
+	const {users, user} = localSession();
+	if (!user) return {error: 'login'};
+	user.tasks ||= {};
+	user.tasks[id] = {...user.tasks[id], opened: user.tasks[id]?.opened || Date.now()};
+	return localSave(users) ? {user: cached} : {error: 'save'};
 };
+
+// Забрать награду за задание: +1 бесплатный кейс
+export const claimTask = async (id) => {
+	if (serverMode) return api('tasks/claim', {task: id});
+	const {users, user} = localSession();
+	if (!user) return {error: 'login'};
+	const task = TASKS.find((x) => x.id === id);
+	const state = taskStates(user)[id]?.state;
+	if (!task || state === 'claimed') return {error: 'not_done'};
+	if (task.kind === 'link' ? state !== 'opened' : state !== 'ready') return {error: 'not_done'};
+	user.tasks ||= {};
+	user.tasks[id] = {...user.tasks[id], claimed: Date.now()};
+	user.bonusCases = (user.bonusCases || 0) + task.reward;
+	return localSave(users) ? {user: cached} : {error: 'save'};
+};
+
+// +5 ₽ за все достижения — один раз на аккаунт
+export const claimAchievements = async () => {
+	if (serverMode) return api('reward/achievements', {});
+	const {users, user} = localSession();
+	if (!user) return {error: 'login'};
+	user.history ||= [];
+	if (user.history.some((h) => h.id === 'all-achievements')) return {error: 'already'};
+	user.balance = money((user.balance || 0) + 5);
+	user.history.unshift({id: 'all-achievements', amount: 5, kind: 'reward', at: new Date().toISOString()});
+	return localSave(users) ? {ok: true, user: cached} : {error: 'save'};
+};
+
+// Товары: с сервером — из базы, без сервера — из data.js
+export const loadProducts = async () => {
+	if (!serverMode) return localProducts();
+	const data = await api('products');
+	return data.products || [];
+};
+
+// Купить товар: за баланс, по купону (ресурс-пак) или бесплатно
+export const buy = async (productId, {coupon = false} = {}) => {
+	if (serverMode) return api('buy', {productId, coupon});
+	const {users, user} = localSession();
+	if (!user) return {error: 'login'};
+	const p = localProducts().find((x) => x.id === productId);
+	if (!p || p.price === null) return {error: 'server'};
+	user.orders ||= [];
+	if (user.orders.some((o) => o.productId === productId)) return {error: 'owned'};
+	const at = new Date().toISOString();
+	let price = p.price;
+	const free = (user.coupons || []).find((c) => !c.used && c.kind === 'rp');
+	if (coupon && p.kind === 'rp' && free) {
+		free.used = productId;
+		price = 0;
+	} else if (price > 0) {
+		if ((user.balance || 0) < price) return {error: 'balance'};
+		user.balance = money(user.balance - price);
+		user.history ||= [];
+		user.history.unshift({id: `buy-${Date.now()}`, amount: -price, kind: 'purchase', title: p.title, at});
+	}
+	user.orders.unshift({id: `o-${Date.now()}`, productId, title: p.title, titleEn: p.titleEn, price: p.price && price, link: p.link, at});
+	return localSave(users) ? {user: cached} : {error: 'save'};
+};
+
+// Ссылка на скачивание купленного товара
+export const downloadUrl = (order) => (serverMode ? `api/download/${encodeURIComponent(order.productId)}` : order.link || null);
 
 // Картинка из галереи -> квадрат 256x256 (обрезка по центру), чтобы занимала мало места
 export const fileToAvatar = (file) =>
 	new Promise((resolve, reject) => {
-		if (!file || !file.type.startsWith('image/')) return reject(new Error('Выбери картинку'));
+		if (!file || !file.type.startsWith('image/')) return reject(new Error('avatar'));
 		const reader = new FileReader();
-		reader.onerror = () => reject(new Error('Не получилось прочитать файл'));
+		reader.onerror = () => reject(new Error('avatarRead'));
 		reader.onload = () => {
 			const img = new Image();
-			img.onerror = () => reject(new Error('Этот формат картинки не подходит'));
+			img.onerror = () => reject(new Error('avatarFormat'));
 			img.onload = () => {
 				const size = 256;
 				const side = Math.min(img.width, img.height);

@@ -1,0 +1,11 @@
+{
+	"name": "1dex1-shop",
+	"private": true,
+	"description": "Сайт-магазин 1DEX1 SHOP: моды и ресурс-паки для Minecraft",
+	"type": "module",
+	"engines": {"node": ">=22.13"},
+	"scripts": {
+		"start": "node --env-file-if-exists=server/.env --disable-warning=ExperimentalWarning server/server.js",
+		"admin": "node --env-file-if-exists=server/.env --disable-warning=ExperimentalWarning server/admin.js"
+	}
+}

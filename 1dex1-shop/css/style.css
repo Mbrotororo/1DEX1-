@@ -71,6 +71,7 @@ h1,h2,h3,p,ul,figure{margin:0}
 ul{padding:0;list-style:none}
 [hidden]{display:none!important}
 :focus-visible{outline:2px solid var(--lime);outline-offset:3px}
+.pre-i18n body{visibility:hidden}
 ::selection{background:var(--purple);color:#fff}
 
 .px{font-family:var(--font-pixel);font-weight:500;letter-spacing:.02em}
@@ -139,7 +140,14 @@ ul{padding:0;list-style:none}
 .topnav a::after{content:"";position:absolute;left:0;right:0;bottom:1px;height:2px;background:var(--lime);transform:scaleX(0);transform-origin:left;transition:transform .25s var(--ease)}
 .topnav a:hover,.topnav a.is-on{color:#fff}
 .topnav a:hover::after,.topnav a.is-on::after{transform:none}
-@media (max-width:1100px){.topnav{display:none}}
+@media (max-width:1180px){.topnav{display:none}}
+/* кейс готов — салатовая точка у «Кейсов» в меню (на телефоне — в хотбаре) */
+.topnav__dot{display:inline-block;width:6px;height:6px;margin:0 0 6px 4px;background:var(--lime);animation:blink 1.2s steps(2) infinite}
+/* переключатель языка */
+.lang{display:inline-flex;padding:3px;gap:2px;background:var(--surface);border:2px solid var(--line);box-shadow:var(--bevel)}
+.lang button{min-width:34px;height:28px;padding:0 6px;border:0;background:none;cursor:pointer;font-size:13px;letter-spacing:.06em;color:var(--dim);transition:color .15s,background .15s}
+.lang button:hover{color:var(--ink)}
+.lang button[aria-pressed="true"]{color:#0c0914;background:var(--ink)}
 .topbar__right{display:flex;align-items:center;gap:8px;margin-left:auto}
 .icon-btn{display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 12px;font-size:14px;font-weight:500;color:var(--muted);text-decoration:none;transition:color .15s,background .15s}
 .icon-btn:hover{color:var(--ink);background:rgba(255,255,255,.05)}
@@ -270,6 +278,7 @@ h2{font:400 clamp(26px,4vw,50px)/1.05 var(--font-display);letter-spacing:-.01em;
 .item__tags li{padding:3px 7px;border:2px solid var(--line);color:var(--muted)}
 .item__foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:auto;padding-top:20px}
 .item__price{font-size:15px;color:var(--dim)}
+.item__actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px}
 .item__price.has-price{font-size:22px;font-weight:600;color:var(--gold)}
 .item__soon{padding:8px 12px;font-size:13px;color:var(--gold);border:2px solid rgba(255,200,61,.4);text-transform:uppercase;letter-spacing:.08em}
 /* пустая витрина */
@@ -369,6 +378,24 @@ h2{font:400 clamp(26px,4vw,50px)/1.05 var(--font-display);letter-spacing:-.01em;
 .collab .btn{width:min(480px,100%)}
 .btn.is-off{cursor:default;filter:saturate(.35) brightness(.75);transform:none;pointer-events:none}
 
+/* ---------- задания за кейсы ---------- */
+.tasks{margin-top:22px;padding:24px}
+.tasks__head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 16px;margin-bottom:16px}
+.tasks__head h3{font:400 clamp(20px,2.2vw,26px)/1.1 var(--font-display);word-spacing:-.35em}
+.tasks__head p{font-size:14px;color:var(--gold)}
+.tasks__list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.task{display:flex;align-items:center;gap:12px;min-width:0;padding:12px 14px;background:var(--well);border:2px solid var(--line)}
+.task__icon{display:grid;place-items:center;flex:none;width:40px;height:40px;background:var(--surface-2);border:2px solid var(--line-2)}
+.task__icon .pxi,.task__icon svg{width:22px;height:22px}
+.task__text{display:grid;gap:2px;min-width:0;flex:1}
+.task__text b{font-size:14.5px;font-weight:600;line-height:1.25}
+.task__text small{font-size:12.5px;color:var(--dim)}
+.task__reward{color:var(--gold);font-weight:600}
+.task__btn{flex:none;min-height:36px;padding:0 12px;font-size:13px}
+.task.is-done{opacity:.6}
+.task.is-done .task__btn{color:var(--lime);background:transparent;box-shadow:none;border:2px solid rgba(184,255,61,.35);cursor:default;transform:none;filter:none}
+@media (max-width:899px){.tasks__list{grid-template-columns:1fr}}
+
 /* ---------- каналы ---------- */
 .socials{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}
 .social{display:grid;align-content:start;justify-items:start;padding:28px}
@@ -440,6 +467,11 @@ h2{font:400 clamp(26px,4vw,50px)/1.05 var(--font-display);letter-spacing:-.01em;
 .form__error{min-height:20px;font-size:14px;color:var(--red)}
 .form__error:empty{display:none}
 .form__note{font-size:12.5px;line-height:1.45;color:var(--dim)}
+/* шаг «подтверди почту»: крупное поле для 6 цифр */
+.form__lead{font-size:14.5px;line-height:1.5;color:var(--muted)}
+.code-input{font-size:28px!important;letter-spacing:.5em;text-align:center}
+.form__resend{justify-self:center}
+.form__resend:disabled{opacity:.55;cursor:default}
 
 /* ---------- профиль ---------- */
 .profile{display:grid;gap:18px;padding:4px 20px 22px}
@@ -494,8 +526,12 @@ h2{font:400 clamp(26px,4vw,50px)/1.05 var(--font-display);letter-spacing:-.01em;
 .wallet__soon{font-size:12.5px;color:var(--dim)}
 .wallet__history{padding:14px 16px;border-radius:14px;background:var(--well);border:1px solid var(--line)}
 .wallet__label{margin-bottom:8px;font-size:12px;font-weight:600;color:var(--dim);text-transform:uppercase;letter-spacing:.12em}
-#wallet-history,#coupons{display:grid;gap:8px}
-#wallet-history li,#coupons li{display:flex;align-items:center;gap:12px;font-size:14px}
+.wallet__list{display:grid;gap:8px}
+.wallet__list li{display:flex;align-items:center;gap:12px;font-size:14px}
+.wallet__amount.is-minus{color:var(--muted)}
+.wallet__dl{margin-left:auto;padding:6px 10px;border-radius:999px;font-size:12.5px;font-weight:600;white-space:nowrap;text-decoration:none;color:var(--on-lime);background:var(--lime)}
+.wallet__bonus{display:inline-flex;align-items:center;gap:8px;justify-self:start;padding:7px 12px;font-size:13px;color:var(--gold);border:2px solid rgba(255,200,61,.35)}
+.wallet__bonus .pxi{font-size:18px}
 .wallet__op--gem{background:rgba(184,255,61,.12)}
 .wallet__tag{margin-left:auto;padding:4px 8px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap;color:var(--on-gold);background:var(--gold)}
 .wallet__op{display:grid;place-items:center;flex:none;width:34px;height:34px;border-radius:10px;background:rgba(255,200,61,.12);font-size:20px}
@@ -520,11 +556,10 @@ h2{font:400 clamp(26px,4vw,50px)/1.05 var(--font-display);letter-spacing:-.01em;
 /* ---------- нижняя панель-хотбар ----------
    На компьютере — по центру внизу, как хотбар в игре; на телефоне — во всю ширину.
    Рамка выделения переезжает на текущий раздел. */
-body{padding-bottom:104px}
 .hotbar{
 	--pad:6px;
 	position:fixed;z-index:50;left:50%;bottom:14px;transform:translateX(-50%);
-	display:grid;grid-template-columns:repeat(4,1fr);width:min(460px,calc(100% - 32px));padding:var(--pad);
+	display:none;grid-template-columns:repeat(4,1fr);width:min(460px,calc(100% - 32px));padding:var(--pad);
 	background:#0d0a17;box-shadow:inset 0 0 0 2px var(--line-2),0 8px 0 rgba(0,0,0,.35);
 	clip-path:polygon(4px 0,calc(100% - 4px) 0,calc(100% - 4px) 4px,100% 4px,100% calc(100% - 4px),calc(100% - 4px) calc(100% - 4px),calc(100% - 4px) 100%,4px 100%,4px calc(100% - 4px),0 calc(100% - 4px),0 4px,4px 4px);
 }
@@ -592,9 +627,9 @@ body{padding-bottom:104px}
 	.toasts{right:12px;left:12px;justify-items:stretch}
 	.toast{max-width:none}
 
-	/* хотбар во всю ширину, как в приложении */
+	/* хотбар во всю ширину, как в приложении — только на телефоне */
 	body{padding-bottom:calc(76px + env(safe-area-inset-bottom,0px))}
-	.hotbar{left:0;right:0;bottom:0;transform:none;width:auto;clip-path:none;padding:5px max(8px,env(safe-area-inset-right,0px)) calc(5px + env(safe-area-inset-bottom,0px)) max(8px,env(safe-area-inset-left,0px));box-shadow:0 -2px 0 var(--line)}
+	.hotbar{display:grid;left:0;right:0;bottom:0;transform:none;width:auto;clip-path:none;padding:5px max(8px,env(safe-area-inset-right,0px)) calc(5px + env(safe-area-inset-bottom,0px)) max(8px,env(safe-area-inset-left,0px));box-shadow:0 -2px 0 var(--line)}
 	.hotbar__sel{left:max(8px,env(safe-area-inset-left,0px));top:5px;bottom:calc(5px + env(safe-area-inset-bottom,0px));width:calc((100% - max(8px,env(safe-area-inset-left,0px)) - max(8px,env(safe-area-inset-right,0px)))/4)}
 	.hotbar__slot{height:60px;font-size:11.5px}
 }
