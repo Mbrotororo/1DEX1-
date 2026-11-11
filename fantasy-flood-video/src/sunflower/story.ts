@@ -2,6 +2,8 @@
 // Весь текст и порядок сцен здесь. Тайминги считаются автоматически из длины фраз,
 // под темп диктора ~150 слов в минуту, чтобы потом можно было наложить озвучку.
 
+import {VOICE1, VOICE1_END} from './voice1-align';
+
 export const FPS = 30;
 export const WIDTH = 1080;
 export const HEIGHT = 1920;
@@ -204,5 +206,6 @@ export const buildStory = (beats: Beat[], voice?: {align: VoiceAlign; end: numbe
 	return {beats: timed, spans, duration, spanOf};
 };
 
-// Первая часть «Не свети»
-export const PART1 = buildStory(BEATS);
+// Первая часть «Не свети»: без озвучки (по формуле) и с озвучкой (по голосу)
+export const PART1_SILENT = buildStory(BEATS);
+export const PART1 = buildStory(BEATS, {align: VOICE1, end: VOICE1_END});

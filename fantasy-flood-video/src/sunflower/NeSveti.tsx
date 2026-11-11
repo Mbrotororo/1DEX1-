@@ -203,6 +203,7 @@ export const NeSveti = makeEpisode(
 		{src: 'wind', from: P1.spanOf('dawn').at, to: P1.spanOf('end').at, vol: 0.3},
 	],
 	(s) => (s < night1.from ? 0.25 : s < P1.spanOf('dawn').at ? 0.55 : 0.35),
+	{voice: 'sunflower/voice1.ogg'},
 );
 
 // ---------- Часть 2: «Обмен» ----------
