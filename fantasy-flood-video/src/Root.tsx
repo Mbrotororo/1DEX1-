@@ -4,7 +4,8 @@ import {FloodVideo} from './FloodVideo';
 import {DURATION_S, FPS, HEIGHT, WIDTH} from './lib/timeline';
 import {AdminChat} from './admin-chat/AdminChat';
 import * as AC from './admin-chat/script';
-import {NeSveti} from './sunflower/NeSveti';
+import {NeSveti, NeSveti2} from './sunflower/NeSveti';
+import {PART2} from './sunflower/story2';
 import * as NS from './sunflower/story';
 
 export const RemotionRoot: React.FC = () => {
@@ -29,7 +30,15 @@ export const RemotionRoot: React.FC = () => {
 		<Composition
 			id="NeSveti"
 			component={NeSveti}
-			durationInFrames={NS.DURATION_S * NS.FPS}
+			durationInFrames={NS.PART1.duration * NS.FPS}
+			fps={NS.FPS}
+			width={NS.WIDTH}
+			height={NS.HEIGHT}
+		/>
+		<Composition
+			id="NeSveti2"
+			component={NeSveti2}
+			durationInFrames={PART2.duration * NS.FPS}
 			fps={NS.FPS}
 			width={NS.WIDTH}
 			height={NS.HEIGHT}

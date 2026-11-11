@@ -6,37 +6,7 @@ export const FPS = 30;
 export const WIDTH = 1080;
 export const HEIGHT = 1920;
 
-export type SceneId =
-	| 'hook'
-	| 'offer'
-	| 'field'
-	| 'farmer'
-	| 'items'
-	| 'rule1'
-	| 'rule2'
-	| 'rule3'
-	| 'farmerFace'
-	| 'towerDusk'
-	| 'count40'
-	| 'seryoga'
-	| 'tea'
-	| 'count39'
-	| 'seryogaFace'
-	| 'call'
-	| 'shoulder'
-	| 'bend'
-	| 'thing'
-	| 'thingSpeaks'
-	| 'lookRight'
-	| 'wait'
-	| 'dawn'
-	| 'farmerDawn'
-	| 'forest'
-	| 'farmerTruth'
-	| 'thermos'
-	| 'finalCount'
-	| 'finalFace'
-	| 'end';
+export type SceneId = string;
 
 export type Sfx = {src: string; at?: number; volume?: number; rate?: number};
 
@@ -166,10 +136,18 @@ const chunkDur = (c: string) => {
 	return d;
 };
 
-const build = () => {
+export type Story = {
+	beats: TimedBeat[];
+	spans: SceneSpan[];
+	duration: number;
+	spanOf: (id: SceneId) => SceneSpan;
+};
+export type SceneSpan = {id: SceneId; at: number; end: number; beats: TimedBeat[]};
+
+export const buildStory = (beats: Beat[]): Story => {
 	let t = 0.1;
-	const out: TimedBeat[] = [];
-	for (const b of BEATS) {
+	const timed: TimedBeat[] = [];
+	for (const b of beats) {
 		const at = t;
 		const chunks: Chunk[] = [];
 		for (const c of splitChunks(b.text)) {
@@ -178,28 +156,26 @@ const build = () => {
 			t += d;
 		}
 		t += b.pause ?? 0.1;
-		out.push({...b, at, end: t, chunks});
+		timed.push({...b, at, end: t, chunks});
 	}
-	return {beats: out, total: t};
-};
-
-const built = build();
-export const TIMED = built.beats;
-export const DURATION_S = Math.ceil(built.total + 0.5);
-
-// Сцены: подряд идущие фразы с одной сценой склеиваются в один кусок
-export type SceneSpan = {id: SceneId; at: number; end: number; beats: TimedBeat[]};
-export const SPANS: SceneSpan[] = (() => {
+	const duration = Math.ceil(t + 0.5);
+	// подряд идущие фразы с одной сценой склеиваются в один кусок
 	const spans: SceneSpan[] = [];
-	for (const b of TIMED) {
+	for (const b of timed) {
 		const last = spans[spans.length - 1];
 		if (last && last.id === b.scene) {
 			last.end = b.end;
 			last.beats.push(b);
 		} else spans.push({id: b.scene, at: b.at, end: b.end, beats: [b]});
 	}
-	spans[spans.length - 1].end = DURATION_S;
-	return spans;
-})();
+	spans[spans.length - 1].end = duration;
+	const spanOf = (id: SceneId) => {
+		const s = spans.find((x) => x.id === id);
+		if (!s) throw new Error(`Нет сцены ${id}`);
+		return s;
+	};
+	return {beats: timed, spans, duration, spanOf};
+};
 
-export const spanOf = (id: SceneId) => SPANS.find((s) => s.id === id)!;
+// Первая часть «Не свети»
+export const PART1 = buildStory(BEATS);

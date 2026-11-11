@@ -1,8 +1,13 @@
 import React, {useEffect, useState} from 'react';
 import {AbsoluteFill, Audio, Sequence, continueRender, delayRender, interpolate, staticFile, useCurrentFrame} from 'remotion';
 import {easeOutBack, smooth} from '../lib/anim';
-import {SCENES} from './scenes';
-import {DURATION_S, FPS, SPANS, TIMED, spanOf} from './story';
+import {SCENES, SceneFn} from './scenes';
+import {SCENES2} from './scenes2';
+import {PART2} from './story2';
+import {FPS, PART1, Story, TimedBeat} from './story';
+
+// Общий «движок» серии «Не свети»: субтитры, надписи, камера, звук.
+// Каждая часть передаёт сюда свой сюжет, сцены и фоновые дорожки.
 
 const FONT = "'Montserrat', 'DejaVu Sans', sans-serif";
 const YELLOW = '#ffc94a';
@@ -43,10 +48,9 @@ const renderSub = (text: string) => {
 	return out;
 };
 
-const CHUNKS = TIMED.flatMap((b) => b.chunks);
-
-const Subtitles: React.FC<{t: number}> = ({t}) => {
-	const c = CHUNKS.find((x) => x.at <= t && t < x.end + 0.08) ?? null;
+const Subtitles: React.FC<{t: number; story: Story}> = ({t, story}) => {
+	let c: TimedBeat['chunks'][number] | null = null;
+	for (const b of story.beats) for (const x of b.chunks) if (x.at <= t && t < x.end + 0.08) c = x;
 	if (!c) return null;
 	const k = easeOutBack((t - c.at) / 0.16, 2);
 	return (
@@ -73,9 +77,9 @@ const Subtitles: React.FC<{t: number}> = ({t}) => {
 };
 
 // Ключевое слово сверху кадра
-const Label: React.FC<{t: number}> = ({t}) => {
-	let cur: (typeof TIMED)[number] | null = null;
-	for (const b of TIMED) {
+const Label: React.FC<{t: number; story: Story}> = ({t, story}) => {
+	let cur: TimedBeat | null = null;
+	for (const b of story.beats) {
 		if (b.label && b.at <= t && t < b.end + 0.6) cur = b;
 	}
 	if (!cur?.label) return null;
@@ -106,40 +110,33 @@ const Label: React.FC<{t: number}> = ({t}) => {
 
 // ---------- Звук ----------
 const at = (s: number) => Math.round(s * FPS);
-const night = {from: spanOf('towerDusk').at + 3, to: spanOf('dawn').at + 1};
-const dawnAt = spanOf('dawn').at;
-const endAt = spanOf('end').at;
 
-const Bed: React.FC<{src: string; from: number; to: number; vol: number; fade?: number}> = ({src, from, to, vol, fade = 2}) => {
+export type BedDef = {src: string; from: number; to: number; vol: number; fade?: number};
+
+const Bed: React.FC<BedDef> = ({src, from, to, vol, fade = 2}) => {
 	const dur = Math.max(1, at(to) - at(from));
 	return (
 		<Sequence from={at(from)} durationInFrames={dur} layout="none">
-			<Audio
-				src={staticFile(`sunflower/${src}.ogg`)}
-				loop
-				volume={(f) => vol * Math.min(1, f / (fade * FPS), (dur - f) / (fade * FPS))}
-			/>
+			<Audio src={staticFile(`sunflower/${src}.ogg`)} loop volume={(f) => vol * Math.min(1, f / (fade * FPS), (dur - f) / (fade * FPS))} />
 		</Sequence>
 	);
 };
 
-const Soundtrack: React.FC = () => (
+const Soundtrack: React.FC<{story: Story; beds: BedDef[]; drone: (s: number) => number}> = ({story, beds, drone}) => (
 	<>
 		<Audio
 			src={staticFile('sunflower/drone.ogg')}
+			loop
 			volume={(f) => {
 				const s = f / FPS;
-				const base = s < night.from ? 0.25 : s < dawnAt ? 0.55 : 0.35;
-				const out = interpolate(s, [DURATION_S - 2, DURATION_S], [1, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
-				return base * out;
+				const out = interpolate(s, [story.duration - 2, story.duration], [1, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
+				return drone(s) * out;
 			}}
 		/>
-		<Bed src="wind" from={0} to={night.from + 2} vol={0.35} />
-		<Bed src="crickets" from={night.from} to={spanOf('thingSpeaks').at} vol={0.4} />
-		{/* сверчки замолкают, когда приходит Оно, и возвращаются под утро */}
-		<Bed src="crickets" from={spanOf('wait').at + 3} to={night.to} vol={0.25} />
-		<Bed src="wind" from={dawnAt} to={endAt} vol={0.3} />
-		{TIMED.flatMap((b, bi) =>
+		{beds.map((b, i) => (
+			<Bed key={i} {...b} />
+		))}
+		{story.beats.flatMap((b, bi) =>
 			(b.sfx ?? []).map((s, si) => (
 				<Sequence key={`${bi}-${si}`} from={at(b.at + (s.at ?? 0))} layout="none">
 					<Audio src={staticFile(`sunflower/${s.src}.ogg`)} volume={s.volume ?? 0.7} playbackRate={s.rate ?? 1} />
@@ -149,34 +146,72 @@ const Soundtrack: React.FC = () => (
 	</>
 );
 
-// ---------- Ролик ----------
+// ---------- Серия ----------
 const shakeXY = (t: number, amp: number) => (amp > 0 ? `translate(${Math.sin(t * 71) * amp}px, ${Math.cos(t * 83) * amp}px)` : '');
 
-export const NeSveti: React.FC = () => {
-	useFont();
-	const frame = useCurrentFrame();
-	const t = frame / FPS;
-	const span = SPANS.find((s) => s.at <= t && t < s.end) ?? SPANS[SPANS.length - 1];
-	const lt = t - span.at;
-	const dur = span.end - span.at;
-	const out = SCENES[span.id]({t, lt, dur, span});
-	const [z0, z1, ox, oy] = out.zoom ?? [1, 1, 540, 960];
-	const z = z0 + (z1 - z0) * smooth(lt / dur);
-	// короткое затемнение на стыке сцен — как мягкая склейка
-	const fadeIn = Math.min(1, lt / 0.12);
-	return (
-		<AbsoluteFill style={{background: '#000', fontFamily: FONT}}>
-			<AbsoluteFill style={{transform: `${shakeXY(t, out.shake ?? 0)} scale(${z})`, transformOrigin: `${ox}px ${oy}px`, opacity: fadeIn}}>
-				<svg viewBox="0 0 1080 1920" width={1080} height={1920} style={{position: 'absolute', inset: 0}}>
-					{out.svg}
-				</svg>
+export const makeEpisode = (story: Story, scenes: Record<string, SceneFn>, beds: BedDef[], drone: (s: number) => number): React.FC => {
+	const Episode: React.FC = () => {
+		useFont();
+		const frame = useCurrentFrame();
+		const t = frame / FPS;
+		const span = story.spans.find((s) => s.at <= t && t < s.end) ?? story.spans[story.spans.length - 1];
+		const lt = t - span.at;
+		const dur = span.end - span.at;
+		const out = scenes[span.id]({t, lt, dur, span});
+		const [z0, z1, ox, oy] = out.zoom ?? [1, 1, 540, 960];
+		const z = z0 + (z1 - z0) * smooth(lt / dur);
+		// короткое затемнение на стыке сцен — мягкая склейка
+		const fadeIn = Math.min(1, lt / 0.12);
+		return (
+			<AbsoluteFill style={{background: '#000', fontFamily: FONT}}>
+				<AbsoluteFill style={{transform: `${shakeXY(t, out.shake ?? 0)} scale(${z})`, transformOrigin: `${ox}px ${oy}px`, opacity: fadeIn}}>
+					<svg viewBox="0 0 1080 1920" width={1080} height={1920} style={{position: 'absolute', inset: 0}}>
+						{out.svg}
+					</svg>
+				</AbsoluteFill>
+				{out.tint ? <AbsoluteFill style={{background: out.tint}} /> : null}
+				<AbsoluteFill style={{background: 'radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 50%, rgba(0,0,0,0.65) 100%)'}} />
+				{out.hud}
+				<Label t={t} story={story} />
+				<Subtitles t={t} story={story} />
+				<Soundtrack story={story} beds={beds} drone={drone} />
 			</AbsoluteFill>
-			{out.tint ? <AbsoluteFill style={{background: out.tint}} /> : null}
-			<AbsoluteFill style={{background: 'radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 50%, rgba(0,0,0,0.65) 100%)'}} />
-			{out.hud}
-			<Label t={t} />
-			<Subtitles t={t} />
-			<Soundtrack />
-		</AbsoluteFill>
-	);
+		);
+	};
+	return Episode;
 };
+
+// ---------- Часть 1 ----------
+const P1 = PART1;
+const night1 = {from: P1.spanOf('towerDusk').at + 3, to: P1.spanOf('dawn').at + 1};
+
+export const NeSveti = makeEpisode(
+	P1,
+	SCENES,
+	[
+		{src: 'wind', from: 0, to: night1.from + 2, vol: 0.35},
+		{src: 'crickets', from: night1.from, to: P1.spanOf('thingSpeaks').at, vol: 0.4},
+		// сверчки замолкают, когда приходит Оно, и возвращаются под утро
+		{src: 'crickets', from: P1.spanOf('wait').at + 3, to: night1.to, vol: 0.25},
+		{src: 'wind', from: P1.spanOf('dawn').at, to: P1.spanOf('end').at, vol: 0.3},
+	],
+	(s) => (s < night1.from ? 0.25 : s < P1.spanOf('dawn').at ? 0.55 : 0.35),
+);
+
+// ---------- Часть 2: «Обмен» ----------
+const P2 = PART2;
+const night2 = {from: P2.spanOf('rule1b').at, to: P2.spanOf('dawn2').at + 1};
+
+export const NeSveti2 = makeEpisode(
+	P2,
+	SCENES2,
+	[
+		{src: 'crickets', from: 0, to: P2.spanOf('dream').at, vol: 0.35, fade: 1},
+		{src: 'wind', from: P2.spanOf('farmer').at, to: night2.from + 1, vol: 0.3},
+		{src: 'crickets', from: night2.from, to: P2.spanOf('thing').at, vol: 0.4},
+		// когда приходит Оно, сверчки молчат; после обмена возвращаются
+		{src: 'crickets', from: P2.spanOf('exchange').at + 2, to: night2.to, vol: 0.25},
+		{src: 'wind', from: P2.spanOf('dawn2').at, to: P2.spanOf('end2').at, vol: 0.3},
+	],
+	(s) => (s < P2.spanOf('walkIn').at ? 0.3 : s < P2.spanOf('dawn2').at ? 0.55 : 0.35),
+);

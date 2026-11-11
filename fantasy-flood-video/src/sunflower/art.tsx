@@ -138,9 +138,10 @@ export type FlowerProps = {
 	eyes?: number; // «глаза» в семечках
 	dark?: number; // ночное затемнение
 	gap?: boolean; // пустое место: только сломанный стебель
+	wear?: 'knit' | 'hood'; // вязаная шапка Серёги или синий капюшон героя
 };
 
-export const Sunflower: React.FC<FlowerProps> = ({x, y, h, s, droop = 0, lean = 0, eyes = 0, dark = 0, gap = false}) => {
+export const Sunflower: React.FC<FlowerProps> = ({x, y, h, s, droop = 0, lean = 0, eyes = 0, dark = 0, gap = false, wear}) => {
 	const a = (lean * Math.PI) / 180;
 	const tx = x + Math.sin(a) * h;
 	const ty = y - Math.cos(a) * h;
@@ -179,8 +180,20 @@ export const Sunflower: React.FC<FlowerProps> = ({x, y, h, s, droop = 0, lean = 
 			<ellipse cx={x + Math.sin(a) * h * 0.25 + s * 0.45} cy={y - h * 0.28} rx={s * 0.5} ry={s * 0.2} fill={leaf} transform={`rotate(25 ${x + Math.sin(a) * h * 0.25 + s * 0.45} ${y - h * 0.28})`} />
 			<g transform={`translate(${hx} ${hy}) rotate(${lean * 0.6}) scale(1 ${squash})`}>
 				{petals}
+				{wear === 'hood' ? (
+					<path
+						d={`M ${-s * 1.3} ${s * 0.7} Q ${-s * 1.5} ${-s * 1.55} 0 ${-s * 1.6} Q ${s * 1.5} ${-s * 1.55} ${s * 1.3} ${s * 0.7} L ${s * 0.92} ${s * 0.75} Q ${s * 1.0} ${-s * 0.95} 0 ${-s * 1.0} Q ${-s * 1.0} ${-s * 0.95} ${-s * 0.92} ${s * 0.75} Z`}
+						fill={night('#2f4b7c', dark)}
+					/>
+				) : null}
 				<circle r={s * 0.58} fill={disc} />
 				<circle r={s * 0.4} fill={night('#3f2712', dark)} />
+				{wear === 'knit' ? (
+					<>
+						<path d={`M ${-s * 0.92} ${-s * 0.22} Q ${-s * 0.9} ${-s * 1.45} 0 ${-s * 1.45} Q ${s * 0.9} ${-s * 1.45} ${s * 0.92} ${-s * 0.22} Z`} fill={night('#b4572d', dark)} />
+						<rect x={-s * 0.98} y={-s * 0.48} width={s * 1.96} height={s * 0.3} rx={s * 0.08} fill={night('#8e4021', dark)} />
+					</>
+				) : null}
 				{eyes > 0 ? (
 					<g opacity={eyes}>
 						<ellipse cx={-s * 0.2} cy={-s * 0.08} rx={s * 0.1} ry={s * 0.07} fill="#f2ead2" />

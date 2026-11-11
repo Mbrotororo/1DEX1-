@@ -92,3 +92,12 @@ npm run sfx:nesveti      # пересоздать звуки (нужен python3
 | Графика: небо, подсолнухи, люди, вышка | `src/sunflower/art.tsx` |
 | Субтитры, фоновые звуки, камера | `src/sunflower/NeSveti.tsx` |
 | Звуки (сгенерированы кодом) | `public/sunflower/`, `scripts/make-sunflower-sfx.py` |
+
+### Часть 2: «Обмен»
+
+Продолжение «Не свети», 1:48. Текст лежит в `src/sunflower/story2.ts`, сцены в `src/sunflower/scenes2.tsx`.
+Субтитры, камера и звук общие для обеих частей (`makeEpisode` в `NeSveti.tsx`).
+
+```bash
+npm run render:nesveti2   # готовое видео: out/ne-sveti-2.mp4
+```

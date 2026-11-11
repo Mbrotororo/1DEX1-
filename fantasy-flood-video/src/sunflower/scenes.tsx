@@ -30,10 +30,10 @@ import {SceneId, SceneSpan} from './story';
 export type SceneCtx = {t: number; lt: number; dur: number; span: SceneSpan};
 export type SceneOut = {svg: React.ReactNode; hud?: React.ReactNode; zoom?: [number, number, number, number]; shake?: number; tint?: string};
 
-const H = 1000; // горизонт для общих планов
+export const H = 1000; // горизонт для общих планов
 
 // Номер текущей фразы внутри сцены и время от её начала
-const beatAt = (c: SceneCtx) => {
+export const beatAt = (c: SceneCtx) => {
 	let i = 0;
 	c.span.beats.forEach((b, k) => {
 		if (b.at <= c.t) i = k;
@@ -41,7 +41,7 @@ const beatAt = (c: SceneCtx) => {
 	return {i, lt: c.t - c.span.beats[i].at};
 };
 
-const wideRows = (h: number): FieldRow[] => [
+export const wideRows = (h: number): FieldRow[] => [
 	{y: h + 22, s: 9, count: 46},
 	{y: h + 52, s: 12, count: 36, offset: 12},
 	{y: h + 98, s: 17, count: 26},
@@ -52,7 +52,7 @@ const wideRows = (h: number): FieldRow[] => [
 ];
 
 // Ночной фон: небо, звёзды, луна, деревья, земля
-const NightBg: React.FC<{t: number; id: string; h?: number; moonX?: number; moonY?: number; dim?: number}> = ({t, id, h = H, moonX = 790, moonY = 300, dim = 0}) => (
+export const NightBg: React.FC<{t: number; id: string; h?: number; moonX?: number; moonY?: number; dim?: number}> = ({t, id, h = H, moonX = 790, moonY = 300, dim = 0}) => (
 	<>
 		<Sky from="night" horizon={h} id={id} />
 		<Stars t={t} k={1 - dim * 0.5} maxY={h - 60} />
@@ -62,7 +62,7 @@ const NightBg: React.FC<{t: number; id: string; h?: number; moonX?: number; moon
 	</>
 );
 
-const DuskBg: React.FC<{id: string; h?: number; sunX?: number}> = ({id, h = H, sunX = 720}) => (
+export const DuskBg: React.FC<{id: string; h?: number; sunX?: number}> = ({id, h = H, sunX = 720}) => (
 	<>
 		<Sky from="dusk" horizon={h} id={id} />
 		<Sun x={sunX} y={h - 30} r={80} color="#fff1d8" />
@@ -71,7 +71,7 @@ const DuskBg: React.FC<{id: string; h?: number; sunX?: number}> = ({id, h = H, s
 	</>
 );
 
-const DawnBg: React.FC<{id: string; h?: number; k?: number}> = ({id, h = H, k = 1}) => (
+export const DawnBg: React.FC<{id: string; h?: number; k?: number}> = ({id, h = H, k = 1}) => (
 	<>
 		<Sky from="night" to="dawn" k={k} horizon={h} id={id} />
 		<Sun x={300} y={h - 10} r={85} color="#fff0d2" k={k} />
@@ -81,13 +81,13 @@ const DawnBg: React.FC<{id: string; h?: number; k?: number}> = ({id, h = H, k = 
 );
 
 // Первый ряд: 40 подсолнухов по диагонали от зрителя вглубь поля
-const ROW_N = 40;
-const firstRowPos = (i: number) => {
+export const ROW_N = 40;
+export const firstRowPos = (i: number) => {
 	const k = i / (ROW_N - 1);
 	const p = Math.pow(k, 0.55);
 	return {x: -10 + p * 1010, y: 1680 - p * 650, s: 68 * Math.pow(1 - p, 1.5) + 7};
 };
-const FirstRow: React.FC<{dark: number; droop: number; gapIndex?: number; counted?: number; lastUp?: number}> = ({dark, droop, gapIndex = -1, counted = -1, lastUp = 0}) => {
+export const FirstRow: React.FC<{dark: number; droop: number; gapIndex?: number; counted?: number; lastUp?: number; eyes?: number; lastWear?: 'knit' | 'hood'}> = ({dark, droop, gapIndex = -1, counted = -1, lastUp = 0, eyes = 0, lastWear}) => {
 	const out: React.ReactNode[] = [];
 	for (let i = ROW_N - 1; i >= 0; i--) {
 		const {x, y, s} = firstRowPos(i);
@@ -95,14 +95,14 @@ const FirstRow: React.FC<{dark: number; droop: number; gapIndex?: number; counte
 		out.push(
 			<g key={i}>
 				{i < counted ? <circle cx={x} cy={y - s * 4.3} r={s * 1.25} fill="#ffe08a" opacity={0.16} /> : null}
-				<Sunflower x={x} y={y} h={s * 4.2} s={s} dark={dark} droop={isLast ? droop * (1 - lastUp) : droop} lean={(hash3(i, 1, 41) - 0.5) * 6} gap={i === gapIndex} />
+				<Sunflower x={x} y={y} h={s * 4.2} s={s} dark={dark} droop={isLast ? droop * (1 - lastUp) : droop} lean={(hash3(i, 1, 41) - 0.5) * 6} gap={i === gapIndex} eyes={eyes} wear={isLast ? lastWear : undefined} />
 			</g>,
 		);
 	}
 	return <>{out}</>;
 };
 
-const Counter: React.FC<{n: number; color?: string; pulse?: number; caption?: string}> = ({n, color = '#fff', pulse = 0, caption = 'ПЕРВЫЙ РЯД'}) => (
+export const Counter: React.FC<{n: number; color?: string; pulse?: number; caption?: string}> = ({n, color = '#fff', pulse = 0, caption = 'ПЕРВЫЙ РЯД'}) => (
 	<div style={{position: 'absolute', left: 0, right: 0, top: 240, textAlign: 'center'}}>
 		<div style={{fontSize: 46, letterSpacing: 6, color: 'rgba(255,255,255,0.55)', fontWeight: 800}}>{caption}</div>
 		<div style={{fontSize: 230, fontWeight: 900, lineHeight: 1, color, transform: `scale(${1 + 0.2 * pulse})`, textShadow: '0 8px 30px rgba(0,0,0,0.6)'}}>{n}</div>
@@ -341,7 +341,7 @@ const seryoga = (c: SceneCtx): SceneOut => {
 	};
 };
 
-const Steam: React.FC<{x: number; y: number; t: number}> = ({x, y, t}) => (
+export const Steam: React.FC<{x: number; y: number; t: number}> = ({x, y, t}) => (
 	<>
 		{[0, 1, 2].map((i) => {
 			const p = (t * 0.5 + i / 3) % 1;
@@ -360,7 +360,7 @@ const Steam: React.FC<{x: number; y: number; t: number}> = ({x, y, t}) => (
 	</>
 );
 
-const Railing: React.FC<{dark: number}> = ({dark}) => (
+export const Railing: React.FC<{dark: number}> = ({dark}) => (
 	<>
 		<rect x={0} y={1290} width={1080} height={36} fill={night('#6b4a2d', dark)} />
 		<rect x={0} y={1460} width={1080} height={460} fill={night('#5a3d24', dark)} />
@@ -370,7 +370,7 @@ const Railing: React.FC<{dark: number}> = ({dark}) => (
 	</>
 );
 
-const Cup: React.FC<{x: number; y: number}> = ({x, y}) => (
+export const Cup: React.FC<{x: number; y: number}> = ({x, y}) => (
 	<g>
 		<rect x={x - 34} y={y - 60} width={68} height={70} rx={10} fill="#2f6b67" />
 		<rect x={x - 34} y={y - 60} width={68} height={14} rx={6} fill="#24524f" />
@@ -558,7 +558,7 @@ const wait = (c: SceneCtx): SceneOut => {
 	};
 };
 
-const Truck: React.FC<{x: number; y: number; k: number}> = ({x, y, k}) => (
+export const Truck: React.FC<{x: number; y: number; k: number}> = ({x, y, k}) => (
 	<g>
 		<rect x={x} y={y - 120 * k} width={260 * k} height={80 * k} rx={10 * k} fill="#6d7f8f" />
 		<path d={`M ${x + 160 * k} ${y - 120 * k} L ${x + 190 * k} ${y - 185 * k} L ${x + 260 * k} ${y - 185 * k} L ${x + 260 * k} ${y - 120 * k} Z`} fill="#5d6f7f" />
@@ -673,7 +673,8 @@ const end = (c: SceneCtx): SceneOut => ({
 	),
 });
 
-export const SCENES: Record<SceneId, (c: SceneCtx) => SceneOut> = {
+export type SceneFn = (c: SceneCtx) => SceneOut;
+export const SCENES: Record<SceneId, SceneFn> = {
 	hook,
 	offer,
 	field,
