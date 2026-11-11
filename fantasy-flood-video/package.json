@@ -8,6 +8,8 @@
     "dev": "npm run sounds && remotion studio",
     "render": "npm run sounds && remotion render FloodVideo out/1dex1-flood.mp4",
     "render:admin": "npm run sounds && remotion render AdminChat out/1dex1-admin-chat.mp4",
+    "render:nesveti": "remotion render NeSveti out/ne-sveti.mp4",
+    "sfx:nesveti": "python3 scripts/make-sunflower-sfx.py",
     "still": "remotion still FloodVideo out/frame.png",
     "typecheck": "tsc --noEmit"
   },

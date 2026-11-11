@@ -74,3 +74,21 @@ npm run render:admin   # готовое видео: out/1dex1-admin-chat.mp4
 | Звуки и субтитры | `src/admin-chat/AdminChat.tsx` |
 | Шрифт Pixelify Sans (лицензия OFL) | `public/fonts/` |
 | Фоновый гул (сгенерирован в ffmpeg) | `public/admin-chat/drone.ogg` |
+
+## Третий ролик: «Не свети» (вертикальный, не Minecraft)
+
+Страшилка про сторожа подсолнухового поля: 2:29, 1080×1920, 30 fps. Плоская 2D-графика, без Minecraft.
+План и текст для озвучки лежат в `content-plan/06-ne-sveti*.md`.
+
+```bash
+npm run render:nesveti   # готовое видео: out/ne-sveti.mp4
+npm run sfx:nesveti      # пересоздать звуки (нужен python3 + numpy), потом сконвертировать wav в ogg
+```
+
+| Что | Где |
+| --- | --- |
+| Текст, порядок сцен, звуки на фразах | `src/sunflower/story.ts` |
+| Сцены | `src/sunflower/scenes.tsx` |
+| Графика: небо, подсолнухи, люди, вышка | `src/sunflower/art.tsx` |
+| Субтитры, фоновые звуки, камера | `src/sunflower/NeSveti.tsx` |
+| Звуки (сгенерированы кодом) | `public/sunflower/`, `scripts/make-sunflower-sfx.py` |
