@@ -1,15 +1,16 @@
 // 3D-сцена первого экрана.
-// - Остров сам качается на 90° в каждую сторону, персонаж стоит на нём и качается вместе с ним.
-// - Клик по блоку острова: персонаж идёт к сундуку за киркой, добывает блок, если дотянется,
+// - Остров очень медленно поворачивается сам, персонаж стоит на нём и поворачивается вместе с ним.
+// - Клик по блоку острова: персонаж идёт к сундуку, достаёт кирку, добывает блок, если дотянется,
 //   кладёт кирку обратно. Кирка растёт: камень — каменная, железо — железная, алмаз — алмазная.
 //   Уголь зажигает факелы на дереве. Добытый блок вырастает через 5 секунд.
-// - Персонажа можно снять с острова: он летает в невесомости поверх сайта и садится,
-//   ложится или приседает на текст и кнопки. Сверху на острове — спрыгивает на траву.
+// - Персонажа можно снять с острова: он летает в невесомости поверх сайта, сам садится на текст
+//   и кнопки, летит за посетителем, когда тот листает страницу, и показывает эмоции в облачке.
+//   Его можно отлепить и плавно бросить. Сверху на острове — спрыгивает на траву.
 // - С алмазной киркой он ломает стену (бегущую строку) и может летать по всему сайту.
 // - Название 1DEX1 из блоков висит на месте, его блоки ломаются кликом.
-// - На фоне медленно вращается галактика.
+// - Сзади галактика, а звёзды по всему фону медленно вращаются вокруг её ядра.
 import * as THREE from '../vendor/three.module.min.js';
-import {CROSSHAIR, wordPixels} from './pixel.js';
+import {CROSSHAIR, icon, wordPixels} from './pixel.js';
 
 // ---------- маленькие помощники ----------
 const rng = (seed) => {
@@ -87,6 +88,13 @@ const makeTextures = () => {
 			return c ? [...c, 255] : [0, 0, 0, 0];
 		});
 	const stem = (x, y) => (x === 7 || x === 8) && y >= 7;
+	// доски сундука: тёмная рамка, полосы досок и неровный цвет дерева
+	const chestWood = (x, y, layer, k = 1) => {
+		if (x === 0 || x === 15 || y === 0 || y === 15) return shade([66, 40, 14], k);
+		if (y % 5 === 0) return shade([122, 78, 28], k);
+		const v = n(x, y, layer);
+		return shade([182, 124, 50], k * (v < 0.18 ? 0.86 : v > 0.82 ? 1.1 : (x + y * 3) % 7 === 0 ? 0.93 : 1));
+	};
 	return {
 		// блок логотипа: светлый, с тёмной рамкой — цвет задаётся отдельно
 		voxel: pixelTexture((x, y) => {
@@ -138,24 +146,13 @@ const makeTextures = () => {
 			const edge = x === 0 || y === 0 || x === 15 || y === 15;
 			return shade([255, 200, 61], edge ? 0.62 : (x + y) % 7 === 0 ? 1.25 : v < 0.2 ? 0.82 : 1);
 		}),
-		chestSide: pixelTexture((x, y) => {
-			if (x === 0 || x === 15 || y === 0 || y === 15) return [44, 26, 92];
-			if (y === 5) return [34, 20, 70];
-			const v = n(x, y, 3);
-			return shade([122, 82, 214], v < 0.2 ? 0.86 : v > 0.85 ? 1.1 : 1);
-		}),
+		// сундук деревянный, жёлто-коричневый, как в Minecraft, с серебристой защёлкой
+		chestSide: pixelTexture((x, y) => chestWood(x, y, 3)),
 		chestFront: pixelTexture((x, y) => {
-			if (x === 0 || x === 15 || y === 0 || y === 15) return [44, 26, 92];
-			if (x >= 6 && x <= 9 && y >= 3 && y <= 8) return x === 6 || x === 9 || y === 3 || y === 8 ? [179, 125, 0] : [255, 200, 61];
-			if (y === 5) return [34, 20, 70];
-			const v = n(x, y, 4);
-			return shade([122, 82, 214], v < 0.2 ? 0.86 : v > 0.85 ? 1.1 : 1);
+			if (x >= 6 && x <= 9 && y <= 4) return x === 6 || x === 9 || y === 4 ? [58, 58, 64] : y === 0 ? [236, 236, 240] : [190, 190, 198];
+			return chestWood(x, y, 4);
 		}),
-		chestTop: pixelTexture((x, y) => {
-			if (x === 0 || x === 15 || y === 0 || y === 15) return [44, 26, 92];
-			const v = n(x, y, 5);
-			return shade([138, 96, 232], v < 0.2 ? 0.88 : v > 0.85 ? 1.1 : 1);
-		}),
+		chestTop: pixelTexture((x, y) => chestWood(x, y, 5, 1.08)),
 		poppy: plant((x, y) => {
 			const d = Math.hypot(x - 7.5, y - 5);
 			if (d < 1.2) return [40, 18, 18];
@@ -356,7 +353,7 @@ const glowTexture = () => {
 
 // ---------- кирки ----------
 // Кирка из пикселей, как в Minecraft: h — головка, H — блик, s/S — рукоять
-const PICKAXE = ['..hhhhhhh..', '.hHHHHHHHh.', 'hHh.sS.hHHh', 'hh..sS..hHh', 'h...sS...hh', '....sS.....', '....sS.....', '....sS.....', '....sS.....', '....sS.....'];
+const PICKAXE = ['..hhhhhhh..', '.hHHHHHHHh.', 'hHh.hSh.hHh', 'hh...S...hh', 'h....s....h', '.....S.....', '.....s.....', '.....S.....', '.....s.....', '.....S.....'];
 export const TIERS = [
 	{id: 'wood', name: 'деревянная', head: '#9c7440', hi: '#c69a5c'},
 	{id: 'stone', name: 'каменная', head: '#76767c', hi: '#a9a9b0'},
@@ -374,8 +371,8 @@ const WORD_DEPTH = 1.8;
 const RESPAWN = 3; // блок названия вырастает через 3 секунды
 const APPEAR = 0.7;
 const BLOCK_RESPAWN = 5; // блок острова вырастает через 5 секунд
-const SWAY = Math.PI / 2; // остров поворачивается на 90° в каждую сторону
-const SWAY_SPEED = 0.22;
+const SWAY = Math.PI / 3; // остров поворачивается на 60° в каждую сторону
+const SWAY_SPEED = 0.045; // очень медленно: полный круг туда и обратно — около двух минут
 const HOME = new THREE.Vector3(0, 0, 0.6); // где стоит персонаж (на острове)
 const BODY = 1.35; // центр тела над ногами
 const STAND_R = 3.0; // по какому кругу на верхушке острова можно ходить
@@ -384,6 +381,13 @@ const MINE_TIME = 1.0;
 const REACH = 6.2; // как далеко персонаж дотягивается киркой
 const WALK_SPEED = 2.8;
 const PROGRESS_KEY = 'dex.progress';
+const CHEST_TAKE = 1.75; // сколько секунд достаёт кирку из сундука
+const CHEST_PUT = 1.15; // и сколько кладёт обратно
+const SKY_SPIN = 0.011; // скорость вращения звёзд на фоне
+const smooth = (t, a, b) => {
+	const x = clamp((t - a) / (b - a), 0, 1);
+	return x * x * (3 - 2 * x);
+};
 
 const loadProgress = () => {
 	try {
@@ -406,7 +410,7 @@ const saveProgress = (p) => {
 //  'torch' — факел на дереве, 'need' / 'far' / 'busy' — почему блок не добыть,
 //  'drag' — персонажа подняли, 'diamond' — алмазная кирка, 'wallNeed' — стену не сломать,
 //  'free' — стена сломана, 'tickle' — пять кликов по скину
-export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = null} = {}) => {
+export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = null, sky = null} = {}) => {
 	let renderer;
 	try {
 		renderer = new THREE.WebGLRenderer({canvas, antialias: true, alpha: true, powerPreference: 'high-performance'});
@@ -607,7 +611,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	chest.add(chestBase, lid);
 	island.add(chest);
 	// куда встаёт персонаж, чтобы открыть сундук
-	const CHEST_SPOT = new THREE.Vector3(CHEST.x + Math.sin(CHEST.rot) * 1.05, 0, CHEST.z + Math.cos(CHEST.rot) * 1.05);
+	const CHEST_SPOT = new THREE.Vector3(CHEST.x + Math.sin(CHEST.rot) * 0.9, 0, CHEST.z + Math.cos(CHEST.rot) * 0.9);
 
 	// --- факелы на стволе: появляются за добытый уголь ---
 	const torches = [];
@@ -654,7 +658,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const rows = PICKAXE.length;
 		for (const role of Object.keys(pickMats)) {
 			const cells = [];
-			PICKAXE.forEach((line, y) => [...line].forEach((ch, x) => ch === role && cells.push([x - 5, rows - 1 - y])));
+			PICKAXE.forEach((line, y) => [...line].forEach((ch, x) => ch === role && cells.push([x - 5, rows - 1 - y]))); // рукоять по центру
 			const m = new THREE.InstancedMesh(box, pickMats[role], cells.length);
 			cells.forEach(([x, y], i) => {
 				dummy.position.set(x, y, 0);
@@ -673,11 +677,16 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const pivot = new THREE.Group();
 		pivot.rotation.order = 'YXZ';
 		pivot.add(rig.root);
-		// кирка в правой руке: рукоять в ладони, головка смотрит вперёд
+		// кирка в правой руке, как в Minecraft: рукоять зажата в кулаке и смотрит вперёд-вверх,
+		// плоскость кирки вертикальная, лезвие головки идёт вверх и вниз
 		const pick = buildPickaxe();
-		pick.position.set(0, -10, 1);
-		pick.rotation.set(Math.PI / 2 - 0.25, 0, 0);
-		pick.scale.setScalar(0.85);
+		const tilt = 0.12; // рукоять поперёк кулака, чуть вверх
+		const along = new THREE.Vector3(0, Math.sin(tilt), Math.cos(tilt)); // вдоль рукояти
+		const blade = new THREE.Vector3(0, Math.cos(tilt), -Math.sin(tilt)); // вдоль головки
+		pick.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(blade, along, new THREE.Vector3(1, 0, 0)));
+		pick.scale.setScalar(0.8);
+		// третья клетка рукояти — в середине кулака (низ руки)
+		pick.position.set(0, -8.6, 0.2).addScaledVector(along, -2 * 0.8);
 		pick.visible = false;
 		rig.parts.armR.add(pick);
 		return {...rig, pivot, pick};
@@ -717,7 +726,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	let debrisCursor = 0;
 	const debrisColor = new THREE.Color();
 	// pos — в координатах world
-	const spawnDebris = (pos, color, count, power = 1) => {
+	const spawnDebris = (pos, color, count, power = 1, size = 1) => {
 		debrisColor.set(color);
 		for (let k = 0; k < count; k++) {
 			const d = debris[debrisCursor];
@@ -727,7 +736,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			d.pos.set(pos.x + (Math.random() - 0.5) * 0.4, pos.y + (Math.random() - 0.5) * 0.4, pos.z + (Math.random() - 0.5) * 0.4);
 			d.vel.set((Math.random() - 0.5) * 4.5 * power, (1.5 + Math.random() * 4) * power, (Math.random() - 0.2) * 3.5 * power);
 			d.spin = (Math.random() - 0.5) * 12;
-			d.size = 0.09 + Math.random() * 0.12;
+			d.size = (0.09 + Math.random() * 0.12) * size;
 		}
 		debrisMesh.instanceColor.needsUpdate = true;
 	};
@@ -766,23 +775,11 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const geo = new THREE.BufferGeometry();
 		geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
 		geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-		disk.add(new THREE.Points(geo, new THREE.PointsMaterial({size: 1.7, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending})));
+		disk.add(new THREE.Points(geo, new THREE.PointsMaterial({size: 1.7, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0.62, depthWrite: false, blending: THREE.AdditiveBlending})));
 		const core = new THREE.Sprite(new THREE.SpriteMaterial({map: glow, color: '#9a6bff', transparent: true, opacity: 0.45, depthWrite: false, blending: THREE.AdditiveBlending}));
 		core.scale.setScalar(26);
 		galaxy.add(core);
 	}
-	// и обычные далёкие звёзды вокруг
-	const starRand = rng(31);
-	const starPos = new Float32Array(360 * 3);
-	for (let i = 0; i < 360; i++) {
-		starPos[i * 3] = (starRand() - 0.5) * 220;
-		starPos[i * 3 + 1] = (starRand() - 0.5) * 130;
-		starPos[i * 3 + 2] = -60 - starRand() * 60;
-	}
-	const starGeo = new THREE.BufferGeometry();
-	starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-	const starMat = new THREE.PointsMaterial({color: 0xcfc4ff, size: 1.6, sizeAttenuation: false, transparent: true, opacity: 0.7});
-	scene.add(new THREE.Points(starGeo, starMat));
 
 	// ================= КАДРИРОВАНИЕ =================
 	const BOX = {w: 11.5, h: 16.8, cy: 2.2};
@@ -824,6 +821,77 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		return {x: ((v.x + 1) / 2) * width, y: ((1 - v.y) / 2) * height};
 	};
 
+	// ================= ЗВЁЗДЫ ПО ВСЕМУ ФОНУ =================
+	// Отдельный 2D-холст под текстом: квадратные пиксельные звёзды заполняют весь первый экран
+	// и медленно вращаются вокруг ядра галактики. Звёзды лежат в круге, который накрывает
+	// все углы экрана при любом повороте.
+	const skyCtx = sky ? sky.getContext('2d') : null;
+	const SKY_COLORS = ['#ffffff', '#ece6ff', '#cdb8ff', '#a883ff', '#d4ff8a', '#ffe7a3'];
+	const SKY_WEIGHTS = [0.42, 0.24, 0.14, 0.1, 0.05, 0.05];
+	const skyC = {x: 0, y: 0};
+	let skyW = 1;
+	let skyH = 1;
+	let skyStars = null;
+	const buildSky = () => {
+		if (!skyCtx) return;
+		const r = sky.getBoundingClientRect();
+		skyW = Math.max(1, Math.round(r.width));
+		skyH = Math.max(1, Math.round(r.height));
+		// один пиксель холста = один пиксель страницы: на телефоне звёзды остаются чёткими квадратами
+		sky.width = skyW;
+		sky.height = skyH;
+		const core = toPx(galaxy.getWorldPosition(new THREE.Vector3()));
+		const cr = canvas.getBoundingClientRect();
+		skyC.x = clamp(core.x + cr.left - r.left, 0, skyW);
+		skyC.y = clamp(core.y + cr.top - r.top, 0, skyH);
+		const R = Math.max(...[[0, 0], [skyW, 0], [0, skyH], [skyW, skyH]].map(([x, y]) => Math.hypot(x - skyC.x, y - skyC.y))) + 6;
+		const count = Math.min(14000, Math.round((Math.PI * R * R) / 1000));
+		const sr = rng(91);
+		const stars = {x: new Float32Array(count), y: new Float32Array(count), a: new Float32Array(count), tw: new Float32Array(count), ph: new Float32Array(count), size: new Uint8Array(count), groups: SKY_COLORS.map(() => [])};
+		for (let i = 0; i < count; i++) {
+			const rr = R * Math.sqrt(sr());
+			const ang = sr() * Math.PI * 2;
+			stars.x[i] = Math.cos(ang) * rr;
+			stars.y[i] = Math.sin(ang) * rr;
+			const b = sr();
+			stars.size[i] = b > 0.988 ? 3 : b > 0.9 ? 2 : 1;
+			stars.a[i] = b > 0.9 ? 0.75 + sr() * 0.25 : 0.22 + sr() * 0.48;
+			stars.tw[i] = 0.5 + sr() * 2.2;
+			stars.ph[i] = sr() * Math.PI * 2;
+			let pick = sr();
+			let g = 0;
+			while (g < SKY_WEIGHTS.length - 1 && (pick -= SKY_WEIGHTS[g]) > 0) g++;
+			stars.groups[g].push(i);
+		}
+		skyStars = stars;
+	};
+	const drawSky = (t) => {
+		if (!skyStars) return;
+		const g = skyCtx;
+		g.clearRect(0, 0, skyW, skyH);
+		const th = reducedMotion ? 0 : t * SKY_SPIN;
+		const c = Math.cos(th);
+		const s = Math.sin(th);
+		const {x: X, y: Y, a: A, tw: TW, ph: PH, size: SZ, groups} = skyStars;
+		for (let k = 0; k < groups.length; k++) {
+			g.fillStyle = SKY_COLORS[k];
+			for (const i of groups[k]) {
+				const x = Math.round(skyC.x + X[i] * c - Y[i] * s);
+				if (x < -2 || x > skyW + 2) continue;
+				const y = Math.round(skyC.y + X[i] * s + Y[i] * c);
+				if (y < -2 || y > skyH + 2) continue;
+				g.globalAlpha = reducedMotion ? A[i] : A[i] * (0.62 + 0.38 * Math.sin(t * TW[i] + PH[i]));
+				const z = SZ[i];
+				if (z === 3) {
+					// яркая звезда — пиксельный крестик
+					g.fillRect(x - 1, y, 3, 1);
+					g.fillRect(x, y - 1, 1, 3);
+				} else g.fillRect(x, y, z, z);
+			}
+		}
+		g.globalAlpha = 1;
+	};
+
 	// ================= ПРОСЛОЙКА ПОВЕРХ ВСЕГО САЙТА =================
 	// Снятый с острова персонаж рисуется на отдельном прозрачном холсте поверх страницы,
 	// поэтому может летать над любыми блоками. Клики сквозь холст проходят.
@@ -863,6 +931,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	};
 	resizeOverlay();
 	addEventListener('resize', resizeOverlay);
+	addEventListener('resize', () => measureChrome());
 
 	// ================= КООРДИНАТЫ =================
 	// Персонаж вне острова живёт в координатах документа (пиксели от начала страницы).
@@ -1015,6 +1084,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			paintPickaxe();
 			saveProgress(progress);
 			on('tier', TIERS[up].name);
+			say(up === 3 ? 'Алмазная!' : 'Ура!', 1.6);
 			if (up === 3) on('diamond');
 		}
 		if (b.type === 'coal' && progress.torches < 4) {
@@ -1027,8 +1097,15 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	const activeBlocks = new Set();
 
 	// ================= ПЕРСОНАЖ ВНЕ ОСТРОВА =================
-	const POSE_BOX = {stand: [0.42, 1.35], wave: [0.42, 1.35], float: [0.5, 1.35], held: [0.5, 1.35], reach: [0.5, 1.35], fly: [0.5, 1.35], wall: [0.5, 1.35], crouch: [0.42, 1.25], sit: [0.42, 0.845], lie: [1.35, 0.6]};
-	const PB = {x: 0, y: 0, vx: 0, vy: 0, hw: 10, hh: 30, held: false, perch: null, pose: 'float', poseT: 0, poseDur: 3, lieDir: 1, auto: null};
+	// Хитбокс для каждой позы: полуширина и полувысота в единицах мира
+	const TALL = [0.42, 1.35];
+	const WIDE = [0.5, 1.35];
+	const SIT = [0.42, 0.845];
+	const FLAT = [1.35, 0.6];
+	const POSE_BOX = {stand: TALL, wave: TALL, look: TALL, dance: TALL, float: WIDE, held: WIDE, reach: WIDE, fly: WIDE, wall: WIDE, crouch: [0.42, 1.25], sit: SIT, sitHappy: SIT, doze: SIT, lie: FLAT, sleep: FLAT};
+	// perch — на каком виджете сидит; seek — к какому летит, чтобы сесть; auto — полёт к стене;
+	// calm — сколько секунд спокойно летает; idleT — сколько секунд его никто не трогал
+	const PB = {x: 0, y: 0, vx: 0, vy: 0, hw: 10, hh: 30, held: false, perch: null, perchX: 0, outT: 0, seek: null, seekAt: 0, seekTry: 0, auto: null, pose: 'float', poseT: 0, poseDur: 3, lieDir: 1, calm: 0, idleT: 0, spin: 0, spinV: 0, dizzy: 0, hop: 0, greetAt: -99, zzzAt: 0, lastPerch: null, lastPerchAt: -99, clearOfIsland: false, pickX: 0, pickY: 0};
 	let playerK = 20; // пикселей на единицу мира
 	let freeWorld = false; // стена сломана — можно летать по всему сайту
 	const fitPoseBox = () => {
@@ -1043,21 +1120,43 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		PB.pose = pose;
 		PB.poseT = 0;
 		PB.poseDur = dur;
-		if (pose === 'lie') PB.lieDir = Math.random() < 0.5 ? -1 : 1;
+		if (pose === 'lie' || pose === 'sleep') PB.lieDir = Math.random() < 0.5 ? -1 : 1;
 		fitPoseBox();
 	};
-	const perchPose = (first) => {
-		const w = PB.perch ? PB.perch.right - PB.perch.left : 0;
-		const options = [
-			['sit', 6],
-			['crouch', 2.4],
-			['stand', 3],
-			['wave', 2.6],
-		];
-		if (w > POSE_BOX.lie[0] * 2 * playerK * 1.1) options.push(['lie', 6]);
-		// присев на что-то, чаще всего сразу садится
-		const pick = first && Math.random() < 0.55 ? options[0] : first ? options[Math.random() < 0.5 && options[4] ? 4 : 1] : options[Math.floor(Math.random() * options.length)];
+
+	// --- облачко с эмоцией над головой ---
+	const bubble = document.createElement('div');
+	bubble.className = 'dex-bubble';
+	bubble.setAttribute('aria-hidden', 'true');
+	document.body.append(bubble);
+	const talk = {at: -99, dur: 0};
+	const say = (what, dur = 1.7) => {
+		if (what.startsWith('icon:')) bubble.innerHTML = icon(what.slice(5));
+		else bubble.textContent = what;
+		talk.at = now;
+		talk.dur = dur;
+	};
+	const oneOf = (...list) => list[Math.floor(Math.random() * list.length)];
+
+	// позы на виджете: [поза, сколько секунд, как часто выпадает]
+	const PERCH_POSES = [
+		['sit', 7, 3],
+		['sitHappy', 4.5, 2],
+		['look', 3.6, 1.2],
+		['crouch', 2.6, 1],
+		['stand', 3, 0.8],
+		['wave', 2.4, 1],
+		['dance', 4.2, 1.1],
+		['lie', 7, 1.4],
+	];
+	const wideEnough = (w) => w.right - w.left > FLAT[0] * 2 * playerK * 1.1;
+	const perchPose = () => {
+		const list = PERCH_POSES.filter(([name]) => name !== PB.pose && (name !== 'lie' || wideEnough(PB.perch)));
+		let roll = Math.random() * list.reduce((sum, o) => sum + o[2], 0);
+		const pick = list.find((o) => (roll -= o[2]) <= 0) || list[0];
 		setPose(pick[0], pick[1] * (0.8 + Math.random() * 0.4));
+		if (pick[0] === 'sitHappy' || pick[0] === 'dance') say('icon:note', 1.8);
+		else if (pick[0] === 'look' && Math.random() < 0.5) say('?', 1.4);
 	};
 
 	// --- виджеты сайта, на которые можно сесть (в координатах документа) ---
@@ -1134,6 +1233,90 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		return {left: 0, right, top: Math.max(hero.top + scrollY, 0) + top, bottom: (wallR ? wallR.top : hero.bottom) + scrollY};
 	};
 
+	// Видимая сейчас часть страницы (под шапкой и над нижней панелью телефона),
+	// куда он может долететь. null — сейчас ему не видно ни одного места.
+	let topbarH = 64;
+	let hotbarH = 0;
+	const measureChrome = () => {
+		const tb = document.querySelector('.topbar');
+		topbarH = tb ? tb.getBoundingClientRect().bottom : 64;
+		const hb = document.querySelector('.hotbar');
+		hotbarH = hb && getComputedStyle(hb).display !== 'none' ? hb.getBoundingClientRect().height : 0;
+	};
+	const visibleBand = (B) => {
+		const top = Math.max(B.top, scrollY + topbarH + 6);
+		const bottom = Math.min(B.bottom, scrollY + innerHeight - hotbarH - 6);
+		return bottom - top > 2.9 * playerK ? {top, bottom} : null;
+	};
+
+	// --- куда сесть ---
+	let reachableNow = [];
+	const findWidget = (ref) => widgets.find((x) => x.el === ref.el && Math.abs(x.top - ref.top) < 400) || null;
+	// виджет прямо под ногами (когда его несут или отпускают). Ноги могут уже чуть
+	// заходить на текст — главное, чтобы туловище было над его верхним краем.
+	const seatUnderFeet = (range) => {
+		let best = null;
+		let bestGap = Infinity;
+		const feet = PB.y + PB.hh;
+		for (const w of reachableNow) {
+			if (PB.x < w.left + PB.hw * 0.3 || PB.x > w.right - PB.hw * 0.3) continue;
+			const gap = w.top - feet;
+			if (PB.y > w.top - 4 || gap > range || Math.abs(gap) >= bestGap) continue;
+			best = w;
+			bestGap = Math.abs(gap);
+		}
+		return best;
+	};
+	// ближайший видимый виджет, к которому можно долететь, не задев остров
+	const pathHitsIsland = (poly, x1, y1, x2, y2) => {
+		for (let i = 1; i <= 10; i++) {
+			const t = i / 11;
+			if (hullDistance(lerp(x1, x2, t), lerp(y1, y2, t), poly).dist < PB.hw) return true;
+		}
+		return false;
+	};
+	const findSeat = (band, radius, poly) => {
+		let best = null;
+		let bestD = radius;
+		const sitH = SIT[1] * 2 * playerK;
+		for (const w of reachableNow) {
+			if (w.el === PB.lastPerch && now - PB.lastPerchAt < 12) continue; // только что сняли — туда не сразу
+			if (w.right - w.left < SIT[0] * 2 * playerK * 1.2) continue;
+			if (w.top - sitH < band.top || w.top > band.bottom - 4) continue;
+			const sx = clamp(PB.x, w.left + PB.hw, w.right - PB.hw);
+			const sy = w.top - PB.hh;
+			const d = Math.hypot(sx - PB.x, sy - PB.y);
+			if (d >= bestD || pathHitsIsland(poly, PB.x, PB.y, sx, sy)) continue;
+			best = {el: w.el, top: w.top, offX: sx - w.left};
+			bestD = d;
+		}
+		return best;
+	};
+	// сесть на виджет: первым делом садится, свесив ноги
+	const perchOn = (w, x) => {
+		PB.perch = w;
+		PB.seek = null;
+		PB.auto = null;
+		PB.perchX = x - w.left;
+		PB.vx = 0;
+		PB.vy = 0;
+		PB.outT = 0;
+		setPose('sit', 6 + Math.random() * 3);
+		PB.y = w.top - PB.hh;
+	};
+	// слезть с виджета; delay — через сколько секунд снова искать, где сесть
+	const unperch = (delay) => {
+		if (PB.perch) {
+			PB.lastPerch = PB.perch.el;
+			PB.lastPerchAt = now;
+		}
+		PB.perch = null;
+		PB.seek = null;
+		PB.seekAt = now + delay;
+		PB.calm = 0;
+		setPose('float');
+	};
+
 	// снять с острова
 	const leaveIsland = () => {
 		const c = toPx(rig.pivot.getWorldPosition(new THREE.Vector3()));
@@ -1149,7 +1332,13 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		PB.vx = 0;
 		PB.vy = 0;
 		PB.perch = null;
+		PB.seek = null;
 		PB.auto = null;
+		PB.spin = 0;
+		PB.spinV = 0;
+		PB.dizzy = 0;
+		PB.idleT = 0;
+		PB.seekAt = now + 5;
 		PB.clearOfIsland = false; // пока его не отнесли от острова, обратно не садится
 		PB.pickX = PB.x;
 		PB.pickY = PB.y;
@@ -1175,7 +1364,12 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		jumpAt = now;
 		PB.held = false;
 		PB.auto = null;
+		PB.perch = null;
+		PB.seek = null;
+		PB.spin = 0;
+		PB.spinV = 0;
 		overlay.classList.remove('is-on');
+		if (Math.random() < 0.5) say(oneOf('Дома!', 'icon:heart'), 1.5);
 	};
 
 	// --- стена (бегущая строка «Магазин · Моды · РП») ---
@@ -1218,11 +1412,14 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			if (freeWorld) return;
 			if (progress.tier < 3) return warn('wallNeed', TIERS[progress.tier].name);
 			if (P.mode === 'free') {
-				// уже летает — летит к стене сразу
+				// уже летает — летит к стене сразу, даже если сидел на виджете
 				PB.held = false;
 				PB.perch = null;
+				PB.seek = null;
+				setPose('fly');
 				PB.auto = {x: e.clientX + scrollX, y: wall.getBoundingClientRect().top + scrollY - PB.hh - 4, then: 'wall'};
 				P.holding = true;
+				say('Ломаю!', 1.4);
 				return;
 			}
 			if (P.mode !== 'idle' && P.mode !== 'walk') return warn('busy');
@@ -1234,25 +1431,101 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	}
 
 	// ================= УКАЗАТЕЛЬ: КЛИКИ И ПЕРЕТАСКИВАНИЕ =================
+	// drag: {x0, y0, started, free} — free: схватили персонажа вне острова.
+	// Пока мышь не сдвинулась, это клик (персонаж реагирует), сдвинулась — его несут.
 	let drag = null;
 	let suppressClick = false;
+	const trail = []; // последние положения руки — из них скорость броска
 	const hitFree = () => P.mode === 'free' && Math.abs(pointerDoc.x - PB.x) < PB.hw + 8 && Math.abs(pointerDoc.y - PB.y) < PB.hh + 8;
 	const startDrag = () => {
 		if (P.mode !== 'free') leaveIsland();
+		if (PB.perch) {
+			PB.lastPerch = PB.perch.el;
+			PB.lastPerchAt = now;
+		}
+		if (PB.auto || PB.pose === 'wall') {
+			// не дали доломать стену — кирку убирает, трещины пропадают
+			crackWall(0);
+			wallStage = 0;
+			P.holding = false;
+		}
 		PB.held = true;
 		PB.perch = null;
+		PB.seek = null;
 		PB.auto = null;
+		PB.spinV = 0;
+		PB.idleT = 0;
 		setPose('held');
 		drag.ox = PB.x - pointerDoc.x;
 		drag.oy = PB.y - pointerDoc.y;
 		drag.started = true;
+		trail.length = 0;
 		if (!r2) {
 			// без прослойки летать нельзя — вернуть на место
 			landOnIsland();
 			drag = null;
 			return;
 		}
+		if (Math.random() < 0.45) say(oneOf('Эй!', '!', 'Ой!'), 1.1);
 		on('drag');
+	};
+	// отпустили: если рука двигалась — летит с той же скоростью и плавно тормозит
+	const release = (t1) => {
+		PB.held = false;
+		const recent = trail.filter((p) => t1 - p.t < 110);
+		let vx = 0;
+		let vy = 0;
+		if (recent.length >= 2 && t1 - recent[recent.length - 1].t < 70) {
+			const a = recent[0];
+			const b = recent[recent.length - 1];
+			const sec = Math.max(16, b.t - a.t) / 1000;
+			vx = (b.x - a.x) / sec;
+			vy = (b.y - a.y) / sec;
+		}
+		const sp = Math.hypot(vx, vy);
+		if (sp > 2600) {
+			vx *= 2600 / sp;
+			vy *= 2600 / sp;
+		}
+		PB.calm = 0;
+		// аккуратно отпустили прямо над текстом или кнопкой — садится на них
+		if (sp < 420) {
+			const seat = seatUnderFeet(60);
+			if (seat) {
+				perchOn(seat, PB.x);
+				return;
+			}
+		}
+		PB.vx = vx;
+		PB.vy = vy;
+		PB.seekAt = now + (sp > 700 ? 8 : 5); // после броска сначала просто летает
+		setPose('float');
+		if (sp > 700) {
+			PB.spinV = Math.sign(vx || vy || 1) * Math.min(12, sp / 220); // кувыркается
+			say(oneOf('Уиии!', 'Йо-хо!', 'Лечу!'), 1.4);
+		}
+	};
+	// просто ткнули в персонажа
+	const poke = () => {
+		PB.idleT = 0;
+		if (++tickles === 5) on('tickle');
+		if (PB.perch) {
+			PB.hop = 0.42;
+			if (PB.pose === 'sleep' || PB.pose === 'doze') {
+				say('!', 1);
+				setPose('sit', 5);
+				return;
+			}
+			const r = Math.random();
+			if (r < 0.34) say('Хи-хи', 1.3);
+			else if (r < 0.67) {
+				say('icon:heart', 1.6);
+				setPose('wave', 2.2);
+			} else say('!', 1);
+		} else {
+			PB.spinV = (Math.random() < 0.5 ? -1 : 1) * 8;
+			say(oneOf('Уиии!', 'Хи-хи'), 1.3);
+		}
 	};
 
 	// персонаж вне острова: хватаем его где угодно на странице
@@ -1261,8 +1534,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		(e) => {
 			updatePointer(e.clientX, e.clientY);
 			if (!hitFree()) return;
-			drag = {moved: 0, started: false};
-			startDrag();
+			drag = {x0: e.clientX, y0: e.clientY, started: false, free: true};
 			suppressClick = true;
 			e.preventDefault();
 			e.stopPropagation();
@@ -1292,8 +1564,13 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	addEventListener('pointermove', (e) => {
 		updatePointer(e.clientX, e.clientY);
 		if (!drag) return;
-		drag.moved += Math.abs(e.movementX || 0) + Math.abs(e.movementY || 0);
-		if (!drag.started && drag.moved > 6) startDrag();
+		if (!drag.started && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > 6) startDrag();
+		if (drag?.started) {
+			// браузер склеивает движения мыши в одно событие на кадр — берём все настоящие точки
+			const raw = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+			for (const c of raw.length ? raw : [e]) trail.push({t: c.timeStamp, x: c.clientX + scrollX, y: c.clientY + scrollY});
+			while (trail.length > 24) trail.shift();
+		}
 	});
 	let downAt = null;
 	// остров: схватить персонажа, сломать блок названия, добыть блок
@@ -1303,12 +1580,12 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		downAt = [e.clientX, e.clientY];
 		if (pickVoxel() >= 0) return;
 		if (pickPlayer()) {
-			drag = {moved: 0, started: false};
+			drag = {x0: e.clientX, y0: e.clientY, started: false, free: false};
 			e.preventDefault(); // иначе браузер начинает выделять текст
 		}
 	});
 	zone.addEventListener('pointerup', (e) => {
-		if (drag?.started) return; // это было перетаскивание, а не клик
+		if (drag?.started || drag?.free) return; // перетаскивание или клик по летающему персонажу
 		drag = null;
 		if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 8) return;
 		if (e.target.closest('a, button')) return;
@@ -1318,20 +1595,23 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		else if (pickPlayer()) {
 			if (P.mode === 'idle') jumpAt = now;
 			if (++tickles === 5) on('tickle');
+			if (Math.random() < 0.6) say(oneOf('Хи-хи', 'icon:heart', 'Привет!'), 1.4);
 		} else {
 			const b = pickBlock();
 			if (b) startMining(b);
 		}
 	});
-	addEventListener('pointerup', () => {
-		if (drag?.started && P.mode === 'free' && PB.held) {
-			PB.held = false;
-			setPose('float');
-		}
+	addEventListener('pointerup', (e) => {
+		if (drag?.started && P.mode === 'free' && PB.held) release(e.timeStamp);
+		else if (drag && drag.free && !drag.started && P.mode === 'free') poke();
 		drag = null;
 	});
 	addEventListener('pointercancel', () => {
-		if (P.mode === 'free') PB.held = false;
+		if (P.mode === 'free' && PB.held) {
+			PB.held = false;
+			PB.seekAt = now + 4;
+			setPose('float');
+		}
 		drag = null;
 	});
 
@@ -1394,12 +1674,17 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				break;
 			}
 			case 'chest': {
-				// открыть сундук, взять или положить кирку, закрыть
+				// открыть сундук левой рукой, правой достать кирку и показать её (или положить обратно), закрыть
 				P.actT += dt;
 				P.face = Math.atan2(CHEST.x - P.pos.x, CHEST.z - P.pos.z);
 				const a = P.queue[0];
-				if (P.actT > 0.42 && P.holding !== a.take) P.holding = a.take;
-				if (P.actT > 0.9) {
+				if (P.actT > (a.take ? 0.6 : 0.5) && P.holding !== a.take) P.holding = a.take;
+				if (a.take && !a.shown && P.actT > 0.95) {
+					// кирка в поднятой руке блестит
+					a.shown = true;
+					spawnDebris(world.worldToLocal(rig.pick.localToWorld(tmp2.set(0, 8, 0))), TIERS[progress.tier].hi, 8, 0.3, 0.35);
+				}
+				if (P.actT > (a.take ? CHEST_TAKE : CHEST_PUT)) {
 					P.mode = 'idle';
 					P.queue.shift();
 				}
@@ -1423,12 +1708,18 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				break;
 			default:
 		}
-		// крышка сундука
-		const open = P.mode === 'chest' ? Math.sin(clamp(P.actT / 0.9, 0, 1) * Math.PI) : 0;
-		lid.rotation.x = lerp(lid.rotation.x, -1.25 * Math.min(1, open * 1.6), 0.35);
+		// крышка сундука: открывается в начале, закрывается, когда кирку уже достал или положил
+		let open = 0;
+		if (P.mode === 'chest') {
+			const t = P.actT;
+			open = P.queue[0]?.take ? smooth(t, 0.02, 0.3) * (1 - smooth(t, 1.4, 1.7)) : smooth(t, 0.02, 0.28) * (1 - smooth(t, 0.66, 0.98));
+		}
+		lid.rotation.x = lerp(lid.rotation.x, -1.3 * open, 1 - Math.exp(-dt * 20));
 	};
 
 	// ================= ПЕРСОНАЖ ВНЕ ОСТРОВА: ПОЛЁТ =================
+	// Порядок важности: несут в руке → летит к стене → ломает стену → сидит на виджете →
+	// летит к виджету, чтобы сесть → просто парит в невесомости и держится рядом с посетителем.
 	const stepFree = (dt) => {
 		if (!widgetsAt || now - widgetsAt > 0.25) {
 			widgets = collectWidgets();
@@ -1436,46 +1727,40 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		}
 		fitPoseBox();
 		const B = bounds();
+		const band = visibleBand(B);
 		const islandPoly = islandPolyDoc();
-		const reachable = widgets.filter((w) => w.top >= B.top - 10 && w.top <= B.bottom - 10);
+		reachableNow = widgets.filter((w) => w.top >= B.top - 10 && w.top <= B.bottom - 10);
 		// остров тоже «хочет» принять персонажа: насколько ноги над травой
 		const islandTopY = hullTopAt(islandPoly, PB.x);
 		const islandGap = islandTopY === null ? null : islandTopY - (PB.y + PB.hh);
 		if (Math.hypot(PB.x - PB.pickX, PB.y - PB.pickY) > 80 && (islandGap === null || islandGap > 30)) PB.clearOfIsland = true;
+		PB.idleT += dt;
+		PB.hop = Math.max(0, PB.hop - dt);
+		PB.dizzy = Math.max(0, PB.dizzy - dt);
 
 		if (PB.held && drag) {
-			// в руке: следует за курсором
+			// в руке: следует за курсором и никуда сам не садится
 			const tx = pointerDoc.x + drag.ox;
 			const ty = pointerDoc.y + drag.oy;
-			const k = 1 - Math.exp(-dt * 26);
+			const k = 1 - Math.exp(-dt * 30);
 			const nx = lerp(PB.x, tx, k);
 			const ny = lerp(PB.y, ty, k);
 			PB.vx = lerp(PB.vx, (nx - PB.x) / dt, 0.3);
 			PB.vy = lerp(PB.vy, (ny - PB.y) / dt, 0.3);
 			PB.x = nx;
 			PB.y = ny;
+			PB.idleT = 0;
 			// поднесли к острову — сам спрыгивает на траву
 			if (PB.clearOfIsland && islandGap !== null && islandGap < 16 && islandGap > -PB.hh) {
 				landOnIsland();
 				drag = null;
 				return;
 			}
-			setPose(islandGap !== null && islandGap < 110 && islandGap > 0 && PB.clearOfIsland ? 'reach' : reachable.some((w) => PB.x > w.left && PB.x < w.right && w.top - (PB.y + PB.hh) > 0 && w.top - (PB.y + PB.hh) < 90) ? 'reach' : 'held');
-		} else if (PB.perch) {
-			// сидит на виджете: держится за его верх, даже если страница поменялась
-			const w = widgets.find((x) => x.el === PB.perch.el && Math.abs(x.top - PB.perch.top) < 400) || null;
-			if (!w) PB.perch = null;
-			else {
-				PB.perch = w;
-				PB.x = clamp(w.left + PB.perchX, w.left + PB.hw * 0.4, w.right - PB.hw * 0.4);
-				PB.y = w.top - PB.hh;
-				PB.vx = 0;
-				PB.vy = 0;
-				PB.poseT += dt;
-				if (PB.poseT > PB.poseDur) perchPose(false);
-			}
+			// над текстом или островом тянется ногами — «хочет сесть»
+			const wantsIsland = PB.clearOfIsland && islandGap !== null && islandGap > 0 && islandGap < 110;
+			setPose(wantsIsland || seatUnderFeet(90) ? 'reach' : 'held');
 		} else if (PB.auto) {
-			// автопилот: летит к цели
+			// автопилот: летит к стене
 			const dx = PB.auto.x - PB.x;
 			const dy = PB.auto.y - PB.y;
 			const d = Math.hypot(dx, dy);
@@ -1510,78 +1795,105 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				wallStage = 0;
 				setPose('float');
 				PB.vy = 60;
+				PB.calm = 0;
+				PB.seekAt = now + 2.5;
+				say('Свобода!', 1.8);
 				on('free');
 			}
-		} else {
-			// невесомость: плавно дрейфует, у края мягко отскакивает
-			PB.vx *= Math.exp(-0.7 * dt);
-			PB.vy *= Math.exp(-0.7 * dt);
-			PB.vx += Math.sin(now * 0.7) * 6 * dt;
-			PB.vy += Math.cos(now * 0.9) * 6 * dt;
-			const sp = Math.hypot(PB.vx, PB.vy);
-			if (sp > 1600) {
-				PB.vx *= 1600 / sp;
-				PB.vy *= 1600 / sp;
-			}
-			// рядом с виджетом — тянется к нему, «хочет сесть»
-			let best = null;
-			let bestD = Infinity;
-			if (PB.clearOfIsland && islandGap !== null && islandGap > -10 && islandGap < 110) {
-				best = {island: true};
-				bestD = islandGap;
-			}
-			for (const w of reachable) {
-				if (PB.x < w.left - PB.hw * 0.2 || PB.x > w.right + PB.hw * 0.2) continue;
-				const gapY = w.top - (PB.y + PB.hh);
-				if (gapY > -10 && gapY < 110 && gapY < bestD) {
-					best = w;
-					bestD = gapY;
+		} else if (PB.perch) {
+			// сидит на виджете: держится за его верх, даже если страница поменялась
+			const w = findWidget(PB.perch);
+			if (!w) unperch(1);
+			else {
+				PB.perch = w;
+				PB.x = clamp(w.left + PB.perchX, w.left + PB.hw * 0.5, w.right - PB.hw * 0.5);
+				PB.y = w.top - PB.hh;
+				PB.vx = 0;
+				PB.vy = 0;
+				// посетитель пролистал страницу — летит за ним
+				const out = band && (w.top < band.top + 10 || w.top - SIT[1] * 2 * playerK > band.bottom);
+				PB.outT = out ? PB.outT + dt : 0;
+				if (PB.outT > 0.3) {
+					unperch(0.9);
+					if (Math.random() < 0.6) say(oneOf('Подожди!', 'Я с тобой!', 'Лечу!'), 1.5);
+				} else {
+					PB.poseT += dt;
+					const near = Math.hypot(pointerDoc.x - PB.x, pointerDoc.y - PB.y) < 170;
+					if (PB.pose === 'sleep' || PB.pose === 'doze') {
+						if (now > PB.zzzAt) {
+							PB.zzzAt = now + 2.8;
+							say('Zzz', 1.9);
+						}
+					} else if (PB.idleT > 30) {
+						// долго никто не трогал — засыпает
+						setPose(wideEnough(w) ? 'sleep' : 'doze');
+						PB.zzzAt = now + 0.6;
+					} else if (near && now - PB.greetAt > 16 && PB.pose !== 'wave') {
+						PB.greetAt = now;
+						setPose('wave', 2.4);
+						say('Привет!', 1.6);
+					} else if (PB.poseT > PB.poseDur) perchPose();
 				}
 			}
-			if (best) {
-				PB.vy += (bestD * 9 + 60) * dt * 6;
-				PB.vx *= Math.exp(-2 * dt);
+		} else if (PB.seek) {
+			// увидел текст — летит к нему, на подлёте вытягивает ноги
+			const w = findWidget(PB.seek);
+			const lost = !w || !band || w.top - SIT[1] * 2 * playerK < band.top - 20 || w.top > band.bottom + 20;
+			if (lost) {
+				PB.seek = null;
+				PB.seekAt = now + 0.5;
+			} else {
+				PB.seek.top = w.top;
+				const tx = clamp(w.left + PB.seek.offX, w.left + PB.hw * 0.6, w.right - PB.hw * 0.6);
+				const ty = w.top - PB.hh;
+				const dx = tx - PB.x;
+				const dy = ty - PB.y;
+				const d = Math.hypot(dx, dy) || 1;
+				const sp = Math.min(560, d * 2.8 + 25);
+				const k = 1 - Math.exp(-dt * 4.5);
+				PB.vx = lerp(PB.vx, (dx / d) * sp, k);
+				PB.vy = lerp(PB.vy, (dy / d) * sp, k);
+				PB.x += PB.vx * dt;
+				PB.y += PB.vy * dt;
+				setPose(d < 120 ? 'reach' : 'fly');
+				if (d < 6) perchOn(w, tx);
+			}
+		} else {
+			// невесомость: плавно тормозит после броска и чуть дрейфует
+			PB.calm += dt;
+			const damp = Math.exp(-1.15 * dt);
+			PB.vx *= damp;
+			PB.vy *= damp;
+			PB.vx += Math.sin(now * 0.7 + 1.3) * 7 * dt;
+			PB.vy += Math.cos(now * 0.9) * 7 * dt;
+			// держится в видимой части страницы: листаешь — летит следом
+			let following = false;
+			if (band && PB.calm > 0.35) {
+				const lo = band.top + PB.hh;
+				const hi = band.bottom - PB.hh;
+				let want = 0;
+				if (PB.y < lo) want = Math.min(1000, (lo - PB.y) * 2.6 + 70);
+				else if (PB.y > hi) want = -Math.min(1000, (PB.y - hi) * 2.6 + 70);
+				if (want && (want > 0 ? PB.vy < want : PB.vy > want)) PB.vy = lerp(PB.vy, want, 1 - Math.exp(-dt * 3.5));
+				following = want !== 0;
+			}
+			// успокоился — ищет, где сесть: сначала совсем рядом, потом подальше
+			const speed = Math.hypot(PB.vx, PB.vy);
+			if (band && !following && now > PB.seekAt && speed < 260 && PB.dizzy <= 0 && now - PB.seekTry > 0.4) {
+				PB.seekTry = now;
+				PB.seek = findSeat(band, now - PB.seekAt < 3 ? 320 : 900, islandPoly);
+				if (PB.seek && Math.random() < 0.3) say(oneOf('!', 'Сяду тут'), 1.3);
 			}
 			PB.x += PB.vx * dt;
 			PB.y += PB.vy * dt;
-			setPose(best ? 'reach' : 'float');
+			setPose(following && Math.abs(PB.vy) > 260 ? 'fly' : 'float');
 		}
 
-		// касание виджета: сверху — садится, сбоку и снизу — упирается
-		if (!PB.perch && PB.pose !== 'wall') {
-			for (const w of reachable) {
-				const ox = Math.min(PB.x + PB.hw, w.right) - Math.max(PB.x - PB.hw, w.left);
-				const feet = PB.y + PB.hh;
-				const overlapY = Math.min(feet, w.bottom) - Math.max(PB.y - PB.hh, w.top);
-				if (ox <= 0 || overlapY <= -4) continue;
-				const fromTop = feet - w.top;
-				if (fromTop > -4 && fromTop < Math.max(18, PB.hh * 0.35) && ox > PB.hw * 0.6 && !PB.auto) {
-					// коснулся верха — сразу садится, ложится или приседает
-					if (drag) drag = null;
-					PB.held = false;
-					PB.perch = w;
-					PB.perchX = PB.x - w.left;
-					perchPose(true);
-					break;
-				}
-				if (overlapY <= 0) continue;
-				// упёрся сбоку или снизу — выталкиваем
-				const pushX = PB.x < (w.left + w.right) / 2 ? w.left - (PB.x + PB.hw) : w.right - (PB.x - PB.hw);
-				const pushY = w.bottom - (PB.y - PB.hh);
-				if (Math.abs(pushX) < Math.abs(pushY)) {
-					PB.x += pushX;
-					PB.vx = -PB.vx * 0.4;
-				} else {
-					PB.y += pushY;
-					PB.vy = Math.abs(PB.vy) * 0.4;
-				}
-			}
-		}
 		// остров: сверху — спрыгивает на траву, в бок — не пускает
 		if (!PB.perch && P.mode === 'free') {
 			const m = boxPoly(PB, islandPoly);
 			if (m && PB.clearOfIsland) {
-				if (m.ny < -0.55 && !PB.auto && PB.pose !== 'wall') {
+				if (m.ny < -0.55 && !PB.auto && !PB.seek && PB.pose !== 'wall') {
 					landOnIsland();
 					drag = null;
 					return;
@@ -1595,36 +1907,81 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				}
 			}
 		}
-		// пределы: до поломки стены — первый экран, после — весь сайт
+		// пределы: до поломки стены — первый экран, после — весь сайт. Сильный удар — «Ой!»
+		const bump = (v) => {
+			if (Math.abs(v) > 1000 && !PB.held) {
+				PB.dizzy = 1.4;
+				say('Ой!', 1.1);
+			}
+		};
 		if (PB.x - PB.hw < B.left) {
+			bump(PB.vx);
 			PB.x = B.left + PB.hw;
-			PB.vx = Math.abs(PB.vx) * 0.5;
+			PB.vx = Math.abs(PB.vx) * 0.55;
 		}
 		if (PB.x + PB.hw > B.right) {
+			bump(PB.vx);
 			PB.x = B.right - PB.hw;
-			PB.vx = -Math.abs(PB.vx) * 0.5;
+			PB.vx = -Math.abs(PB.vx) * 0.55;
 		}
 		if (PB.y - PB.hh < B.top) {
+			bump(PB.vy);
 			PB.y = B.top + PB.hh;
-			PB.vy = Math.abs(PB.vy) * 0.5;
+			PB.vy = Math.abs(PB.vy) * 0.55;
 		}
 		if (PB.y + PB.hh > B.bottom) {
+			bump(PB.vy);
 			PB.y = B.bottom - PB.hh;
-			PB.vy = -Math.abs(PB.vy) * 0.5;
+			PB.vy = -Math.abs(PB.vy) * 0.55;
+		}
+		// кувырок после броска: крутится, замедляется и встаёт ровно
+		if (PB.spinV) {
+			PB.spin += PB.spinV * dt;
+			PB.spinV *= Math.exp(-1.4 * dt);
+			if (Math.abs(PB.spinV) < 2) PB.spinV = 0;
+		} else if (PB.spin) {
+			const level = Math.round(PB.spin / (Math.PI * 2)) * Math.PI * 2;
+			PB.spin = lerp(PB.spin, level, 1 - Math.exp(-dt * 6));
+			if (Math.abs(PB.spin - level) < 0.01) PB.spin = 0;
 		}
 	};
 
 	// ================= АНИМАЦИЯ СКЕЛЕТА =================
-	const pose = {armRx: 0, armRz: 0, armLx: 0, armLz: 0, legR: 0, legL: 0, sneak: 0, drop: 0, roll: 0, tiltZ: 0, headPitch: 0};
+	const pose = {armRx: 0, armRz: 0, armLx: 0, armLz: 0, legR: 0, legL: 0, sneak: 0, drop: 0, roll: 0, tiltZ: 0, headPitch: 0, headYaw: 0};
 	const look = {yaw: 0, pitch: 0};
 	const headPos = new THREE.Vector3();
+	const CARRY = -0.38; // рука с киркой чуть вперёд
+	// ключевые позы у сундука
+	const K_REST = {armRx: 0, armRz: 0.04, armLx: 0, armLz: -0.04, sneak: 0, drop: 0, headPitch: 0};
+	const K_REACH = {armRx: -0.55, armRz: 0.05, armLx: -1.75, armLz: -0.15, sneak: 1, drop: 0.22, headPitch: 0.55}; // левая держит крышку, правая в сундуке
+	const K_SHOW = {armRx: -1.85, armRz: -0.5, armLx: 0.1, armLz: -0.08, sneak: 0, drop: 0, headPitch: -0.3}; // поднял кирку сбоку от головы и смотрит на неё
+	const K_HOLD = {...K_REST, armRx: CARRY};
+	const mixPose = (a, b, k) => {
+		const o = {};
+		for (const key of Object.keys(a)) o[key] = lerp(a[key], b[key], k);
+		return o;
+	};
+	const chestPose = () => {
+		const t = P.actT;
+		if (P.queue[0]?.take) {
+			if (t < 0.66) return mixPose(K_REST, K_REACH, smooth(t, 0, 0.3));
+			if (t < 1.38) {
+				const o = mixPose(K_REACH, K_SHOW, smooth(t, 0.66, 0.95));
+				o.armRx += Math.sin(t * 10) * 0.06 * smooth(t, 0.95, 1.05);
+				return o;
+			}
+			return mixPose(K_SHOW, K_HOLD, smooth(t, 1.38, 1.7));
+		}
+		if (t < 0.62) return mixPose(K_HOLD, K_REACH, smooth(t, 0, 0.3));
+		return mixPose(K_REACH, K_REST, smooth(t, 0.62, 1.0));
+	};
 	const animateRig = (R, dt, idle, cam, pointerVec) => {
 		const t = now;
 		const k = 1 - Math.exp(-dt * 12);
 		const p = R.parts;
 		const jump = clamp((now - jumpAt) / 0.42, 0, 1);
 		const cheer = jump < 1 && P.mode !== 'free' ? Math.sin(jump * Math.PI) : 0;
-		const target = {armRx: 0, armRz: 0.04, armLx: 0, armLz: -0.04, legR: 0, legL: 0, sneak: 0, drop: 0, roll: 0, tiltZ: 0, headPitch: 0};
+		const target = {armRx: 0, armRz: 0.04, armLx: 0, armLz: -0.04, legR: 0, legL: 0, sneak: 0, drop: 0, roll: 0, tiltZ: 0, headPitch: 0, headYaw: 0};
 		const sway = Math.sin(idle * 2) * 0.05;
 		const state = P.mode === 'free' ? PB.pose : P.mode;
 		const swing = (period) => {
@@ -1634,11 +1991,11 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		switch (state) {
 			case 'walk': {
 				const s = Math.sin(P.walkPhase);
-				Object.assign(target, {armRx: P.holding ? -0.7 : -s * 0.55, armLx: s * 0.55, legR: s * 0.7, legL: -s * 0.7});
+				Object.assign(target, {armRx: P.holding ? CARRY + s * 0.12 : -s * 0.55, armLx: s * 0.55, legR: s * 0.7, legL: -s * 0.7});
 				break;
 			}
 			case 'chest':
-				Object.assign(target, {armRx: -1.25, armLx: -1.25, sneak: 0.4, headPitch: 0.45});
+				Object.assign(target, chestPose());
 				break;
 			case 'mine': {
 				const b = P.queue[0]?.block;
@@ -1652,13 +2009,18 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				break;
 			}
 			case 'held':
+				// болтается в руке: руки вверх, ноги дрыгаются
 				Object.assign(target, {armRx: -2.8 + Math.sin(t * 14) * 0.25, armRz: -0.3, armLx: -2.8 + Math.cos(t * 14) * 0.25, armLz: 0.3, legR: Math.sin(t * 9) * 0.4 + 0.2, legL: -Math.sin(t * 9) * 0.4 + 0.2, tiltZ: clamp(-PB.vx * 0.0005, -0.5, 0.5)});
 				break;
 			case 'float':
-			case 'fly':
-				// плывёт в невесомости
+				// плывёт в невесомости, раскинув руки
 				Object.assign(target, {armRx: Math.sin(t * 1.4) * 0.3, armRz: -1.1 + Math.sin(t * 1.6) * 0.18, armLx: -Math.sin(t * 1.4) * 0.3, armLz: 1.1 - Math.sin(t * 1.6) * 0.18, legR: Math.sin(t * 1.2) * 0.35, legL: -Math.sin(t * 1.2) * 0.35, tiltZ: Math.sin(t * 0.8) * 0.14 + clamp(-PB.vx * 0.0003, -0.3, 0.3)});
 				if (P.holding) Object.assign(target, {armRx: -1.2, armRz: 0});
+				break;
+			case 'fly':
+				// летит по делу: руки вперёд по ходу полёта, ноги вместе
+				Object.assign(target, {armRx: -2.9 + Math.sin(t * 9) * 0.1, armRz: -0.12, armLx: -2.9 - Math.sin(t * 9) * 0.1, armLz: 0.12, legR: 0.25 + Math.sin(t * 10) * 0.2, legL: 0.25 - Math.sin(t * 10) * 0.2, tiltZ: clamp(-PB.vx * 0.0006, -0.5, 0.5)});
+				if (P.holding) Object.assign(target, {armRx: -1.3, armRz: 0});
 				break;
 			case 'reach':
 				// тянется сесть: ноги вперёд, руки к краю
@@ -1667,6 +2029,15 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			case 'wave':
 				Object.assign(target, {armRx: sway, armRz: -2.45 + Math.sin(idle * 15) * 0.35, armLx: -sway});
 				break;
+			case 'look':
+				// ладонь ко лбу, смотрит по сторонам
+				Object.assign(target, {armRx: -2.35, armRz: 0.55, armLx: -sway, headYaw: Math.sin(t * 1.7) * 0.9});
+				break;
+			case 'dance': {
+				const b = Math.sin(t * 7);
+				Object.assign(target, {armRx: -1.5 + b * 1.1, armLx: -1.5 - b * 1.1, armRz: 0.2, armLz: -0.2, legR: b * 0.3, legL: -b * 0.3, drop: -Math.abs(b) * 0.12, tiltZ: Math.sin(t * 3.5) * 0.16});
+				break;
+			}
 			case 'crouch':
 				Object.assign(target, {armRx: 0.45 + sway, armLx: 0.45 - sway, sneak: 1, drop: 0.13});
 				break;
@@ -1674,14 +2045,25 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				// сидит на краю, ноги свисают и болтаются
 				Object.assign(target, {armRx: -0.35, armLx: -0.35, armRz: 0.12, armLz: -0.12, legR: -1.25 + Math.sin(t * 2.4) * 0.28, legL: -1.25 - Math.sin(t * 2.4) * 0.28, drop: 1.01});
 				break;
+			case 'sitHappy':
+				// радуется: упёрся руками сзади, быстро болтает ногами и качает головой
+				Object.assign(target, {armRx: 0.55, armLx: 0.55, armRz: 0.25, armLz: -0.25, legR: -1.3 + Math.sin(t * 7) * 0.5, legL: -1.3 - Math.sin(t * 7) * 0.5, drop: 1.01, headPitch: -0.15 + Math.sin(t * 3.5) * 0.1});
+				break;
+			case 'doze':
+				// задремал сидя: голова клонится
+				Object.assign(target, {armRx: -0.2, armLx: -0.2, legR: -1.3, legL: -1.3, drop: 1.01, headPitch: 0.55 + Math.sin(t * 1.3) * 0.12});
+				break;
 			case 'lie':
 				Object.assign(target, {armRz: 0.08, armLz: -0.08, roll: PB.lieDir * (Math.PI / 2)});
+				break;
+			case 'sleep':
+				Object.assign(target, {armRx: -0.2, armRz: 0.1, armLz: -0.1, legR: 0.15, legL: -0.1, roll: PB.lieDir * (Math.PI / 2), headPitch: 0.25});
 				break;
 			default: {
 				// стоит: дышит и время от времени машет рукой
 				const cycle = idle % 7;
-				const waving = P.mode === 'idle' && !P.queue.length ? clamp(cycle / 0.25, 0, 1) * (1 - clamp((cycle - 1.5) / 0.3, 0, 1)) : 0;
-				Object.assign(target, {armRx: P.holding ? -0.7 : sway, armRz: lerp(0.04, -2.45 + Math.sin(idle * 15) * 0.35, waving), armLx: -sway});
+				const waving = P.mode === 'idle' && !P.queue.length && !P.holding ? clamp(cycle / 0.25, 0, 1) * (1 - clamp((cycle - 1.5) / 0.3, 0, 1)) : 0;
+				Object.assign(target, {armRx: P.holding ? CARRY : sway, armRz: lerp(0.04, -2.45 + Math.sin(idle * 15) * 0.35, waving), armLx: -sway});
 			}
 		}
 		if (cheer > 0) Object.assign(target, {armRx: lerp(target.armRx, -2.9, cheer), armRz: lerp(target.armRz, -0.3, cheer), armLx: lerp(target.armLx, -2.9, cheer), armLz: lerp(target.armLz, 0.3, cheer), legR: cheer * 0.3, legL: -cheer * 0.3});
@@ -1702,21 +2084,25 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		p.legL.position.set(p.legL.position.x, 18 - 6 * Math.cos(lean), -6 * Math.sin(lean));
 		R.pick.visible = P.holding;
 
-		// голова следит за курсором
+		// голова следит за курсором (кроме дел, сна и осмотра по сторонам)
 		p.head.getWorldPosition(headPos).project(cam);
 		const lx = pointerVec ? clamp((pointerVec.x - headPos.x) * 1.4, -1, 1) : 0;
 		const ly = pointerVec ? clamp((pointerVec.y - headPos.y) * 0.9, -0.5, 0.6) : cheer * 0.5;
 		const lookK = 1 - Math.exp(-dt * 6);
-		const busyHead = state === 'walk' || state === 'mine' || state === 'chest' || state === 'lie' || state === 'wall';
-		look.yaw = lerp(look.yaw, busyHead ? 0 : lx, lookK);
-		look.pitch = lerp(look.pitch, busyHead ? pose.headPitch : -ly + pose.sneak * 0.3 + pose.headPitch, lookK);
-		p.head.rotation.set(look.pitch, look.yaw, 0);
+		const busyHead = ['walk', 'mine', 'chest', 'lie', 'wall', 'sleep', 'doze'].includes(state);
+		look.yaw = lerp(look.yaw, busyHead ? 0 : state === 'look' ? pose.headYaw : lx, lookK);
+		look.pitch = lerp(look.pitch, busyHead || state === 'look' ? pose.headPitch : -ly + pose.sneak * 0.3 + pose.headPitch, lookK);
+		// после сильного удара кружится голова
+		const dizzy = P.mode === 'free' ? clamp(PB.dizzy, 0, 1) : 0;
+		p.head.rotation.set(look.pitch + Math.cos(t * 11) * 0.25 * dizzy, look.yaw + Math.sin(t * 11) * 0.55 * dizzy, 0);
 		return {jump, cheer};
 	};
 
 	// ================= ГЛАВНЫЙ ЦИКЛ =================
 	let swayPhase = 0;
 	let heroVisible = true;
+	let hopPx = 0;
+	let closeup = null; // только для проверки: камера крупно у персонажа
 	const pointerOverlay = new THREE.Vector2();
 	const setGlobalCursor = (v) => {
 		if (document.documentElement.style.cursor !== v) document.documentElement.style.cursor = v;
@@ -1728,11 +2114,10 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	const update = (dt) => {
 		const idle = reducedMotion ? 0 : now;
 		world.position.y = Math.sin(idle * 0.8) * 0.18;
-		// остров сам качается на ±90°, мышь на это не влияет
+		// остров сам очень медленно качается на ±60°, мышь на это не влияет
 		if (!reducedMotion) swayPhase += dt * SWAY_SPEED;
 		island.rotation.y = Math.sin(swayPhase) * SWAY;
 		disk.rotation.z = idle * 0.035; // галактика вращается
-		starMat.opacity = 0.55 + Math.sin(idle * 1.2) * 0.15;
 		world.updateMatrixWorld(true);
 
 		const homeWorld = island.localToWorld(tmp.copy(HOME).add(tmp2.set(0, BODY, 0)));
@@ -1782,11 +2167,34 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			const s = PLAYER_SCALE * playerK;
 			oRig.root.scale.setScalar(s);
 			oRig.root.position.y = (-BODY - pose.drop) * playerK;
-			const centerAbove = PB.pose === 'lie' ? 0.6 : BODY;
+			const centerAbove = PB.pose === 'lie' || PB.pose === 'sleep' ? 0.6 : BODY;
 			const feetY = PB.y + PB.hh;
-			oRig.pivot.position.set(PB.x - scrollX, -(feetY - centerAbove * playerK - scrollY), 0);
-			oRig.pivot.rotation.set(0.12, 0.2, pose.roll + pose.tiltZ);
+			hopPx = PB.hop > 0 ? Math.sin((1 - PB.hop / 0.42) * Math.PI) * 0.45 * playerK : 0; // подпрыгнул от тычка
+			oRig.pivot.position.set(PB.x - scrollX, -(feetY - centerAbove * playerK - scrollY) + hopPx, 0);
+			oRig.pivot.rotation.set(0.12, 0.2, pose.roll + pose.tiltZ + PB.spin);
 		}
+
+		// облачко с эмоцией: над головой — и на острове, и в полёте
+		const tb = now - talk.at;
+		if (tb < talk.dur) {
+			let bx = null;
+			let by = 0;
+			if (P.mode === 'free') {
+				bx = PB.x - scrollX;
+				by = PB.y - PB.hh - scrollY - hopPx - 6;
+			} else if (heroVisible) {
+				const hp = toPx(rig.parts.head.localToWorld(tmp.set(0, 11, 0)));
+				const r = canvas.getBoundingClientRect();
+				bx = hp.x + r.left;
+				by = hp.y + r.top - 4;
+			}
+			if (bx === null) bubble.style.opacity = '0';
+			else {
+				const sc = tb < 0.18 ? easeOutBack(tb / 0.18) : clamp((talk.dur - tb) / 0.18, 0, 1);
+				bubble.style.transform = `translate(${bx.toFixed(1)}px,${by.toFixed(1)}px) translate(-50%,-100%) scale(${sc.toFixed(3)})`;
+				bubble.style.opacity = '1';
+			}
+		} else if (bubble.style.opacity !== '0') bubble.style.opacity = '0';
 
 		// курсор: прицел над тем, что можно сломать или добыть
 		if (drag?.started) setGlobalCursor('grabbing');
@@ -1848,6 +2256,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, width < 900 ? 1.5 : 2));
 		renderer.setSize(width, height, false);
 		frame();
+		buildSky();
+		measureChrome();
 		widgetsAt = -1;
 	};
 
@@ -1860,7 +2270,18 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		if (!heroVisible && P.mode !== 'free') return;
 		now += dt;
 		update(dt);
-		if (heroVisible) renderer.render(scene, camera);
+		if (closeup) {
+			// камера смотрит на персонажа спереди-сбоку
+			const c = rig.pivot.getWorldPosition(new THREE.Vector3());
+			const f = rig.pivot.getWorldDirection(new THREE.Vector3()).setY(0).normalize().applyAxisAngle(new THREE.Vector3(0, 1, 0), closeup.yaw);
+			camera.position.copy(c).addScaledVector(f, closeup.dist).add(new THREE.Vector3(0, closeup.h, 0));
+			camera.lookAt(c.x, c.y + 0.1, c.z);
+			camera.updateMatrixWorld();
+		}
+		if (heroVisible) {
+			renderer.render(scene, camera);
+			drawSky(now);
+		}
 		if (r2 && P.mode === 'free') r2.render(oScene, oCam);
 		else if (r2 && overlay.classList.contains('is-on')) overlay.classList.remove('is-on');
 	};
@@ -1888,7 +2309,18 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				return b ? page(toPx(island.localToWorld(tmp.copy(b.pos)))) : null;
 			},
 			player: () => (P.mode === 'free' ? {x: PB.x - scrollX, y: PB.y - scrollY} : page(toPx(rig.pivot.getWorldPosition(new THREE.Vector3())))),
-			state: () => ({mode: P.mode, queue: P.queue.map((a) => a.type), holding: P.holding, tier: progress.tier, torches: progress.torches, pose: PB.pose, perch: PB.perch ? PB.perch.el.className || PB.perch.el.tagName : null, free: freeWorld, sway: +island.rotation.y.toFixed(2)}),
+			state: () => ({mode: P.mode, queue: P.queue.map((a) => a.type), holding: P.holding, tier: progress.tier, torches: progress.torches, pose: PB.pose, perch: PB.perch ? PB.perch.el.className || PB.perch.el.tagName : null, seek: !!PB.seek, pos: P.pos.toArray().map((v) => +v.toFixed(2)), free: freeWorld, sway: +island.rotation.y.toFixed(2), speed: Math.round(Math.hypot(PB.vx, PB.vy)), spin: +PB.spin.toFixed(2), docY: Math.round(PB.y), say: now - talk.at < talk.dur ? bubble.textContent || 'icon' : ''}),
+			closeup: (on, yaw = 0.6, dist = 4.2, h = 0.5) => {
+				closeup = on ? {yaw, dist, h} : null;
+				if (!on) frame();
+			},
+			chest: () => {
+				// только сходить к сундуку за киркой и обратно
+				if (busy() || P.mode === 'free') return false;
+				P.queue = [walkTo(CHEST_SPOT), {type: 'chest', take: true}, {type: 'chest', take: false}, walkTo(HOME)];
+				return true;
+			},
+			idle: (sec) => (PB.idleT = sec),
 			mine: (type) => {
 				const b = blocks.find((x) => x.type === type && x.minedAt < 0 && canReach(x, standFor(x)));
 				if (b) startMining(b);

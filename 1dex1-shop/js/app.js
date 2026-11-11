@@ -323,6 +323,7 @@ import('./hero.js')
 		const ok = initHero($('#hero-gl'), {
 			reducedMotion,
 			wall: $('#marquee'),
+			sky: $('#hero-sky'),
 			on(event, data) {
 				switch (event) {
 					case 'break':

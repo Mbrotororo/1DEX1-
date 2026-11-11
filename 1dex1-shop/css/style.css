@@ -124,9 +124,25 @@ ul{padding:0;list-style:none}
 	transition:background .25s,border-color .25s;
 }
 .topbar.is-stuck{background:rgba(12,9,20,.86);border-color:var(--line);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
-.logo{display:flex;align-items:center;gap:10px;text-decoration:none}
-/* «1DEX1 SHOP» — одним шрифтом и цветом, без выделения */
-.logo__name{font:400 16px/1 var(--font-display);letter-spacing:.02em;word-spacing:-.4em;white-space:nowrap}
+.logo{display:flex;align-items:center;gap:10px;text-decoration:none;-webkit-tap-highlight-color:transparent}
+/* «1DEX1 SHOP» — крупно и салатовым. Под курсором пульсирует, буквы прыгают волной
+   и переливаются от светло-салатового до зелёного */
+.logo__name{
+	display:inline-flex;align-items:baseline;white-space:nowrap;
+	font:400 clamp(20px,1.9vw,27px)/1 var(--font-display);letter-spacing:.02em;
+	color:var(--lime);text-shadow:0 3px 0 #2f5208,0 0 22px rgba(184,255,61,.3);
+	transform-origin:left center;
+}
+.logo__name i{display:inline-block;font-style:normal}
+.logo__name .sp{width:.42em}
+.logo:hover .logo__name,.logo:focus-visible .logo__name,.logo:active .logo__name{animation:logo-pulse 1.3s ease-in-out infinite}
+.logo:hover .logo__name i,.logo:focus-visible .logo__name i,.logo:active .logo__name i{
+	animation:logo-hop .9s ease-in-out infinite,logo-shine 1.5s linear infinite;
+	animation-delay:calc((9 - var(--i,4)) * -.09s),calc((9 - var(--i,4)) * -.12s);
+}
+@keyframes logo-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.13)}}
+@keyframes logo-hop{0%,100%{transform:translateY(0) rotate(0)}25%{transform:translateY(-5px) rotate(-6deg)}75%{transform:translateY(2px) rotate(5deg)}}
+@keyframes logo-shine{0%,100%{color:#b8ff3d}33%{color:#eaffb0}66%{color:#3fd65a}}
 .topbar__right{display:flex;align-items:center;gap:8px;margin-left:auto}
 .icon-btn{display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 12px;font-size:14px;font-weight:500;color:var(--muted);text-decoration:none;transition:color .15s,background .15s}
 .icon-btn:hover{color:var(--ink);background:rgba(255,255,255,.05)}
@@ -157,6 +173,8 @@ ul{padding:0;list-style:none}
 		linear-gradient(180deg,#090614 0%,#120b27 58%,#0c0914 100%);
 }
 .hero{-webkit-user-select:none;user-select:none}
+/* звёзды по всему фону: медленно вращаются вокруг ядра галактики */
+.hero__sky{position:absolute;inset:0;z-index:0;width:100%;height:100%;pointer-events:none;image-rendering:pixelated}
 .hero__gl{position:absolute;inset:0;z-index:2;width:100%;height:100%;opacity:0;transition:opacity .9s var(--ease);pointer-events:none}
 .has-gl .hero__gl{opacity:1}
 .hero__fallback{
@@ -164,7 +182,7 @@ ul{padding:0;list-style:none}
 	font:400 clamp(72px,13vw,200px)/1 var(--font-display);color:transparent;-webkit-text-stroke:2px var(--purple-lo);
 }
 .no-gl .hero__fallback{display:block}
-.hero__content{position:relative;z-index:1;width:min(600px,100%);margin-left:max(0px,calc((100vw - var(--maxw))/2 - var(--gutter)))}
+.hero__content{position:relative;z-index:1;width:min(600px,100%);margin-left:max(0px,calc(((100vw - var(--maxw))/2 - var(--gutter))*.55))}
 /* подпись раздела: пиксельная иконка в плашке */
 .label{
 	display:inline-flex;align-items:center;gap:9px;padding:6px 13px 6px 7px;
@@ -197,6 +215,15 @@ ul{padding:0;list-style:none}
 /* прослойка поверх сайта, на которой летает персонаж */
 .dex-overlay{position:fixed;inset:0;width:100%;height:100%;z-index:35;pointer-events:none;display:none}
 .dex-overlay.is-on{display:block}
+/* облачко с эмоцией над головой персонажа */
+.dex-bubble{
+	position:fixed;left:0;top:0;z-index:37;pointer-events:none;opacity:0;
+	display:flex;align-items:center;gap:6px;padding:6px 10px 7px;white-space:nowrap;
+	font:600 15px/1 var(--font-pixel);color:#1b1430;background:#fff;
+	border:2px solid #0c0914;box-shadow:0 3px 0 rgba(0,0,0,.35);transform-origin:50% 100%;
+}
+.dex-bubble::after{content:"";position:absolute;left:50%;bottom:-7px;width:8px;height:8px;margin-left:-4px;background:#fff;border:2px solid #0c0914;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.dex-bubble .pxi{width:18px;height:18px}
 .marquee__track{display:flex;align-items:center;width:max-content;animation:marquee 60s linear infinite}
 .marquee span{font:400 clamp(22px,3.2vw,40px)/1 var(--font-display);text-transform:uppercase;white-space:nowrap}
 .marquee .is-outline{color:transparent;-webkit-text-stroke:1.5px var(--line-2)}

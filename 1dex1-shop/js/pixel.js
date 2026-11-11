@@ -97,6 +97,9 @@ export const ICONS = {
 	trophy: ['ggggggggg', 'g.gGGGg.g', 'g.gGGGg.g', '.ggGGGgg.', '..gGGGg..', '...ggg...', '....g....', '...ggg...', '..ggggg..'],
 	user: ['...ppp...', '..pPPPp..', '..pPPPp..', '..pPPPp..', '...ppp...', '.ppppppp.', 'pPPPPPPPp', 'pPPPPPPPp', 'ppppppppp'],
 	camera: ['.........', '..www....', 'wwwwwwwww', 'wwwkkkwww', 'wwkwwwkww', 'wwkwwwkww', 'wwwkkkwww', 'wwwwwwwww', '.........'],
+	// эмоции персонажа
+	heart: ['.rr...rr.', 'rwrr.rrrr', 'rwrrrrrrr', 'rrrrrrrrr', '.rrrrrrr.', '..rrrrr..', '...rrr...', '....r....', '.........'],
+	note: ['...pppppp', '...pppppp', '...p....p', '...p....p', '...p....p', '.ppp..ppp', 'pppp.pppp', 'pppp.pppp', '.pp...pp.'],
 	coin: ['..ggggg..', '.gGGGGGg.', 'gGGhhhGGg', 'gGhGGGGGg', 'gGhGGGGGg', 'gGhGGGGGg', 'gGGhhhGGg', '.gGGGGGg.', '..ggggg..'],
 	play: ['.........', '.rrrrrrr.', 'rrrwrrrrr', 'rrrwwrrrr', 'rrrwwwrrr', 'rrrwwrrrr', 'rrrwrrrrr', '.rrrrrrr.', '.........'],
 };
