@@ -52,7 +52,7 @@ export const onAuth = (fn) => listeners.add(fn);
 const emit = () => listeners.forEach((fn) => fn(current()));
 
 const publicUser = (u) =>
-	u && {nick: u.nick, email: u.email, avatar: u.avatar, balance: u.balance || 0, history: u.history || [], createdAt: u.createdAt};
+	u && {nick: u.nick, email: u.email, avatar: u.avatar, balance: u.balance || 0, history: u.history || [], coupons: u.coupons || [], caseAt: u.caseAt || 0, createdAt: u.createdAt};
 
 export const current = () => {
 	const key = read(SESSION, null);
@@ -131,6 +131,35 @@ export const credit = ({id, amount, title}) => {
 	const ok = write(USERS, users);
 	if (ok) emit();
 	return ok;
+};
+
+// Ежедневный кейс: открыть можно раз в cooldownHours часов. Награда выпадает по шансам
+// из loot: деньги сразу идут на баланс, ресурс-пак — купоном в профиль.
+// Когда появится сервер, награду должен выбирать он, а не браузер.
+export const openCase = ({loot, cooldownHours, title}) => {
+	const key = read(SESSION, null);
+	const users = read(USERS, {});
+	const user = key && users[key];
+	if (!user) return {error: 'login'};
+	const now = Date.now();
+	const wait = cooldownHours * 3600e3;
+	if (user.caseAt && now - user.caseAt < wait) return {error: 'wait', next: user.caseAt + wait};
+	let roll = Math.random() * loot.reduce((sum, l) => sum + l.chance, 0);
+	const prize = loot.find((l) => (roll -= l.chance) < 0) || loot[0];
+	const id = `case-${now}`;
+	const at = new Date(now).toISOString();
+	user.caseAt = now;
+	if (prize.kind === 'money') {
+		user.history ||= [];
+		user.balance = Math.round(((user.balance || 0) + prize.amount) * 100) / 100;
+		user.history.unshift({id, amount: prize.amount, title, kind: 'case', at});
+	} else {
+		user.coupons ||= [];
+		user.coupons.unshift({id, kind: prize.kind, title: prize.title, at});
+	}
+	if (!write(USERS, users)) return {error: 'save'};
+	emit();
+	return {prize, next: now + wait};
 };
 
 // Изменить свой профиль (сейчас — только аватарку)

@@ -23,7 +23,7 @@
 
 <header class="topbar">
 	<a class="logo" href="#top" aria-label="1DEX1 SHOP — наверх">
-		<span class="logo__name" aria-hidden="true"><i style="--i:0">1</i><i style="--i:1">D</i><i style="--i:2">E</i><i style="--i:3">X</i><i style="--i:4">1</i><i class="sp"></i><i style="--i:5">S</i><i style="--i:6">H</i><i style="--i:7">O</i><i style="--i:8">P</i></span>
+		<span class="logo__name" data-mc-logo>1DEX1 SHOP</span>
 	</a>
 	<div class="topbar__right">
 		<a class="icon-btn" data-link="youtube" target="_blank" rel="noopener" aria-label="YouTube-канал">
@@ -80,14 +80,34 @@
 		</div>
 	</section>
 
+	<!-- ============ КЕЙСЫ ============ -->
+	<section class="section" id="cases">
+		<div class="wrap">
+			<header class="head" data-reveal>
+				<h2>Кейсы</h2>
+			</header>
+			<article class="case card" data-reveal>
+				<div class="case__stage">
+					<div class="case__art" id="case-art" aria-hidden="true"></div>
+					<div class="case__prize" id="case-prize" hidden role="status"></div>
+				</div>
+				<div class="case__body">
+					<p class="case__kind px">Бесплатно · раз в 24 часа</p>
+					<h3 id="case-title">Ежедневный кейс</h3>
+					<p class="case__text">Открывай каждый день и забирай награду. Деньги сразу идут на баланс, а самая редкая награда — любой ресурс-пак из магазина бесплатно.</p>
+					<ul class="case__loot" id="case-loot"></ul>
+					<button class="btn btn--gold btn--wide" id="case-open" type="button">Открыть кейс</button>
+					<p class="case__note" id="case-note"></p>
+				</div>
+			</article>
+		</div>
+	</section>
+
 	<!-- ============ КАНАЛЫ ============ -->
 	<section class="section" id="social">
 		<div class="wrap">
 			<header class="head" data-reveal>
-				<div>
-					<p class="head__label label px"><span data-icon="plane"></span>Каналы</p>
-					<h2>Где меня найти</h2>
-				</div>
+				<h2>Каналы</h2>
 			</header>
 			<div class="socials">
 				<article class="social card" data-reveal>
@@ -124,13 +144,13 @@
 	</div>
 </footer>
 
-<!-- нижняя панель на телефоне, как хотбар -->
-<nav class="hotbar px" aria-label="Быстрая навигация">
-	<a data-nav href="#top"><span data-icon="home"></span>Главная</a>
-	<a data-nav href="#shop"><span data-icon="chest"></span>Магазин</a>
-	<a data-nav href="#social"><span data-icon="plane"></span>Каналы</a>
-	<button data-open-ach><span data-icon="trophy"></span><span data-ach-count>0/10</span></button>
-	<button data-open-profile><span class="hotbar__ava" data-auth-avatar></span><span data-auth-label="Войти">Войти</span></button>
+<!-- нижняя панель-хотбар: рамка выделения переезжает на текущий раздел -->
+<nav class="hotbar" id="hotbar" aria-label="Разделы" style="--i:0">
+	<span class="hotbar__sel" aria-hidden="true"></span>
+	<a class="hotbar__slot is-on" href="#top" data-slot="top" aria-current="page"><span data-nav-icon="home"></span><span>Главная</span></a>
+	<a class="hotbar__slot" href="#shop" data-slot="shop"><span data-nav-icon="shop"></span><span>Магазин</span></a>
+	<a class="hotbar__slot hotbar__slot--case" href="#cases" data-slot="cases"><span data-nav-icon="case"></span><span>Кейсы</span><i class="hotbar__dot" hidden></i></a>
+	<button class="hotbar__slot" type="button" data-slot="profile" data-open-profile><span data-nav-icon="user"></span><span>Профиль</span></button>
 </nav>
 
 <div class="toasts" id="toasts" aria-live="polite"></div>
@@ -230,6 +250,10 @@
 				<div class="wallet__history" id="wallet-history-box" hidden>
 					<p class="wallet__label">История</p>
 					<ul id="wallet-history"></ul>
+				</div>
+				<div class="wallet__history" id="coupons-box" hidden>
+					<p class="wallet__label">Купоны</p>
+					<ul id="coupons"></ul>
 				</div>
 			</section>
 

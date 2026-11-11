@@ -41,3 +41,21 @@ export const PRODUCTS = [
 	// 	link: null,
 	// },
 ];
+
+// ------------------------------------------------------------
+//  ЕЖЕДНЕВНЫЙ КЕЙС. Открывается раз в cooldownHours часов.
+//  chance — шанс в процентах (сумма может быть любой, считается доля).
+//  kind:   'money' — деньги на баланс (amount — сколько рублей),
+//          'rp'    — купон на любой ресурс-пак бесплатно
+//  rarity: цвет в списке наград: common, uncommon, rare, legendary
+// ------------------------------------------------------------
+export const CASE = {
+	title: 'Ежедневный кейс',
+	cooldownHours: 24,
+	loot: [
+		{id: 'rub5', kind: 'money', amount: 5, title: '+5 ₽ на баланс', chance: 55, rarity: 'common'},
+		{id: 'rub10', kind: 'money', amount: 10, title: '+10 ₽ на баланс', chance: 27, rarity: 'uncommon'},
+		{id: 'rub15', kind: 'money', amount: 15, title: '+15 ₽ на баланс', chance: 13, rarity: 'rare'},
+		{id: 'rp', kind: 'rp', title: 'Любой ресурс-пак бесплатно', chance: 5, rarity: 'legendary'},
+	],
+};

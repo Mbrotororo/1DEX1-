@@ -123,26 +123,17 @@ ul{padding:0;list-style:none}
 	border-bottom:2px solid transparent;
 	transition:background .25s,border-color .25s;
 }
-.topbar.is-stuck{background:rgba(12,9,20,.86);border-color:var(--line);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.topbar.is-stuck{background:rgba(12,9,20,.95);border-color:var(--line)}
+/* размытие под шапкой — только на компьютере: на телефоне оно тормозит прокрутку */
+@media (hover:hover) and (min-width:900px){.topbar.is-stuck{background:rgba(12,9,20,.86);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}}
 .logo{display:flex;align-items:center;gap:10px;text-decoration:none;-webkit-tap-highlight-color:transparent}
-/* «1DEX1 SHOP» — крупно и салатовым. Под курсором пульсирует, буквы прыгают волной
-   и переливаются от светло-салатового до зелёного */
-.logo__name{
-	display:inline-flex;align-items:baseline;white-space:nowrap;
-	font:400 clamp(20px,1.9vw,27px)/1 var(--font-display);letter-spacing:.02em;
-	color:var(--lime);text-shadow:0 3px 0 #2f5208,0 0 22px rgba(184,255,61,.3);
-	transform-origin:left center;
-}
-.logo__name i{display:inline-block;font-style:normal}
-.logo__name .sp{width:.42em}
-.logo:hover .logo__name,.logo:focus-visible .logo__name,.logo:active .logo__name{animation:logo-pulse 1.3s ease-in-out infinite}
-.logo:hover .logo__name i,.logo:focus-visible .logo__name i,.logo:active .logo__name i{
-	animation:logo-hop .9s ease-in-out infinite,logo-shine 1.5s linear infinite;
-	animation-delay:calc((9 - var(--i,4)) * -.09s),calc((9 - var(--i,4)) * -.12s);
-}
-@keyframes logo-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.13)}}
-@keyframes logo-hop{0%,100%{transform:translateY(0) rotate(0)}25%{transform:translateY(-5px) rotate(-6deg)}75%{transform:translateY(2px) rotate(5deg)}}
-@keyframes logo-shine{0%,100%{color:#b8ff3d}33%{color:#eaffb0}66%{color:#3fd65a}}
+/* «1DEX1 SHOP» — пиксельными блоками, как надпись на заставке Minecraft.
+   Под курсором (на телефоне — от нажатия) пульсирует, как жёлтая фраза под логотипом игры */
+.logo__name{display:inline-flex;font:400 20px/1 var(--font-display);color:var(--lime);white-space:nowrap;transform-origin:left center}
+.mc-logo{display:block;height:34px;width:auto;overflow:visible;filter:drop-shadow(0 0 14px rgba(184,255,61,.22))}
+@media (hover:hover){.logo:hover .logo__name{animation:mc-pulse .8s ease-in-out infinite}}
+.logo:focus-visible .logo__name,.logo__name.is-pulse{animation:mc-pulse .8s ease-in-out 2}
+@keyframes mc-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
 .topbar__right{display:flex;align-items:center;gap:8px;margin-left:auto}
 .icon-btn{display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 12px;font-size:14px;font-weight:500;color:var(--muted);text-decoration:none;transition:color .15s,background .15s}
 .icon-btn:hover{color:var(--ink);background:rgba(255,255,255,.05)}
@@ -158,10 +149,10 @@ ul{padding:0;list-style:none}
 .auth-btn{max-width:190px;font-size:14px;font-weight:600}
 .auth-btn:hover{border-color:var(--lime);transform:translateY(-1px)}
 .auth-btn>span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.auth-btn__ava,.hotbar__ava{display:grid;place-items:center;flex:none;width:22px;height:22px;overflow:hidden;border-radius:6px;font:400 12px/1 var(--font-display);background:var(--purple-deep);color:var(--purple-hi)}
+.auth-btn__ava{display:grid;place-items:center;flex:none;width:22px;height:22px;overflow:hidden;border-radius:6px;font:400 12px/1 var(--font-display);background:var(--purple-deep);color:var(--purple-hi)}
 .ava-letter{display:grid;place-items:center;width:100%;height:100%;color:#fff;background:linear-gradient(135deg,hsl(var(--h1) 72% 58%),hsl(var(--h2) 70% 38%));text-shadow:0 2px 0 rgba(0,0,0,.25)}
-.auth-btn__ava img,.hotbar__ava img{width:100%;height:100%;object-fit:cover}
-.auth-btn__ava .pxi,.hotbar__ava .pxi{font-size:16px}
+.auth-btn__ava img{width:100%;height:100%;object-fit:cover}
+.auth-btn__ava .pxi{font-size:16px}
 
 /* ---------- первый экран ---------- */
 .hero{
@@ -281,6 +272,51 @@ h2{font:400 clamp(26px,4vw,50px)/1.05 var(--font-display);letter-spacing:-.01em;
 		var(--surface)}
 .empty__icon{margin-bottom:8px;font-size:64px;filter:drop-shadow(0 8px 0 rgba(0,0,0,.4));animation:float 4s ease-in-out infinite}
 .empty b{font:600 20px/1.2 var(--font-body);color:var(--ink)}
+
+/* ---------- кейсы ---------- */
+.case{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);overflow:hidden}
+.case__stage{
+	position:relative;display:grid;place-items:center;min-height:340px;padding:32px;border-right:2px solid var(--line);
+	background:
+		linear-gradient(rgba(255,255,255,.03) 1px,transparent 1px) 0 0/100% 24px,
+		linear-gradient(90deg,rgba(255,255,255,.03) 1px,transparent 1px) 0 0/24px 100%,
+		radial-gradient(55% 55% at 50% 58%,rgba(255,200,61,.2),transparent 72%),
+		var(--well);
+}
+.case__art{position:relative;display:grid;width:min(230px,62%);filter:drop-shadow(0 14px 0 rgba(0,0,0,.35));animation:float 4s ease-in-out infinite;cursor:pointer}
+.case__art svg{display:block;width:100%;height:auto;image-rendering:pixelated}
+.case__lid,.case__base{display:block}
+.case__lid{transform-origin:12% 100%;transition:transform .55s var(--spring)}
+.case__art.is-shaking{animation:case-shake .1s steps(2) infinite}
+.case__art.is-open .case__lid{transform:translateY(-30%) rotate(-18deg)}
+/* свет из открытого сундука */
+.case__art::before{content:"";position:absolute;left:10%;right:10%;top:18%;height:70%;background:radial-gradient(closest-side,rgba(255,229,154,.95),rgba(255,200,61,0));opacity:0;transform:scaleY(.2);transform-origin:50% 100%;transition:opacity .4s,transform .5s var(--spring);pointer-events:none}
+.case__art.is-open::before{opacity:1;transform:translateY(-34%) scaleY(1.2)}
+.case__prize{
+	position:absolute;inset:0;z-index:1;display:grid;place-items:center;align-content:center;gap:8px;padding:24px;text-align:center;cursor:pointer;
+	background:radial-gradient(60% 60% at 50% 50%,rgba(13,10,23,.55),rgba(13,10,23,.9));animation:prize-in .55s var(--spring) both;
+}
+.case__prize .pxi{font-size:76px;filter:drop-shadow(0 8px 0 rgba(0,0,0,.4));animation:float 3s ease-in-out infinite}
+.case__prize b{margin-top:6px;font:400 clamp(28px,4vw,42px)/1.05 var(--font-display);word-spacing:-.35em;color:var(--lime)}
+.case__prize span{max-width:280px;font-size:14px;color:var(--muted)}
+.case__prize[data-rarity="rare"] b{color:var(--purple-hi)}
+.case__prize[data-rarity="legendary"] b{color:var(--gold)}
+.case__body{display:flex;flex-direction:column;padding:28px}
+.case__kind{font-size:13px;color:var(--gold);text-transform:uppercase;letter-spacing:.12em}
+.case h3{margin-top:6px;font:400 clamp(22px,2.4vw,30px)/1.1 var(--font-display);word-spacing:-.35em}
+.case__text{margin-top:10px;font-size:15px;color:var(--muted)}
+.case__loot{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:20px 0 24px}
+.case__loot li{display:flex;align-items:center;gap:10px;min-width:0;padding:10px 12px;background:var(--well);border:2px solid var(--line);border-left:4px solid var(--rc,var(--line-2))}
+.case__loot .pxi{flex:none;font-size:24px}
+.case__loot b{display:block;font-size:14px;font-weight:600;line-height:1.25}
+.case__loot small{font-size:12px;color:var(--dim)}
+.case__loot [data-rarity="common"]{--rc:#aea7c6}
+.case__loot [data-rarity="uncommon"]{--rc:var(--lime)}
+.case__loot [data-rarity="rare"]{--rc:var(--purple)}
+.case__loot [data-rarity="legendary"]{--rc:var(--gold);background:linear-gradient(90deg,rgba(255,200,61,.12),var(--well) 70%)}
+.case__note{min-height:1.4em;margin-top:12px;font-size:13.5px;color:var(--dim);text-align:center}
+@keyframes case-shake{0%{transform:translate(-3px,1px) rotate(-2deg)}100%{transform:translate(3px,-2px) rotate(2deg)}}
+@keyframes prize-in{from{opacity:0;transform:scale(.6)}}
 
 /* ---------- каналы ---------- */
 .socials{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}
@@ -410,8 +446,10 @@ h2{font:400 clamp(26px,4vw,50px)/1.05 var(--font-display);letter-spacing:-.01em;
 .wallet__soon{font-size:12.5px;color:var(--dim)}
 .wallet__history{padding:14px 16px;border-radius:14px;background:var(--well);border:1px solid var(--line)}
 .wallet__label{margin-bottom:8px;font-size:12px;font-weight:600;color:var(--dim);text-transform:uppercase;letter-spacing:.12em}
-#wallet-history{display:grid;gap:8px}
-#wallet-history li{display:flex;align-items:center;gap:12px;font-size:14px}
+#wallet-history,#coupons{display:grid;gap:8px}
+#wallet-history li,#coupons li{display:flex;align-items:center;gap:12px;font-size:14px}
+.wallet__op--gem{background:rgba(184,255,61,.12)}
+.wallet__tag{margin-left:auto;padding:4px 8px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap;color:var(--on-gold);background:var(--gold)}
 .wallet__op{display:grid;place-items:center;flex:none;width:34px;height:34px;border-radius:10px;background:rgba(255,200,61,.12);font-size:20px}
 .wallet__what{display:grid;gap:2px;min-width:0}
 .wallet__what b{font-weight:600;overflow-wrap:anywhere}
@@ -431,7 +469,40 @@ h2{font:400 clamp(26px,4vw,50px)/1.05 var(--font-display);letter-spacing:-.01em;
 .form--inline{padding:0 16px 16px}
 
 /* ---------- нижняя панель на телефоне ---------- */
-.hotbar{display:none}
+/* ---------- нижняя панель-хотбар ----------
+   На компьютере — по центру внизу, как хотбар в игре; на телефоне — во всю ширину.
+   Рамка выделения переезжает на текущий раздел. */
+body{padding-bottom:104px}
+.hotbar{
+	--pad:6px;
+	position:fixed;z-index:50;left:50%;bottom:14px;transform:translateX(-50%);
+	display:grid;grid-template-columns:repeat(4,1fr);width:min(460px,calc(100% - 32px));padding:var(--pad);
+	background:#0d0a17;box-shadow:inset 0 0 0 2px var(--line-2),0 8px 0 rgba(0,0,0,.35);
+	clip-path:polygon(4px 0,calc(100% - 4px) 0,calc(100% - 4px) 4px,100% 4px,100% calc(100% - 4px),calc(100% - 4px) calc(100% - 4px),calc(100% - 4px) 100%,4px 100%,4px calc(100% - 4px),0 calc(100% - 4px),0 4px,4px 4px);
+}
+.hotbar__sel{
+	position:absolute;left:var(--pad);top:var(--pad);bottom:var(--pad);width:calc((100% - var(--pad)*2)/4);
+	transform:translateX(calc(var(--i,0)*100%));transition:transform .38s var(--spring);pointer-events:none;
+	background:var(--lime);
+	clip-path:polygon(3px 0,calc(100% - 3px) 0,calc(100% - 3px) 3px,100% 3px,100% calc(100% - 3px),calc(100% - 3px) calc(100% - 3px),calc(100% - 3px) 100%,3px 100%,3px calc(100% - 3px),0 calc(100% - 3px),0 3px,3px 3px);
+}
+.hotbar__sel::before{
+	content:"";position:absolute;inset:3px;background:var(--surface-2);
+	clip-path:polygon(3px 0,calc(100% - 3px) 0,calc(100% - 3px) 3px,100% 3px,100% calc(100% - 3px),calc(100% - 3px) calc(100% - 3px),calc(100% - 3px) 100%,3px 100%,3px calc(100% - 3px),0 calc(100% - 3px),0 3px,3px 3px);
+}
+.hotbar__slot{
+	position:relative;z-index:1;display:grid;justify-items:center;align-content:center;gap:6px;min-width:0;height:62px;padding:0 4px;
+	border:0;background:none;cursor:pointer;font:500 12px/1 var(--font-body);color:var(--dim);text-decoration:none;
+	-webkit-tap-highlight-color:transparent;transition:color .2s;
+}
+.hotbar__slot>span:last-of-type{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hotbar__slot .pxi{font-size:22px;transition:transform .25s var(--spring)}
+.hotbar__slot:hover{color:var(--muted)}
+.hotbar__slot.is-on{color:#fff}
+.hotbar__slot.is-on .pxi{transform:translateY(-2px)}
+/* кейс готов — мигает салатовая точка */
+.hotbar__dot{position:absolute;top:9px;left:calc(50% + 9px);width:8px;height:8px;background:var(--lime);box-shadow:0 0 0 2px #0d0a17;animation:blink 1.2s steps(2) infinite}
+@keyframes blink{50%{opacity:.25}}
 
 /* ---------- появление блоков при прокрутке ---------- */
 .js [data-reveal]{opacity:0;transform:translateY(24px);transition:opacity .8s var(--ease),transform .8s var(--ease)}
@@ -451,35 +522,39 @@ h2{font:400 clamp(26px,4vw,50px)/1.05 var(--font-display);letter-spacing:-.01em;
 
 /* ============ телефон: сцена сверху, текст под ней, снизу хотбар ============ */
 @media (max-width:899px){
+	.case{grid-template-columns:1fr}
+	.case__stage{min-height:250px;border-right:0;border-bottom:2px solid var(--line)}
 	.hero{display:block;min-height:0;padding:calc(var(--topbar) + var(--safe-top)) var(--gutter) 40px}
 	.hero__gl{position:relative;inset:auto;z-index:0;width:calc(100% + var(--gutter)*2);height:min(54svh,460px);margin-inline:calc(var(--gutter)*-1)}
 	.hero__content{margin:8px 0 0}
 	.hero__fallback{position:static;transform:none;margin:24px 0;text-align:center}
 }
 @media (max-width:700px){
-	body{padding-bottom:calc(72px + env(safe-area-inset-bottom,0px))}
-	.ach-btn,.auth-btn{display:none}
+	/* в шапке на телефоне — надпись, YouTube, Telegram и достижения; профиль — в хотбаре */
+	.topbar{gap:12px}
+	.auth-btn{display:none}
+	.icon-btn{padding:0 8px}
+	.ach-btn{height:34px;padding:0 9px;gap:6px}
+	.ach-btn b{font-size:13px}
+	.mc-logo{height:24px}
 	.grid,.socials{grid-template-columns:1fr}
 	.hero__cta .btn{flex:1}
 	.foot__row{margin-top:26px}
 	.toasts{right:12px;left:12px;justify-items:stretch}
 	.toast{max-width:none}
 
-	.hotbar{
-		position:fixed;inset:auto 0 0 0;z-index:50;display:grid;grid-template-columns:repeat(5,1fr);gap:4px;
-		padding:6px max(8px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(8px,env(safe-area-inset-left,0px));
-		background:rgba(12,9,20,.94);border-top:2px solid var(--line);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
-	}
-	.hotbar a,.hotbar button{
-		display:grid;justify-items:center;gap:5px;min-width:0;padding:8px 2px 7px;border:2px solid transparent;background:none;cursor:pointer;
-		font-size:11.5px;line-height:1;color:var(--dim);text-decoration:none;letter-spacing:.02em;
-	}
-	.hotbar a>span:last-child,.hotbar button>span:last-child{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-	.hotbar .pxi{font-size:22px;opacity:.6}
-	.hotbar .is-current{color:var(--ink);background:var(--surface-2);border-color:var(--line-2);box-shadow:var(--bevel)}
-	.hotbar .is-current .pxi{opacity:1}
-	.hotbar [data-ach-count]{color:var(--gold)}
-	.is-authed .hotbar [data-auth-label]{color:var(--lime)}
+	/* хотбар во всю ширину, как в приложении */
+	body{padding-bottom:calc(76px + env(safe-area-inset-bottom,0px))}
+	.hotbar{left:0;right:0;bottom:0;transform:none;width:auto;clip-path:none;padding:5px max(8px,env(safe-area-inset-right,0px)) calc(5px + env(safe-area-inset-bottom,0px)) max(8px,env(safe-area-inset-left,0px));box-shadow:0 -2px 0 var(--line)}
+	.hotbar__sel{left:max(8px,env(safe-area-inset-left,0px));top:5px;bottom:calc(5px + env(safe-area-inset-bottom,0px));width:calc((100% - max(8px,env(safe-area-inset-left,0px)) - max(8px,env(safe-area-inset-right,0px)))/4)}
+	.hotbar__slot{height:60px;font-size:11.5px}
+}
+
+/* ============ узкий телефон ============ */
+@media (max-width:380px){
+	.case__loot{grid-template-columns:1fr}
+	.mc-logo{height:21px}
+	.icon-btn{padding:0 6px}
 }
 
 /* ============ отключённые анимации ============ */

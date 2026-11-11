@@ -7,7 +7,7 @@
 //   и кнопки, летит за посетителем, когда тот листает страницу, и показывает эмоции в облачке.
 //   Его можно отлепить и плавно бросить. Сверху на острове — спрыгивает на траву.
 // - С алмазной киркой он ломает стену (бегущую строку) и может летать по всему сайту.
-// - Название 1DEX1 из блоков висит на месте, его блоки ломаются кликом.
+// - Название «ЖИЗНЬ 1DEX1» из блоков висит на месте, его блоки ломаются кликом.
 // - Сзади галактика, а звёзды по всему фону медленно вращаются вокруг её ядра.
 import * as THREE from '../vendor/three.module.min.js';
 import {CROSSHAIR, icon, wordPixels} from './pixel.js';
@@ -365,8 +365,15 @@ const NEED = {iron: 1, gold: 2, diamond: 2};
 const UPGRADE = {stone: 1, iron: 2, diamond: 3};
 
 // ---------- константы сцены ----------
-const VOXEL = 0.44;
+const VOXEL = 0.27; // размер блока названия
 const WORD_Y = 7.3; // название висит над деревом и не крутится вместе с островом
+// Название из двух строк одного размера: «ЖИЗНЬ» белыми блоками сверху, «1DEX1» салатовыми снизу
+const TITLE = [
+	{text: 'ЖИЗНЬ', line: 1, top: '#ffffff', bottom: '#f1eefa'},
+	{text: '1DEX1', line: 0, top: '#d2ff70', bottom: '#98e024'},
+];
+const LINE_GAP = 2; // пустых клеток между строками
+const TITLE_TOP = WORD_Y + (7 * 2 + LINE_GAP) * VOXEL;
 const WORD_DEPTH = 1.8;
 const RESPAWN = 3; // блок названия вырастает через 3 секунды
 const APPEAR = 0.7;
@@ -419,6 +426,12 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	}
 	renderer.toneMapping = THREE.NoToneMapping;
 	renderer.setClearColor(0x000000, 0);
+
+	// Чёткость картинки: на телефонах и слабых устройствах меньше пикселей.
+	// Если в первые секунды сцена тормозит, чёткость снижается ещё.
+	const weak = (navigator.hardwareConcurrency || 8) <= 4 || (navigator.deviceMemory || 8) <= 4;
+	let slowDevice = false;
+	const pixelRatio = (w) => Math.min(window.devicePixelRatio || 1, slowDevice ? 1 : w < 900 ? (weak ? 1.25 : 1.5) : 1.75);
 
 	const scene = new THREE.Scene();
 	const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 400);
@@ -698,19 +711,21 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	// mode: idle | walk | chest | mine | land — на острове; free — снят с острова и летает по сайту
 	const P = {mode: 'idle', pos: HOME.clone(), face: 0.15, path: [], queue: [], actT: 0, walkPhase: 0, holding: false, landT: 0};
 
-	// ================= НАЗВАНИЕ 1DEX1 ИЗ БЛОКОВ =================
-	const word = wordPixels('1DEX1');
-	const wordRand = rng(5);
-	const colTop = new THREE.Color('#f3ecff');
-	const colBottom = new THREE.Color('#8f5cff');
-	const voxels = word.pixels.map((p) => {
-		const roll = wordRand();
-		const color = colTop.clone().lerp(colBottom, p.row / 6);
-		if (roll < 0.07) color.set('#b8ff3d');
-		else if (roll < 0.13) color.set('#ffc83d');
-		return {x: (p.x - word.width / 2 + 0.5) * VOXEL, y: WORD_Y + (p.y + 0.5) * VOXEL, color, phase: p.x * 0.35, hover: 0, brokenAt: -1, scale: 1};
-	});
-	const wordMesh = new THREE.InstancedMesh(box, new THREE.MeshLambertMaterial({map: tex.voxel}), voxels.length);
+	// ================= НАЗВАНИЕ «ЖИЗНЬ 1DEX1» ИЗ БЛОКОВ =================
+	const voxels = [];
+	let titleW = 0;
+	for (const t of TITLE) {
+		const word = wordPixels(t.text);
+		titleW = Math.max(titleW, word.width);
+		const top = new THREE.Color(t.top);
+		const bottom = new THREE.Color(t.bottom);
+		const baseY = WORD_Y + t.line * (7 + LINE_GAP) * VOXEL;
+		for (const p of word.pixels) {
+			voxels.push({x: (p.x - word.width / 2 + 0.5) * VOXEL, y: baseY + (p.y + 0.5) * VOXEL, color: top.clone().lerp(bottom, p.row / 6), phase: p.x * 0.35 + t.line * 1.4, hover: 0, brokenAt: -1, scale: 1});
+		}
+	}
+	// лёгкое собственное свечение, чтобы белый был белым, а салатовый — ярким под фиолетовым светом сцены
+	const wordMesh = new THREE.InstancedMesh(box, new THREE.MeshLambertMaterial({map: tex.voxel, emissive: '#2a2a2a'}), voxels.length);
 	voxels.forEach((v, i) => wordMesh.setColorAt(i, v.color));
 	wordMesh.instanceColor.needsUpdate = true;
 	wordMesh.frustumCulled = false;
@@ -752,7 +767,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	galaxy.add(disk);
 	{
 		const gr = rng(77);
-		const N = 2600;
+		const N = innerWidth < 900 ? 1500 : 2600; // на телефоне звёзд в галактике меньше
 		const pos = new Float32Array(N * 3);
 		const col = new Float32Array(N * 3);
 		const c = new THREE.Color();
@@ -782,7 +797,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	}
 
 	// ================= КАДРИРОВАНИЕ =================
-	const BOX = {w: 11.5, h: 16.8, cy: 2.2};
+	const BOX = {w: 11.5, h: 18.4, cy: 2.95}; // от низа острова до верха названия
 	const viewDir = new THREE.Vector3(0.2, 0.2, 1).normalize();
 	let width = 1;
 	let height = 1;
@@ -899,13 +914,20 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	overlay.className = 'dex-overlay';
 	overlay.setAttribute('aria-hidden', 'true');
 	document.body.append(overlay);
+	// второй холст WebGL создаётся, только когда персонажа впервые снимают с острова
 	let r2 = null;
-	try {
-		r2 = new THREE.WebGLRenderer({canvas: overlay, antialias: true, alpha: true});
-		r2.setClearColor(0x000000, 0);
-	} catch {
-		// без второго холста персонажа просто нельзя снять с острова
-	}
+	let r2Failed = false;
+	const ensureOverlay = () => {
+		if (r2 || r2Failed) return r2;
+		try {
+			r2 = new THREE.WebGLRenderer({canvas: overlay, antialias: true, alpha: true});
+			r2.setClearColor(0x000000, 0);
+			resizeOverlay();
+		} catch {
+			r2Failed = true; // без второго холста персонажа просто нельзя снять с острова
+		}
+		return r2;
+	};
 	const oScene = new THREE.Scene();
 	oScene.add(new THREE.AmbientLight(0xbfb4ff, 1.35));
 	const oKey = new THREE.DirectionalLight(0xffffff, 2.4);
@@ -921,7 +943,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		vw = document.documentElement.clientWidth;
 		vh = window.innerHeight;
 		if (!r2) return;
-		r2.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+		r2.setPixelRatio(pixelRatio(vw));
 		r2.setSize(vw, vh, false);
 		oCam.left = 0;
 		oCam.right = vw;
@@ -987,7 +1009,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		v.hover = 0;
 		broken++;
 		if (P.mode === 'idle') jumpAt = now;
-		spawnDebris(tmp.set(v.x, v.y, -1), `#${v.color.getHexString()}`, 9);
+		spawnDebris(tmp.set(v.x, v.y, -1), `#${v.color.getHexString()}`, 9, 1, 0.7);
 		on('break', broken);
 	};
 
@@ -1169,6 +1191,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		['.section h2', true],
 		['#shop-tabs', false],
 		['#shop-grid > *', false],
+		['#cases .case', false],
 		['.social', false],
 		['.social .btn', false],
 		['.foot__word', false],
@@ -1189,10 +1212,10 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				out.push({el, left: r.left + scrollX, right: r.right + scrollX, top: r.top + scrollY + inset, bottom: r.bottom + scrollY});
 			});
 		}
-		// название 1DEX1 из блоков тоже подходит
+		// название «ЖИЗНЬ 1DEX1» из блоков тоже подходит (садится на верхнюю строку)
 		const o = docOffset();
 		const pts = [];
-		for (const x of [-word.width * VOXEL * 0.5, word.width * VOXEL * 0.5]) for (const y of [WORD_Y + 0.1, WORD_Y + 7 * VOXEL]) pts.push(toPx(world.localToWorld(tmp.set(x, y, -1))));
+		for (const x of [-titleW * VOXEL * 0.5, titleW * VOXEL * 0.5]) for (const y of [WORD_Y + 0.1, TITLE_TOP]) pts.push(toPx(world.localToWorld(tmp.set(x, y, -1))));
 		out.push({el: wordMesh, left: Math.min(...pts.map((p) => p.x)) + o.x, right: Math.max(...pts.map((p) => p.x)) + o.x, top: Math.min(...pts.map((p) => p.y)) + o.y, bottom: Math.max(...pts.map((p) => p.y)) + o.y});
 		return out;
 	};
@@ -1241,7 +1264,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const tb = document.querySelector('.topbar');
 		topbarH = tb ? tb.getBoundingClientRect().bottom : 64;
 		const hb = document.querySelector('.hotbar');
-		hotbarH = hb && getComputedStyle(hb).display !== 'none' ? hb.getBoundingClientRect().height : 0;
+		hotbarH = hb && getComputedStyle(hb).display !== 'none' ? Math.max(0, innerHeight - hb.getBoundingClientRect().top) : 0;
 	};
 	const visibleBand = (B) => {
 		const top = Math.max(B.top, scrollY + topbarH + 6);
@@ -1319,6 +1342,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 
 	// снять с острова
 	const leaveIsland = () => {
+		ensureOverlay();
 		const c = toPx(rig.pivot.getWorldPosition(new THREE.Vector3()));
 		const o = docOffset();
 		P.mode = 'free';
@@ -2253,7 +2277,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const r = canvas.getBoundingClientRect();
 		width = Math.max(1, r.width);
 		height = Math.max(1, r.height);
-		renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, width < 900 ? 1.5 : 2));
+		renderer.setPixelRatio(pixelRatio(width));
 		renderer.setSize(width, height, false);
 		frame();
 		buildSky();
@@ -2262,12 +2286,26 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	};
 
 	let last = performance.now();
+	let frameNo = 0;
+	const perf = {frames: 0, time: 0};
 	const loop = (t) => {
 		requestAnimationFrame(loop);
-		const dt = Math.min(0.05, Math.max(0.001, (t - last) / 1000));
+		const raw = (t - last) / 1000;
+		const dt = Math.min(0.05, Math.max(0.001, raw));
 		last = t;
 		// пока персонаж летает по сайту, сцена считается, даже если первый экран прокручен
 		if (!heroVisible && P.mode !== 'free') return;
+		frameNo++;
+		// первые ~3 секунды на экране меряем скорость: меньше 40 кадров в секунду — снижаем чёткость
+		if (!slowDevice && heroVisible && perf.frames < 180 && raw < 0.5) {
+			perf.frames++;
+			perf.time += raw;
+			if (perf.frames === 180 && perf.time / perf.frames > 0.025 && renderer.getPixelRatio() > 1) {
+				slowDevice = true;
+				resize();
+				resizeOverlay();
+			}
+		}
 		now += dt;
 		update(dt);
 		if (closeup) {
@@ -2280,7 +2318,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		}
 		if (heroVisible) {
 			renderer.render(scene, camera);
-			drawSky(now);
+			if (frameNo % 2 === 0) drawSky(now); // звёзды двигаются медленно — хватает 30 кадров в секунду
 		}
 		if (r2 && P.mode === 'free') r2.render(oScene, oCam);
 		else if (r2 && overlay.classList.contains('is-on')) overlay.classList.remove('is-on');

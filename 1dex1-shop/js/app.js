@@ -1,9 +1,9 @@
 // Главный файл сайта: собирает страницу из данных в data.js и оживляет её.
-import {MARQUEE, PRODUCTS, SITE} from './data.js';
+import {CASE, MARQUEE, PRODUCTS, SITE} from './data.js';
 import {ACHIEVEMENTS, count, notify, onChange, renderList, reset, unlock} from './achievements.js';
-import {changePassword, credit, current, fileToAvatar, login, logout, onAuth, register, update} from './auth.js';
+import {changePassword, credit, current, fileToAvatar, login, logout, onAuth, openCase, register, update} from './auth.js';
 import {initFootWord} from './footer.js';
-import {coverArt, icon} from './pixel.js';
+import {caseArt, coverArt, icon, logoSvg, navIcon} from './pixel.js';
 import {breakSound} from './sound.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -16,6 +16,20 @@ $$('[data-icon]').forEach((el) => (el.innerHTML = icon(el.dataset.icon)));
 const CLOSE_ICON =
 	'<svg viewBox="0 0 7 7" aria-hidden="true"><path d="M0 0h1v1H0zM1 1h1v1H1zM2 2h1v1H2zM3 3h1v1H3zM4 4h1v1H4zM5 5h1v1H5zM6 6h1v1H6zM6 0h1v1H6zM5 1h1v1H5zM4 2h1v1H4zM2 4h1v1H2zM1 5h1v1H1zM0 6h1v1H0z"/></svg>';
 $$('[data-icon-x]').forEach((el) => (el.innerHTML = CLOSE_ICON));
+$$('[data-nav-icon]').forEach((el) => (el.innerHTML = navIcon(el.dataset.navIcon)));
+
+// ---------- надпись «1DEX1 SHOP» в шапке: пиксельные блоки, как в Minecraft ----------
+// На компьютере пульсирует под курсором (это делает CSS), на телефоне — от нажатия.
+$$('[data-mc-logo]').forEach((el) => {
+	el.innerHTML = logoSvg(el.textContent.trim());
+	const pulse = () => {
+		el.classList.remove('is-pulse');
+		void el.offsetWidth; // перезапуск анимации
+		el.classList.add('is-pulse');
+	};
+	el.closest('a').addEventListener('pointerdown', (e) => e.pointerType !== 'mouse' && pulse());
+	el.addEventListener('animationend', () => el.classList.remove('is-pulse'));
+});
 
 // ---------- ссылки на соцсети ----------
 $$('[data-link]').forEach((a) => {
@@ -213,7 +227,14 @@ $$('dialog').forEach((dlg) =>
 		$('#wallet-history-box').hidden = !user.history.length;
 		$('#wallet-history').innerHTML = user.history
 			.map(
-				(h) => `<li><span class="wallet__op">${icon('trophy')}</span><span class="wallet__what"><b>${esc(h.title)}</b><time>${new Date(h.at).toLocaleDateString('ru-RU', {day: 'numeric', month: 'long'})}</time></span><span class="wallet__amount">+${money(h.amount)} ₽</span></li>`,
+				(h) => `<li><span class="wallet__op">${icon(h.kind === 'case' ? 'chest' : 'trophy')}</span><span class="wallet__what"><b>${esc(h.title)}</b><time>${new Date(h.at).toLocaleDateString('ru-RU', {day: 'numeric', month: 'long'})}</time></span><span class="wallet__amount">+${money(h.amount)} ₽</span></li>`,
+			)
+			.join('');
+		// купоны из кейса (например, любой ресурс-пак бесплатно)
+		$('#coupons-box').hidden = !user.coupons.length;
+		$('#coupons').innerHTML = user.coupons
+			.map(
+				(c) => `<li><span class="wallet__op wallet__op--gem">${icon('gem')}</span><span class="wallet__what"><b>${esc(c.title)}</b><time>Из кейса, ${new Date(c.at).toLocaleDateString('ru-RU', {day: 'numeric', month: 'long'})}. Обменяешь, когда в магазине появятся ресурс-паки</time></span><span class="wallet__tag">Купон</span></li>`,
 			)
 			.join('');
 	};
@@ -299,17 +320,142 @@ $$('dialog').forEach((dlg) =>
 	addEventListener('scroll', onScroll, {passive: true});
 	onScroll();
 
-	const links = $$('[data-nav]');
+	// хотбар: рамка выделения стоит на разделе, который сейчас на экране,
+	// а пока открыто окно профиля или входа — на «Профиле»
+	const bar = $('#hotbar');
+	const slots = $$('.hotbar__slot', bar);
+	const dialogs = [$('#profile-dialog'), $('#auth-dialog')];
+	let sectionSlot = 'top';
+	let lockUntil = 0;
+	const select = (name) => {
+		const i = slots.findIndex((s) => s.dataset.slot === name);
+		if (i < 0) return;
+		bar.style.setProperty('--i', i);
+		slots.forEach((s, k) => {
+			s.classList.toggle('is-on', k === i);
+			if (k === i) s.setAttribute('aria-current', 'page');
+			else s.removeAttribute('aria-current');
+		});
+	};
 	const spy = new IntersectionObserver(
 		(entries) => {
 			entries.forEach((e) => {
-				if (!e.isIntersecting) return;
-				links.forEach((a) => a.classList.toggle('is-current', a.getAttribute('href') === `#${e.target.id}`));
+				if (!e.isIntersecting || !slots.some((s) => s.dataset.slot === e.target.id)) return;
+				sectionSlot = e.target.id;
+				if (performance.now() > lockUntil && !dialogs.some((d) => d.open)) select(sectionSlot);
 			});
 		},
 		{rootMargin: '-45% 0px -50% 0px'},
 	);
 	$$('main section[id]').forEach((s) => spy.observe(s));
+	slots.forEach((s) =>
+		s.addEventListener('click', () => {
+			if (s.dataset.slot === 'profile') return;
+			// пока страница плавно едет к разделу, промежуточные разделы рамку не дёргают
+			sectionSlot = s.dataset.slot;
+			lockUntil = performance.now() + 900;
+			select(sectionSlot);
+		}),
+	);
+	$$('[data-open-profile]').forEach((b) => b.addEventListener('click', () => select('profile')));
+	dialogs.forEach((d) => d.addEventListener('close', () => setTimeout(() => !dialogs.some((x) => x.open) && select(sectionSlot))));
+}
+
+// ---------- ежедневный кейс ----------
+{
+	const art = $('#case-art');
+	const prizeBox = $('#case-prize');
+	const btn = $('#case-open');
+	const note = $('#case-note');
+	const dot = $('.hotbar__dot');
+	const LOOT_ICON = {money: 'coin', rp: 'gem'};
+	art.innerHTML = caseArt();
+	$('#case-title').textContent = CASE.title;
+	const total = CASE.loot.reduce((sum, l) => sum + l.chance, 0);
+	const pct = (c) => {
+		const v = (c / total) * 100;
+		return `${v < 1 ? v.toFixed(1) : Math.round(v)}%`;
+	};
+	$('#case-loot').innerHTML = CASE.loot
+		.map((l) => `<li data-rarity="${l.rarity}">${icon(LOOT_ICON[l.kind] || 'gem')}<span><b>${esc(l.title)}</b><small>Шанс ${pct(l.chance)}</small></span></li>`)
+		.join('');
+
+	const wait = CASE.cooldownHours * 3600e3;
+	const left = () => {
+		const u = current();
+		return u && u.caseAt ? Math.max(0, u.caseAt + wait - Date.now()) : 0;
+	};
+	const clock = (ms) => {
+		const sec = Math.ceil(ms / 1000);
+		return [Math.floor(sec / 3600), Math.floor(sec / 60) % 60, sec % 60].map((v) => String(v).padStart(2, '0')).join(':');
+	};
+	const set = (el, prop, value) => el[prop] !== value && (el[prop] = value);
+	let opening = false;
+	const paint = () => {
+		if (opening) return;
+		const ms = left();
+		dot.hidden = ms > 0;
+		if (!current()) {
+			set(btn, 'disabled', false);
+			set(btn, 'textContent', 'Войти и открыть');
+			set(note, 'textContent', 'Кейс открывается в аккаунте: награда идёт на его баланс.');
+		} else if (ms > 0) {
+			set(btn, 'disabled', true);
+			set(btn, 'textContent', `Откроется через ${clock(ms)}`);
+			set(note, 'textContent', 'Новый кейс — каждые 24 часа.');
+		} else {
+			set(btn, 'disabled', false);
+			set(btn, 'textContent', 'Открыть кейс');
+			set(note, 'textContent', 'Кейс готов — открывай!');
+		}
+	};
+	paint();
+	onAuth(paint);
+	setInterval(paint, 1000);
+
+	const showPrize = (p) => {
+		prizeBox.dataset.rarity = p.rarity;
+		prizeBox.innerHTML =
+			p.kind === 'money'
+				? `${icon('coin')}<b>+${p.amount} ₽</b><span>Зачислено на баланс</span>`
+				: `${icon('gem')}<b>Ресурс-пак</b><span>Любой ресурс-пак бесплатно. Купон лежит в профиле</span>`;
+		prizeBox.hidden = false;
+		notify(p.kind === 'money' ? `Кейс: +${p.amount} ₽ на баланс!` : 'Кейс: любой ресурс-пак бесплатно! Купон — в профиле');
+	};
+	const open = () => {
+		if (opening) return;
+		if (!current()) return $('[data-slot="profile"]').click(); // откроется окно входа
+		const res = openCase(CASE);
+		if (res.error === 'wait') return paint();
+		if (res.error) return notify('Браузер не дал сохранить награду. Выключи приватный режим и попробуй ещё раз.');
+		opening = true;
+		btn.disabled = true;
+		btn.textContent = 'Открываем…';
+		// на телефоне сундук выше кнопки — подкручиваем страницу, чтобы награду было видно
+		const stage = art.parentElement.getBoundingClientRect();
+		if (stage.top < 70 || stage.bottom > innerHeight - 80) art.parentElement.scrollIntoView({behavior: reducedMotion ? 'auto' : 'smooth', block: 'center'});
+		prizeBox.hidden = true;
+		art.classList.remove('is-open');
+		art.classList.add('is-shaking');
+		setTimeout(
+			() => {
+				art.classList.remove('is-shaking');
+				art.classList.add('is-open');
+				breakSound();
+				showPrize(res.prize);
+				opening = false;
+				paint();
+			},
+			reducedMotion ? 50 : 1100,
+		);
+	};
+	btn.addEventListener('click', open);
+	art.addEventListener('click', () => !btn.disabled && open());
+	// клик по награде — убрать её и закрыть сундук
+	prizeBox.addEventListener('click', () => {
+		prizeBox.hidden = true;
+		art.classList.remove('is-open');
+	});
 }
 
 // ---------- подвал: надпись «1DEX1 SHOP» из ломающихся блоков ----------
