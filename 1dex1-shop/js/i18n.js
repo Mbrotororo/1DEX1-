@@ -15,8 +15,6 @@ const DICT = {
 		'nav.cases': 'Кейсы',
 		'nav.social': 'Каналы',
 		'lang.aria': 'Язык сайта',
-		'yt.aria': 'YouTube-канал',
-		'tg.aria': 'Telegram-канал',
 		'ach.aria': 'Достижения',
 		'profile.aria': 'Профиль',
 		'auth.signin': 'Войти',
@@ -102,7 +100,11 @@ const DICT = {
 		'social.ava': 'Аватарка 1DEX1',
 
 		'foot.legal': '1DEX1 SHOP. Не является официальным продуктом Minecraft. Не одобрено и не связано с Mojang или Microsoft.',
-		'foot.links': 'Ссылки',
+		'foot.links': 'Документы',
+		'legal.terms': 'Пользовательское соглашение',
+		'legal.privacy': 'Политика конфиденциальности',
+		'legal.offer': 'Публичная оферта',
+		'legal.updated': 'Редакция от {date}',
 
 		'hb.aria': 'Разделы',
 		'hb.home': 'Главная',
@@ -255,8 +257,6 @@ const DICT = {
 		'nav.cases': 'Cases',
 		'nav.social': 'Channels',
 		'lang.aria': 'Site language',
-		'yt.aria': 'YouTube channel',
-		'tg.aria': 'Telegram channel',
 		'ach.aria': 'Achievements',
 		'profile.aria': 'Profile',
 		'auth.signin': 'Sign in',
@@ -342,7 +342,11 @@ const DICT = {
 		'social.ava': '1DEX1 avatar',
 
 		'foot.legal': '1DEX1 SHOP. Not an official Minecraft product. Not approved by or associated with Mojang or Microsoft.',
-		'foot.links': 'Links',
+		'foot.links': 'Documents',
+		'legal.terms': 'Terms of use',
+		'legal.privacy': 'Privacy policy',
+		'legal.offer': 'Public offer',
+		'legal.updated': 'Version of {date}',
 
 		'hb.aria': 'Sections',
 		'hb.home': 'Home',

@@ -1212,7 +1212,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		['.social', false],
 		['.social .btn', false],
 		['.foot__word', false],
-		['.foot__links a', false],
+		['.foot__links button', false],
 	];
 	const collectWidgets = () => {
 		const out = [];

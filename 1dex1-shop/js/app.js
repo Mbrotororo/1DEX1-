@@ -2,9 +2,10 @@
 import {ACHIEVEMENTS, count, notify, onChange, renderList, unlock} from './achievements.js';
 import * as auth from './auth.js';
 import {initCollab} from './collab.js';
-import {CASE, MARQUEE, SITE, TASKS, VISUALS} from './data.js';
+import {CASE, LEGAL, MARQUEE, SITE, TASKS, VISUALS} from './data.js';
 import {initFootWord} from './footer.js';
 import {applyI18n, getLang, locale, onLang, setLang, t} from './i18n.js';
+import {getDoc} from './legal.js';
 import {caseArt, coverArt, icon, navIcon} from './pixel.js';
 import {breakSound} from './sound.js';
 
@@ -78,13 +79,36 @@ const blockBroken = (first) => {
 	if (++blocksBroken >= 30) unlock('mason');
 };
 
-// ---------- окна (достижения, вход, профиль) ----------
-const openDialog = (dlg) => !dlg.open && dlg.showModal();
-$$('dialog').forEach((dlg) =>
+// ---------- окна (достижения, вход, профиль, документы) ----------
+// Закрываются плавно: сначала анимация (класс is-closing), потом close().
+const openDialog = (dlg) => {
+	dlg.classList.remove('is-closing'); // открыли снова, пока закрывалось, — окно остаётся
+	if (!dlg.open) dlg.showModal();
+};
+const closeDialog = (dlg) => {
+	if (!dlg.open || dlg.classList.contains('is-closing')) return;
+	if (reducedMotion) return dlg.close();
+	const done = () => {
+		clearTimeout(timer);
+		dlg.removeEventListener('animationend', onEnd);
+		if (!dlg.classList.contains('is-closing')) return;
+		dlg.classList.remove('is-closing');
+		dlg.close();
+	};
+	const onEnd = (e) => e.target === dlg && !e.pseudoElement && done();
+	const timer = setTimeout(done, 400);
+	dlg.addEventListener('animationend', onEnd);
+	dlg.classList.add('is-closing');
+};
+$$('dialog').forEach((dlg) => {
 	dlg.addEventListener('click', (e) => {
-		if (e.target === dlg || e.target.closest('[data-close]')) dlg.close();
-	}),
-);
+		if (e.target === dlg || e.target.closest('[data-close]')) closeDialog(dlg);
+	});
+	dlg.addEventListener('cancel', (e) => {
+		e.preventDefault();
+		closeDialog(dlg);
+	});
+});
 const authDlg = $('#auth-dialog');
 const profileDlg = $('#profile-dialog');
 let openAuth = () => {}; // заполняется в блоке аккаунта
@@ -695,6 +719,50 @@ let paintCase = () => {};
 		breakSound();
 		notify(t('toast.taskClaimed'));
 	});
+}
+
+// ---------- подвал: документы (соглашение, политика, оферта) в окне с вкладками ----------
+{
+	const dlg = $('#legal-dialog');
+	const body = $('#legal-body');
+	const tabs = $('#legal-tabs');
+	let docId = 'terms';
+	const render = () => {
+		const d = getDoc(docId, getLang());
+		$('#legal-title').textContent = d.title;
+		$$('[data-legal-tab]', dlg).forEach((b) => b.setAttribute('aria-selected', String(b.dataset.legalTab === docId)));
+		// пункты нумеруются: раздел 2 → 2.1, 2.2…; в списках-перечнях — квадратики
+		const sections = d.sections.map((s, i) => {
+			const n = i + 1;
+			const tag = s.list === 'ul' ? 'ul' : 'ol';
+			const items = s.items.map((text, j) => `<li><b>${tag === 'ol' ? `${n}.${j + 1}.` : ''}</b><span>${esc(text)}</span></li>`).join('');
+			return `<section class="doc__sec" style="--i:${Math.min(i, 8)}"><h3><span>${n}.</span>${esc(s.h)}</h3><${tag}>${items}</${tag}></section>`;
+		});
+		body.innerHTML = `<p class="doc__date">${esc(t('legal.updated', {date: date(`${LEGAL.updated}T12:00:00`, true)}))}</p>${sections.join('')}`;
+		body.scrollTop = 0;
+	};
+	// на телефоне вкладки листаются вбок: выбранную подвинуть в видимую часть
+	const revealTab = () => {
+		const b = $(`[data-legal-tab="${docId}"]`, dlg).getBoundingClientRect();
+		const r = tabs.getBoundingClientRect();
+		if (b.left < r.left || b.right > r.right) tabs.scrollTo({left: tabs.scrollLeft + b.left - r.left - 14, behavior: reducedMotion ? 'auto' : 'smooth'});
+	};
+	const show = (id) => {
+		docId = id;
+		render();
+		revealTab();
+	};
+	$$('[data-legal]').forEach((b) =>
+		b.addEventListener('click', () => {
+			docId = b.dataset.legal;
+			render();
+			openDialog(dlg);
+			revealTab();
+			body.focus({preventScroll: true});
+		}),
+	);
+	$$('[data-legal-tab]', dlg).forEach((b) => b.addEventListener('click', () => show(b.dataset.legalTab)));
+	onLang(() => dlg.open && render());
 }
 
 // ---------- подвал: надпись «1DEX1 SHOP» из ломающихся блоков ----------

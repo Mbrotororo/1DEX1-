@@ -12,6 +12,7 @@
 //   npm run admin -- user topup <ник> <рубли>     пополнение (пока нет оплаты — вручную)
 //   npm run admin -- user credit <ник> <рубли> [--note "за конкурс"]   начисление
 //   npm run admin -- user verify <ник>            подтвердить почту вручную
+//   npm run admin -- user delete <ник> --yes      удалить аккаунт со всеми данными (по просьбе игрока)
 //
 // --price без значения или 0 — бесплатно; --price later — «цена позже».
 import {copyFileSync, existsSync, mkdirSync} from 'node:fs';
@@ -106,6 +107,11 @@ if (what === 'product' && action === 'add') {
 	const u = userBy(args[0]);
 	q('UPDATE users SET verified = 1, num = COALESCE(num, (SELECT COALESCE(MAX(num), 0) + 1 FROM users)) WHERE id = ?').run(u.id);
 	console.log(`Почта ${u.email} подтверждена.`);
+} else if (what === 'user' && action === 'delete') {
+	const u = userBy(args[0]);
+	if (opts.yes !== true) fail(`это удалит ${u.nick} (${u.email}), баланс, покупки и историю навсегда. Чтобы подтвердить, добавь --yes`);
+	q('DELETE FROM users WHERE id = ?').run(u.id); // остальное удаляется само (ON DELETE CASCADE)
+	console.log(`Аккаунт ${u.nick} удалён.`);
 } else {
 	console.log(`База: ${DB_PATH}\nКоманды — в начале файла ${basename(fileURLToPath(import.meta.url))} и в README.`);
 }
