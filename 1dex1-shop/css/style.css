@@ -323,50 +323,66 @@ h2{font:400 clamp(26px,4vw,50px)/1.05 var(--font-display);letter-spacing:-.01em;
 @keyframes case-shake{0%{transform:translate(-3px,1px) rotate(-2deg)}100%{transform:translate(3px,-2px) rotate(2deg)}}
 @keyframes prize-in{from{opacity:0;transform:scale(.6)}}
 
-/* ---------- сотрудничество ---------- */
-.collab{display:grid;justify-items:center}
-/* пространство, где вокруг аватарки летают логотипы визуалов */
+/* ---------- сотрудничество ----------
+   Один виджет с пиксельными углами: сверху аватарка, вокруг неё летают значки визуалов
+   (за рамку не вылетают), снизу ник и кнопка «Написать в Telegram». */
+.collab{
+	position:relative;width:min(820px,100%);margin-inline:auto;background:var(--surface);
+	box-shadow:inset 0 0 0 2px var(--line-2),inset 4px 4px 0 rgba(255,255,255,.03),inset -4px -4px 0 rgba(0,0,0,.35);
+	clip-path:polygon(8px 0,calc(100% - 8px) 0,calc(100% - 8px) 4px,calc(100% - 4px) 4px,calc(100% - 4px) 8px,100% 8px,100% calc(100% - 8px),calc(100% - 4px) calc(100% - 8px),calc(100% - 4px) calc(100% - 4px),calc(100% - 8px) calc(100% - 4px),calc(100% - 8px) 100%,8px 100%,8px calc(100% - 4px),4px calc(100% - 4px),4px calc(100% - 8px),0 calc(100% - 8px),0 8px,4px 8px,4px 4px,8px 4px);
+}
+/* салатовые уголки рамки */
+.collab::before{
+	content:"";position:absolute;inset:12px;z-index:6;pointer-events:none;opacity:.85;
+	--c:linear-gradient(var(--lime),var(--lime));
+	background:
+		var(--c) left top/20px 3px no-repeat,var(--c) left top/3px 20px no-repeat,
+		var(--c) right top/20px 3px no-repeat,var(--c) right top/3px 20px no-repeat,
+		var(--c) left bottom/20px 3px no-repeat,var(--c) left bottom/3px 20px no-repeat,
+		var(--c) right bottom/20px 3px no-repeat,var(--c) right bottom/3px 20px no-repeat;
+}
+/* пространство, где вокруг аватарки летают значки */
 .collab__space{
-	position:relative;width:100%;height:clamp(320px,32vw,420px);overflow:hidden;
-	background:radial-gradient(42% 55% at 50% 50%,rgba(154,107,255,.18),transparent 72%);
-	-webkit-mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent);mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent);
+	position:relative;height:clamp(300px,30vw,380px);overflow:hidden;border-bottom:2px solid var(--line);
+	background:
+		linear-gradient(rgba(255,255,255,.03) 1px,transparent 1px) 0 0/100% 24px,
+		linear-gradient(90deg,rgba(255,255,255,.03) 1px,transparent 1px) 0 0/24px 100%,
+		radial-gradient(45% 60% at 50% 50%,rgba(154,107,255,.2),transparent 72%),
+		var(--well);
 }
 .collab__ava{
-	position:absolute;left:50%;top:50%;z-index:4;width:clamp(124px,12vw,160px);aspect-ratio:1;transform:translate(-50%,-50%);
+	position:absolute;left:50%;top:50%;z-index:4;width:clamp(124px,12vw,150px);aspect-ratio:1;transform:translate(-50%,-50%);
 	padding:4px;border-radius:50%;background:conic-gradient(from 200deg,var(--lime),var(--purple),var(--gold),var(--lime));
-	box-shadow:0 0 0 6px var(--bg),0 24px 60px -12px rgba(154,107,255,.7);
+	box-shadow:0 0 0 6px var(--well),0 24px 60px -12px rgba(154,107,255,.7);
 }
-.collab__ava img{display:block;width:100%;height:100%;object-fit:cover;border-radius:50%;border:4px solid var(--bg)}
-.collab__tg{position:absolute;right:2%;bottom:2%;display:grid;place-items:center;width:32%;aspect-ratio:1;border-radius:50%;background:var(--ink);color:var(--bg);box-shadow:0 0 0 4px var(--bg)}
+.collab__ava img{display:block;width:100%;height:100%;object-fit:cover;border-radius:50%;border:4px solid var(--well)}
+.collab__tg{position:absolute;right:2%;bottom:2%;display:grid;place-items:center;width:32%;aspect-ratio:1;border-radius:50%;background:var(--ink);color:var(--bg);box-shadow:0 0 0 4px var(--well)}
 .collab__tg svg{width:50%;height:50%}
-/* логотип визуала: по умолчанию в тени, под курсором светлеет и увеличивается */
-.visual{position:absolute;left:0;top:0;z-index:2;width:var(--s,76px);text-decoration:none;will-change:transform;-webkit-tap-highlight-color:transparent}
-.visual[data-layer="1"]{z-index:1}
-.visual[data-layer="2"]{z-index:0}
+/* значок визуала: по умолчанию чуть в тени, под курсором светлеет и увеличивается */
+.visual{position:absolute;left:0;top:0;z-index:2;width:var(--s,84px);text-decoration:none;will-change:transform;-webkit-tap-highlight-color:transparent}
 .visual:hover,.visual:focus-visible{z-index:5;outline:none}
-.visual__in{display:grid;justify-items:center;gap:7px;filter:brightness(.6) saturate(.85);opacity:.92;transition:transform .28s var(--spring),filter .25s,opacity .25s}
-.visual[data-layer="1"] .visual__in{filter:brightness(.42) saturate(.7) blur(1px);opacity:.75}
-.visual[data-layer="2"] .visual__in{filter:brightness(.3) saturate(.6) blur(2px);opacity:.6}
+.visual__in{display:grid;justify-items:center;gap:7px;filter:brightness(.62) saturate(.85);opacity:.92;transition:transform .28s var(--spring),filter .25s,opacity .25s}
 .visual:hover .visual__in,.visual:focus-visible .visual__in{transform:scale(1.18);filter:none;opacity:1}
-.visual__ava{display:grid;place-items:center;width:var(--s,76px);height:var(--s,76px);overflow:hidden;border-radius:50%;background:#15111f;border:2px solid var(--line-2);box-shadow:0 12px 26px -10px rgba(0,0,0,.9)}
-.visual:hover .visual__ava{border-color:var(--lime);box-shadow:0 0 0 4px rgba(184,255,61,.18),0 14px 30px -10px rgba(0,0,0,.9)}
+.visual__ava{display:grid;place-items:center;width:var(--s,84px);height:var(--s,84px);overflow:hidden;border-radius:50%;background:#15111f;border:2px solid var(--line-2);box-shadow:0 12px 26px -10px rgba(0,0,0,.9)}
+.visual:hover .visual__ava,.visual:focus-visible .visual__ava{border-color:var(--lime);box-shadow:0 0 0 4px rgba(184,255,61,.18),0 14px 30px -10px rgba(0,0,0,.9)}
 .visual__ava img{width:100%;height:100%;object-fit:cover}
 .visual__ava.is-contain img{width:56%;height:56%;object-fit:contain}
 .visual__ava.is-pixel{background:#f4f2ff}
 .visual__ava.is-pixel img{image-rendering:pixelated}
 .visual__name{font-size:12.5px;color:var(--muted);white-space:nowrap;text-shadow:2px 2px 0 rgba(0,0,0,.6)}
 .visual:hover .visual__name{color:#fff}
-/* карточка личного профиля */
-.collab__card{position:relative;z-index:1;display:grid;justify-items:center;width:min(560px,100%);margin-top:14px;padding:28px;text-align:center}
-.collab__card h3{font:400 clamp(24px,2.6vw,32px)/1.1 var(--font-display);word-spacing:-.35em}
+/* ник и кнопка под пространством со значками */
+.collab__info{display:grid;justify-items:center;padding:24px clamp(20px,4vw,40px) 30px;text-align:center}
+.collab__info h3{font:400 clamp(24px,2.6vw,32px)/1.1 var(--font-display);word-spacing:-.35em}
 .collab__user{margin-top:6px;font-size:15px;color:var(--dim)}
 .collab__text{max-width:420px;margin:12px 0 20px;font-size:15px;color:var(--muted)}
-.collab__row{display:flex;align-items:center;gap:12px;width:100%;margin:-4px 0 20px;padding:12px 0;border-block:1px solid var(--line);font-size:15px}
+.collab__row{display:flex;align-items:center;gap:12px;width:min(480px,100%);margin:-4px 0 20px;padding:12px 0;border-block:1px solid var(--line);font-size:15px}
 .collab__row span{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em}
 .collab__row b{margin-left:auto;font-weight:600}
 .collab__copy{display:grid;place-items:center;width:34px;height:34px;padding:0;border:2px solid var(--line-2);background:var(--surface-2);color:var(--muted);cursor:pointer;transition:color .15s,border-color .15s}
 .collab__copy:hover{color:#fff;border-color:var(--lime)}
 .collab__copy svg{width:14px;height:14px}
+.collab .btn{width:min(480px,100%)}
 .btn.is-off{cursor:default;filter:saturate(.35) brightness(.75);transform:none;pointer-events:none}
 
 /* ---------- каналы ---------- */

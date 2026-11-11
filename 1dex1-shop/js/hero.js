@@ -7,8 +7,8 @@
 //   и кнопки, летит за посетителем, когда тот листает страницу, и показывает эмоции в облачке.
 //   Его можно отлепить и плавно бросить. Сверху на острове — спрыгивает на траву.
 // - С алмазной киркой он ломает стену (бегущую строку) и может летать по всему сайту.
-// - Посередине экрана — большая надпись «1DEX1 SHOP» из салатовых блоков, остров справа.
-//   Над островом — «ЖИЗНЬ 1DEX1». Блоки обеих надписей ломаются кликом и вырастают снова.
+// - Посередине экрана — большая надпись «1DEX1 SHOP» из салатовых блоков, кубики смотрят прямо
+//   на зрителя. Блоки ломаются кликом и вырастают снова. Остров справа.
 // - Сзади галактика, а звёзды по всему фону медленно вращаются вокруг её ядра.
 import * as THREE from '../vendor/three.module.min.js';
 import {CROSSHAIR, icon, wordPixels} from './pixel.js';
@@ -366,17 +366,8 @@ const NEED = {iron: 1, gold: 2, diamond: 2};
 const UPGRADE = {stone: 1, iron: 2, diamond: 3};
 
 // ---------- константы сцены ----------
-const VOXEL = 0.27; // размер блока названия
-const WORD_Y = 7.3; // название висит над деревом и не крутится вместе с островом
-// Название из двух строк одного размера: «ЖИЗНЬ» белыми блоками сверху, «1DEX1» салатовыми снизу
-const TITLE = [
-	{text: 'ЖИЗНЬ', line: 1, top: '#ffffff', bottom: '#f1eefa'},
-	{text: '1DEX1', line: 0, top: '#d2ff70', bottom: '#98e024'},
-];
-const LINE_GAP = 2; // пустых клеток между строками
-const TITLE_TOP = WORD_Y + (7 * 2 + LINE_GAP) * VOXEL;
 const WORD_DEPTH = 1.8;
-const RESPAWN = 3; // блок названия вырастает через 3 секунды
+const RESPAWN = 3; // блок надписи вырастает через 3 секунды
 const APPEAR = 0.7;
 const BLOCK_RESPAWN = 5; // блок острова вырастает через 5 секунд
 const SWAY = Math.PI / 3; // остров поворачивается на 60° в каждую сторону
@@ -712,29 +703,10 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	// mode: idle | walk | chest | mine | land — на острове; free — снят с острова и летает по сайту
 	const P = {mode: 'idle', pos: HOME.clone(), face: 0.15, path: [], queue: [], actT: 0, walkPhase: 0, holding: false, landT: 0};
 
-	// ================= НАЗВАНИЕ «ЖИЗНЬ 1DEX1» ИЗ БЛОКОВ =================
-	const voxels = [];
-	let titleW = 0;
-	for (const t of TITLE) {
-		const word = wordPixels(t.text);
-		titleW = Math.max(titleW, word.width);
-		const top = new THREE.Color(t.top);
-		const bottom = new THREE.Color(t.bottom);
-		const baseY = WORD_Y + t.line * (7 + LINE_GAP) * VOXEL;
-		for (const p of word.pixels) {
-			voxels.push({x: (p.x - word.width / 2 + 0.5) * VOXEL, y: baseY + (p.y + 0.5) * VOXEL, color: top.clone().lerp(bottom, p.row / 6), phase: p.x * 0.35 + t.line * 1.4, hover: 0, brokenAt: -1, scale: 1});
-		}
-	}
-	// лёгкое собственное свечение, чтобы белый был белым, а салатовый — ярким под фиолетовым светом сцены
-	const wordMesh = new THREE.InstancedMesh(box, new THREE.MeshLambertMaterial({map: tex.voxel, emissive: '#2a2a2a'}), voxels.length);
-	voxels.forEach((v, i) => wordMesh.setColorAt(i, v.color));
-	wordMesh.instanceColor.needsUpdate = true;
-	wordMesh.frustumCulled = false;
-	world.add(wordMesh);
-
 	// ================= БОЛЬШАЯ НАДПИСЬ «1DEX1 SHOP» ПОСЕРЕДИНЕ =================
 	// Висит перед камерой, поэтому всегда в одном месте экрана: на компьютере — посередине
-	// слева от острова, на телефоне — сверху. Чуть наклонена, чтобы были видны верх и бока блоков.
+	// слева от острова, на телефоне — сверху. Повёрнута так, что передние грани кубиков
+	// смотрят прямо на зрителя.
 	const BIG = wordPixels('1DEX1 SHOP');
 	const bigGroup = new THREE.Group();
 	camera.add(bigGroup);
@@ -749,11 +721,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	bigGroup.add(bigMesh);
 	let bigCell = 0.3; // размер блока большой надписи в единицах мира (считается в frame)
 
-	// Все ломающиеся надписи: unit — размер блока, z — глубина, amp — волна, lift — выезд под курсором
-	const SETS = [
-		{mesh: wordMesh, list: voxels, unit: VOXEL, z: -1, amp: 0.07, lift: 0.32},
-		{mesh: bigMesh, list: bigVoxels, unit: 1, z: 0, amp: 0.22, lift: 0.9},
-	];
+	// Ломающиеся надписи: unit — размер блока, z — глубина, amp — волна, lift — выезд под курсором
+	const SETS = [{mesh: bigMesh, list: bigVoxels, unit: 1, z: 0, amp: 0.22, lift: 0.9}];
 
 	// ================= ОСКОЛКИ =================
 	const DEBRIS = 140;
@@ -821,7 +790,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	}
 
 	// ================= КАДРИРОВАНИЕ =================
-	const BOX = {w: 11.5, h: 18.4, cy: 2.95}; // от низа острова до верха названия
+	const BOX = {w: 11.5, h: 14.6, cy: 0.5}; // от низа острова до макушки дерева
 	const viewDir = new THREE.Vector3(0.2, 0.2, 1).normalize();
 	let width = 1;
 	let height = 1;
@@ -859,9 +828,12 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const viewH = 2 * d * tan;
 		const viewW = viewH * aspect;
 		bigCell = Math.min((L.w * viewW) / BIG.width, (0.2 * viewH) / 7);
-		bigGroup.position.set((L.cx - 0.5) * viewW, (0.5 - L.cy) * viewH, -d);
+		const bx = (L.cx - 0.5) * viewW;
+		const by = (0.5 - L.cy) * viewH;
+		bigGroup.position.set(bx, by, -d);
 		bigGroup.scale.setScalar(bigCell);
-		bigGroup.rotation.set(0.32, -0.08, 0);
+		// передние грани кубиков повёрнуты прямо к камере, то есть к зрителю
+		bigGroup.rotation.set(Math.atan2(by, d), Math.atan2(-bx, d), 0);
 		camera.updateMatrixWorld(true);
 	};
 
@@ -1048,9 +1020,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		v.hover = 0;
 		broken++;
 		if (P.mode === 'idle') jumpAt = now;
-		const big = set.mesh === bigMesh;
-		const at = big ? world.worldToLocal(bigGroup.localToWorld(tmp.set(v.x, v.y, 0))) : tmp.set(v.x, v.y, -1);
-		spawnDebris(at, `#${v.color.getHexString()}`, big ? 12 : 9, 1, big ? (bigCell / VOXEL) * 0.8 : 0.7);
+		const at = world.worldToLocal(bigGroup.localToWorld(tmp.set(v.x, v.y, 0)));
+		spawnDebris(at, `#${v.color.getHexString()}`, 12, 1, bigCell * 3);
 		on('break', broken);
 	};
 
@@ -1232,6 +1203,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		['#shop-tabs', false],
 		['#shop-grid > *', false],
 		['#cases .case', false],
+		['#collab .collab', false],
 		['.social', false],
 		['.social .btn', false],
 		['.foot__word', false],
@@ -1253,12 +1225,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				out.push({el, left: r.left + scrollX, right: r.right + scrollX, top: r.top + scrollY + inset, bottom: r.bottom + scrollY});
 			});
 		}
-		// название «ЖИЗНЬ 1DEX1» из блоков тоже подходит (садится на верхнюю строку)
+		// большая «1DEX1 SHOP» из блоков тоже подходит
 		const o = docOffset();
-		const pts = [];
-		for (const x of [-titleW * VOXEL * 0.5, titleW * VOXEL * 0.5]) for (const y of [WORD_Y + 0.1, TITLE_TOP]) pts.push(toPx(world.localToWorld(tmp.set(x, y, -1))));
-		out.push({el: wordMesh, left: Math.min(...pts.map((p) => p.x)) + o.x, right: Math.max(...pts.map((p) => p.x)) + o.x, top: Math.min(...pts.map((p) => p.y)) + o.y, bottom: Math.max(...pts.map((p) => p.y)) + o.y});
-		// и большая «1DEX1 SHOP»
 		const big = [];
 		for (const x of [-BIG.width / 2, BIG.width / 2]) for (const y of [-3.5, 3.5]) big.push(toPx(bigGroup.localToWorld(tmp.set(x, y, 0))));
 		out.push({el: bigMesh, left: Math.min(...big.map((p) => p.x)) + o.x, right: Math.max(...big.map((p) => p.x)) + o.x, top: Math.min(...big.map((p) => p.y)) + o.y, bottom: Math.max(...big.map((p) => p.y)) + o.y});
