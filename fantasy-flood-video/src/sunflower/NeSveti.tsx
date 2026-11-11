@@ -122,34 +122,41 @@ const Bed: React.FC<BedDef> = ({src, from, to, vol, fade = 2}) => {
 	);
 };
 
-const Soundtrack: React.FC<{story: Story; beds: BedDef[]; drone: (s: number) => number}> = ({story, beds, drone}) => (
-	<>
-		<Audio
-			src={staticFile('sunflower/drone.ogg')}
-			loop
-			volume={(f) => {
-				const s = f / FPS;
-				const out = interpolate(s, [story.duration - 2, story.duration], [1, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
-				return drone(s) * out;
-			}}
-		/>
-		{beds.map((b, i) => (
-			<Bed key={i} {...b} />
-		))}
-		{story.beats.flatMap((b, bi) =>
-			(b.sfx ?? []).map((s, si) => (
-				<Sequence key={`${bi}-${si}`} from={at(b.at + (s.at ?? 0))} layout="none">
-					<Audio src={staticFile(`sunflower/${s.src}.ogg`)} volume={s.volume ?? 0.7} playbackRate={s.rate ?? 1} />
-				</Sequence>
-			)),
-		)}
-	</>
-);
+export type Mix = {voice?: string; voiceVol?: number; gain?: number};
+
+const Soundtrack: React.FC<{story: Story; beds: BedDef[]; drone: (s: number) => number; mix: Mix}> = ({story, beds, drone, mix}) => {
+	// под голосом фон и эффекты тише, шёпот-эффекты ещё тише (реплики читает диктор)
+	const g = mix.voice ? mix.gain ?? 0.55 : 1;
+	return (
+		<>
+			{mix.voice ? <Audio src={staticFile(mix.voice)} volume={mix.voiceVol ?? 1} /> : null}
+			<Audio
+				src={staticFile('sunflower/drone.ogg')}
+				loop
+				volume={(f) => {
+					const s = f / FPS;
+					const out = interpolate(s, [story.duration - 2, story.duration], [1, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
+					return drone(s) * out * g;
+				}}
+			/>
+			{beds.map((b, i) => (
+				<Bed key={i} {...b} vol={b.vol * g} />
+			))}
+			{story.beats.flatMap((b, bi) =>
+				(b.sfx ?? []).map((s, si) => (
+					<Sequence key={`${bi}-${si}`} from={at(b.at + (s.at ?? 0))} layout="none">
+						<Audio src={staticFile(`sunflower/${s.src}.ogg`)} volume={(s.volume ?? 0.7) * (mix.voice ? (s.src === 'whisper' ? 0.35 : 0.8) : 1)} playbackRate={s.rate ?? 1} />
+					</Sequence>
+				)),
+			)}
+		</>
+	);
+};
 
 // ---------- Серия ----------
 const shakeXY = (t: number, amp: number) => (amp > 0 ? `translate(${Math.sin(t * 71) * amp}px, ${Math.cos(t * 83) * amp}px)` : '');
 
-export const makeEpisode = (story: Story, scenes: Record<string, SceneFn>, beds: BedDef[], drone: (s: number) => number): React.FC => {
+export const makeEpisode = (story: Story, scenes: Record<string, SceneFn>, beds: BedDef[], drone: (s: number) => number, mix: Mix = {}): React.FC => {
 	const Episode: React.FC = () => {
 		useFont();
 		const frame = useCurrentFrame();
@@ -174,7 +181,7 @@ export const makeEpisode = (story: Story, scenes: Record<string, SceneFn>, beds:
 				{out.hud}
 				<Label t={t} story={story} />
 				<Subtitles t={t} story={story} />
-				<Soundtrack story={story} beds={beds} drone={drone} />
+				<Soundtrack story={story} beds={beds} drone={drone} mix={mix} />
 			</AbsoluteFill>
 		);
 	};
@@ -214,4 +221,5 @@ export const NeSveti2 = makeEpisode(
 		{src: 'wind', from: P2.spanOf('dawn2').at, to: P2.spanOf('end2').at, vol: 0.3},
 	],
 	(s) => (s < P2.spanOf('walkIn').at ? 0.3 : s < P2.spanOf('dawn2').at ? 0.55 : 0.35),
+	{voice: 'sunflower/voice2.ogg'},
 );

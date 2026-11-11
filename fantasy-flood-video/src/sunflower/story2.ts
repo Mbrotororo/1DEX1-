@@ -1,6 +1,7 @@
 // «Не свети. Часть 2: Обмен» — герой первой части возвращается за Серёгой.
 // Формат тот же, что в story.ts: ^жёлтый^, *красный*, label — надпись сверху.
 import {Beat, buildStory} from './story';
+import {VOICE2, VOICE2_END} from './voice2-align';
 
 export const BEATS2: Beat[] = [
 	{scene: 'hook2', text: 'Через год я вернулся ^на это поле.^', sfx: [{src: 'hit', volume: 0.6}]},
@@ -55,4 +56,6 @@ export const BEATS2: Beat[] = [
 	{scene: 'end2', text: '^посчитай.^ *И не свети.*', pause: 2.4, sfx: [{src: 'whisper', at: 0, rate: 0.9}]},
 ];
 
-export const PART2 = buildStory(BEATS2);
+// Без озвучки (тайминги по формуле) и с озвучкой (тайминги по голосу)
+export const PART2_SILENT = buildStory(BEATS2);
+export const PART2 = buildStory(BEATS2, {align: VOICE2, end: VOICE2_END});

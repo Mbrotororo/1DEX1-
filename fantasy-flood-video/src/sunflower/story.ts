@@ -144,19 +144,46 @@ export type Story = {
 };
 export type SceneSpan = {id: SceneId; at: number; end: number; beats: TimedBeat[]};
 
-export const buildStory = (beats: Beat[]): Story => {
+// voice — тайминги настоящей озвучки (из распознавания), тогда субтитры идут по голосу.
+export type VoiceAlign = ({at: number; end: number} | null)[][];
+
+export const buildStory = (beats: Beat[], voice?: {align: VoiceAlign; end: number}): Story => {
 	let t = 0.1;
 	const timed: TimedBeat[] = [];
-	for (const b of beats) {
+	beats.forEach((b, bi) => {
 		const at = t;
 		const chunks: Chunk[] = [];
-		for (const c of splitChunks(b.text)) {
-			const d = chunkDur(c);
-			chunks.push({at: t, end: t + d, text: c});
-			t += d;
+		splitChunks(b.text).forEach((c, ci) => {
+			const v = voice?.align[bi]?.[ci];
+			if (v) {
+				chunks.push({at: v.at, end: v.end, text: c});
+				t = v.end;
+			} else {
+				const d = chunkDur(c);
+				chunks.push({at: t, end: t + d, text: c});
+				t += d;
+			}
+		});
+		if (voice) {
+			timed.push({...b, at: chunks[0].at, end: t, chunks});
+			t += b.pause ?? 0.1;
+		} else {
+			t += b.pause ?? 0.1;
+			timed.push({...b, at, end: t, chunks});
 		}
-		t += b.pause ?? 0.1;
-		timed.push({...b, at, end: t, chunks});
+	});
+	if (voice) {
+		// субтитр держится до следующего, если пауза короткая; сцена — до начала следующей фразы
+		const all = timed.flatMap((b) => b.chunks);
+		all.forEach((c, i) => {
+			const next = all[i + 1];
+			c.end = next && next.at - c.end < 1.0 ? next.at : c.end + 0.35;
+		});
+		timed.forEach((b, i) => {
+			b.end = timed[i + 1] ? timed[i + 1].at : Math.max(voice.end, b.chunks[b.chunks.length - 1].end) + (b.pause ?? 0.5);
+		});
+		timed[0].at = 0;
+		t = timed[timed.length - 1].end;
 	}
 	const duration = Math.ceil(t + 0.5);
 	// подряд идущие фразы с одной сценой склеиваются в один кусок
