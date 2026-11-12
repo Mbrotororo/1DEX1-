@@ -25,6 +25,14 @@ public class NyConfig {
     public int flakeSize = 1;
     public boolean wind = true;
 
+    // ---------- Сугробы в мире ----------
+    public boolean snowCover = true;
+    /** 0 = небольшие, 1 = средние, 2 = огромные */
+    public int driftSize = 1;
+    public boolean snowSteps = true;
+    /** 0 .. 1 */
+    public float stepVolume = 0.8f;
+
     // ---------- Снег на экране ----------
     public boolean screenSnow = true;
     /** 0.1 .. 1.0 */
@@ -33,6 +41,8 @@ public class NyConfig {
     public boolean snowDrifts = true;
     /** Also show screen snow during gameplay (not only in menus). */
     public boolean screenSnowInGame = true;
+    /** Click the snow to make snowballs / a snowman, swipe to scatter. */
+    public boolean snowPlay = true;
 
     // ---------- Шапки ----------
     public boolean hats = true;
@@ -97,6 +107,8 @@ public class NyConfig {
 
     private void sanitize() {
         snowStrength = Math.max(1, Math.min(10, snowStrength));
+        driftSize = Math.max(0, Math.min(2, driftSize));
+        stepVolume = clamp(stepVolume, 0f, 1f);
         flakeSize = Math.max(0, Math.min(2, flakeSize));
         screenSnowAmount = clamp(screenSnowAmount, 0.1f, 1f);
         garlandSpeed = Math.max(0, Math.min(1, garlandSpeed));

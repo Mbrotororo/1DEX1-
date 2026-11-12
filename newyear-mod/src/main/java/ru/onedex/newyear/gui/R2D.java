@@ -247,6 +247,17 @@ public final class R2D {
         popPx();
     }
 
+    /** Thick line with round caps (drawn as a chain of anti-aliased discs; meant for short strokes). */
+    public static void line(float ax, float ay, float bx, float by, float thick, int color) {
+        float len = (float) Math.hypot(bx - ax, by - ay);
+        float r = Math.max(0.3f, thick / 2f);
+        int steps = Math.max(1, (int) Math.ceil(len / Math.max(0.25f, r * 0.6f)));
+        for (int i = 0; i <= steps; i++) {
+            float t = i / (float) steps;
+            circle(ax + (bx - ax) * t, ay + (by - ay) * t, r, color);
+        }
+    }
+
     /** Anti-aliased circle outline. */
     public static void ring(float cx, float cy, float r, float thick, int color) {
         int c = mul(color);

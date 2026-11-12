@@ -9,7 +9,8 @@
     "GameRendererMixin",
     "PlayerEntityRendererMixin",
     "ChatHudAccessor",
-    "HandledScreenAccessor"
+    "HandledScreenAccessor",
+    "EntityStepMixin"
   ],
   "injectors": {
     "defaultRequire": 1

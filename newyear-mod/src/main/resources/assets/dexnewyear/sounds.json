@@ -1,0 +1,9 @@
+{
+  "snow_step": {
+    "subtitle": "subtitles.dexnewyear.snow_step",
+    "sounds": [
+      "dexnewyear:snow_step1",
+      "dexnewyear:snow_step2"
+    ]
+  }
+}
