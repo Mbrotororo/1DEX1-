@@ -1,0 +1,57 @@
+plugins {
+    id 'fabric-loom' version "${loom_version}"
+}
+
+version = project.mod_version
+group = project.maven_group
+base { archivesName = project.archives_base_name }
+
+repositories {}
+
+def apiModules = [
+    'fabric-api-base',
+    'fabric-key-binding-api-v1',
+    'fabric-lifecycle-events-v1',
+    'fabric-rendering-v1',
+    'fabric-resource-loader-v0',
+    'fabric-resource-loader-v1',
+    'fabric-networking-api-v1',
+]
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    apiModules.each { m ->
+        def dep = fabricApi.module(m, project.fabric_version)
+        modImplementation dep
+        include dep
+    }
+}
+
+processResources {
+    inputs.property "version", project.version
+    filesMatching("fabric.mod.json") { expand "version": project.version }
+}
+
+tasks.withType(JavaCompile).configureEach { it.options.release = 21; it.options.encoding = 'UTF-8' }
+
+java { sourceCompatibility = JavaVersion.VERSION_21; targetCompatibility = JavaVersion.VERSION_21 }
+
+jar { from("LICENSE") { rename { "${it}_${project.base.archivesName.get()}" } } }
+
+loom {
+    runs {
+        server {
+            runDir "run-server"
+            programArg "--nogui"
+        }
+        client {
+            runDir "run"
+            vmArg "-Ddexpvpai.dev=true"
+            if (project.hasProperty('devJoin')) {
+                programArgs "--quickPlayMultiplayer", project.property("devJoin"), "--username", "Dex1", "--width", "1280", "--height", "720"
+            }
+        }
+    }
+}
