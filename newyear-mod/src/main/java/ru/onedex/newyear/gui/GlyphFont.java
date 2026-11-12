@@ -42,7 +42,10 @@ final class GlyphFont {
     static final class Atlas {
         Identifier id;
         int texW, texH;
+        /** Sub-pixel positions per glyph (each glyph is rasterized shifted by 1/phases of a pixel). */
+        int phases = 1;
         final Map<Character, Glyph> glyphs = new HashMap<>();
+        final Map<Integer, Glyph> shifted = new HashMap<>();
         final Map<Integer, Float> kerning = new HashMap<>();
         float capHeight;
         Font font;
@@ -52,6 +55,13 @@ final class GlyphFont {
         Glyph glyph(char c) {
             Glyph g = glyphs.get(c);
             return g != null ? g : fallback;
+        }
+
+        /** The glyph rasterized {@code phase / phases} of a pixel to the right. */
+        Glyph glyph(char c, int phase) {
+            if (phase == 0) return glyph(c);
+            Glyph g = shifted.get(c * 8 + phase);
+            return g != null ? g : glyph(c);
         }
 
         float kern(char a, char b) {
@@ -117,21 +127,30 @@ final class GlyphFont {
         Atlas atlas = new Atlas();
         atlas.font = font;
         atlas.frc = new FontRenderContext(null, RenderingHints.VALUE_TEXT_ANTIALIAS_ON, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
+        // Glyphs are placed with quarter-pixel precision: snapping every letter to whole pixels
+        // breaks the spacing of small text (e.g. "Ye ar" instead of "Year").
+        atlas.phases = px <= 48 ? 4 : 1;
         String chars = charset();
+        int n = chars.length() * atlas.phases;
         int pad = 2;
         // measure
-        Rectangle[] bounds = new Rectangle[chars.length()];
-        GlyphVector[] gvs = new GlyphVector[chars.length()];
-        int cell = px * 2 + pad * 2;
-        int cols = Math.max(8, (int) Math.ceil(Math.sqrt(chars.length())));
-        int texW = Integer.highestOneBit(cols * cell - 1) << 1;
-        int x = pad, y = pad, rowH = 0;
-        int[][] pos = new int[chars.length()][2];
-        for (int i = 0; i < chars.length(); i++) {
-            GlyphVector gv = font.createGlyphVector(atlas.frc, String.valueOf(chars.charAt(i)));
-            Rectangle r = gv.getPixelBounds(atlas.frc, 0, 0);
+        Rectangle[] bounds = new Rectangle[n];
+        GlyphVector[] gvs = new GlyphVector[n];
+        long area = 0;
+        for (int i = 0; i < n; i++) {
+            char c = chars.charAt(i / atlas.phases);
+            float frac = (i % atlas.phases) / (float) atlas.phases;
+            GlyphVector gv = font.createGlyphVector(atlas.frc, String.valueOf(c));
+            Rectangle r = gv.getPixelBounds(atlas.frc, frac, 0);
             gvs[i] = gv;
             bounds[i] = r;
+            area += (long) (Math.max(1, r.width) + pad) * (Math.max(1, r.height) + pad);
+        }
+        int texW = Math.max(64, Integer.highestOneBit((int) Math.ceil(Math.sqrt(area * 1.15)) - 1) << 1);
+        int x = pad, y = pad, rowH = 0;
+        int[][] pos = new int[n][2];
+        for (int i = 0; i < n; i++) {
+            Rectangle r = bounds[i];
             int w = Math.max(1, r.width), h = Math.max(1, r.height);
             if (x + w + pad > texW) {
                 x = pad;
@@ -153,12 +172,16 @@ final class GlyphFont {
         g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
         g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
         g.setColor(java.awt.Color.WHITE);
-        for (int i = 0; i < chars.length(); i++) {
+        for (int i = 0; i < n; i++) {
+            char c = chars.charAt(i / atlas.phases);
+            int phase = i % atlas.phases;
+            float frac = phase / (float) atlas.phases;
             Rectangle r = bounds[i];
-            g.drawGlyphVector(gvs[i], pos[i][0] - r.x, pos[i][1] - r.y);
+            g.drawGlyphVector(gvs[i], pos[i][0] - r.x + frac, pos[i][1] - r.y);
             float adv = gvs[i].getGlyphMetrics(0).getAdvanceX();
             Glyph gl = new Glyph(pos[i][0], pos[i][1], r.width, r.height, r.x, r.y, adv);
-            atlas.glyphs.put(chars.charAt(i), gl);
+            if (phase == 0) atlas.glyphs.put(c, gl);
+            else atlas.shifted.put(c * 8 + phase, gl);
         }
         g.dispose();
         atlas.fallback = atlas.glyphs.get('?');

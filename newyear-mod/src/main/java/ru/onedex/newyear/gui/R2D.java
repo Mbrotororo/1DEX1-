@@ -536,12 +536,17 @@ public final class R2D {
         }
         float pen = Math.round(x * k);
         int baseline = Math.round(cy * k + a.capHeight / 2f);
+        int ph = a.phases;
         for (int i = 0; i < s.length(); i++) {
             char ch = s.charAt(i);
             GlyphFont.Glyph g = a.glyph(ch);
             if (g == null) continue;
             if (g.w() > 0 && g.h() > 0 && ch != ' ') {
-                int gx = Math.round(pen) + g.xoff(), gy = baseline + g.yoff();
+                // quarter-pixel placement: whole pixels + the pre-shifted copy of the glyph
+                int q = Math.round(pen * ph);
+                GlyphFont.Glyph sg = a.glyph(ch, Math.floorMod(q, ph));
+                int gx = Math.floorDiv(q, ph) + sg.xoff(), gy = baseline + sg.yoff();
+                g = sg;
                 ctx.drawTexture(RenderPipelines.GUI_TEXTURED, a.id, gx, gy, g.u(), g.v(), g.w(), g.h(), g.w(), g.h(), a.texW, a.texH, c);
                 elements++;
             }
