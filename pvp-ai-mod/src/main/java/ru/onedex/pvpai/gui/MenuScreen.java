@@ -291,8 +291,8 @@ public class MenuScreen extends Screen {
         R2D.picture(AVATAR, hx, hcy - 11, 22, 7);
         R2D.roundOutline(hx, hcy - 11, 22, 22, 7, 0.5f, R2D.withAlpha(accent, 0.6f));
         R2D.textMid("1DEX1", Font.S11, hx + 31, hcy - 5, th.text());
-        R2D.textMid("PvP AI client", Font.M7, hx + 31, hcy + 7, th.sub());
-        R2D.textMidRight("v1.3", Font.M7, x + MAIN_W - 14, hcy - 5, R2D.withAlpha(th.sub(), 0.7f));
+        R2D.textMid("PvP AI", Font.M7, hx + 31, hcy + 7, th.sub());
+        R2D.textMidRight("v1.4", Font.M7, x + MAIN_W - 14, hcy - 5, R2D.withAlpha(th.sub(), 0.7f));
         R2D.rect(x + 12, y + 44, MAIN_W - 24, 1f / R2D.guiScale(), th.border());
 
         float ry = y + 44 + 6;

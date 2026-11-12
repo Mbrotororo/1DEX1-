@@ -177,16 +177,6 @@ public final class HudOverlay {
             } else if (dragging || over(mx, my)) {
                 ctx.setCursor(StandardCursors.RESIZE_ALL);
             }
-            String tip = resizing ? "размер " + Math.round(c.hudScale * 100) + "%"
-                    : "тяни — двигать · тяни за край — размер " + Math.round(c.hudScale * 100) + "% · ПКМ — сброс";
-            Font tf = resizing ? Font.S9 : Font.M6;
-            float tw = R2D.width(tip, tf);
-            float th2 = resizing ? 14 : 10;
-            float tipX = Math.max(7, Math.min(x + W / 2f - tw / 2f, screenW / k - tw - 7));
-            float tipY = y + shownH + 6 + th2 / 2f;
-            if ((tipY + th2) * k > screenH) tipY = y - 6 - th2 / 2f;
-            R2D.roundRect(tipX - 6, tipY - th2 / 2f, tw + 12, th2, th2 / 2f, 0xC0000000);
-            R2D.textMid(tip, tf, tipX, tipY, 0xFFFFFFFF);
         }
         R2D.alpha = 1f;
         R2D.unit(gs);
