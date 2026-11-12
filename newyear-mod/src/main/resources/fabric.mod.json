@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "dexnewyear",
+  "version": "${version}",
+  "name": "1DEX1 New Year",
+  "description": "Новогодняя атмосфера: снегопад, снег и сугробы на интерфейсе, шапки Санты, гирлянды, зимний фильтр, пар изо рта, звёздное небо.",
+  "authors": [
+    "1DEX1"
+  ],
+  "license": "MIT",
+  "icon": "assets/dexnewyear/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "ru.onedex.newyear.NewYearClient"
+    ]
+  },
+  "mixins": [
+    "dexnewyear.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.17.3",
+    "minecraft": "~1.21.11",
+    "java": ">=21"
+  }
+}
