@@ -46,7 +46,7 @@ public final class SnowCover {
     /** y of the block that carries the snow */
     private static final int[] support = new int[N * N];
     /** Columns whose ground differs by at most this many eighths count as one surface. */
-    private static final int SAME = 2;
+    private static final int SAME = 4;
 
     private static boolean same(int a, int b) {
         return a != Integer.MIN_VALUE && b != Integer.MIN_VALUE && Math.abs(a - b) <= SAME;
@@ -55,6 +55,12 @@ public final class SnowCover {
     private static ClientWorld builtFor;
     private static int builtSize = -1;
     private static boolean built;
+    private static volatile boolean dirty;
+
+    /** A block near the player changed: rebuild snow, icicles and decorations on the next tick. */
+    public static void markDirty() {
+        dirty = true;
+    }
 
     private static int idx(int i, int j) {
         return i * N + j;
@@ -64,7 +70,9 @@ public final class SnowCover {
 
     public static void tick(MinecraftClient mc) {
         NyConfig c = NyConfig.INSTANCE;
-        if (!c.snowCover || mc.world == null || mc.player == null) {
+        boolean needed = c.snowCover || c.icicles || c.treeDecor || c.iceOnWater;
+        if (!needed || mc.world == null || mc.player == null) {
+            if (built) WinterDecor.clear();
             built = false;
             return;
         }
@@ -72,7 +80,9 @@ public final class SnowCover {
         long t = mc.world.getTime();
         boolean moved = Math.abs(px - centerX) >= 4 || Math.abs(pz - centerZ) >= 4;
         int sizeKey = c.driftSize + (c.snowOnRoofs ? 10 : 0);
-        if (mc.world != builtFor || builtSize != sizeKey || moved || t - lastBuild >= 40 || t < lastBuild) {
+        boolean dirtyNow = dirty && t - lastBuild >= 3;
+        if (dirtyNow || mc.world != builtFor || builtSize != sizeKey || moved || t - lastBuild >= 40 || t < lastBuild) {
+            dirty = false;
             build(mc.world, px, pz, c);
             lastBuild = t;
             builtFor = mc.world;
@@ -145,13 +155,28 @@ public final class SnowCover {
             case 2 -> 1.6f;
             default -> 1.0f;
         };
+        float[] cap = new float[N * N];
+        int[][] n8 = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {1, -1}, {-1, 1}, {-1, -1}};
         for (int i = 0; i < N; i++) {
             for (int j = 0; j < N; j++) {
                 int k = idx(i, j);
                 if (base[k] == Integer.MIN_VALUE) continue;
                 int x = cx + i - R, z = cz + j - R;
+                float edge = (float) Math.sqrt((i - R) * (i - R) + (j - R) * (j - R)) / R;
+                if (edge > 1f) continue;
                 float d = 0.07f + 0.09f * fbm(x * 0.11f, z * 0.11f);
-                // drift piled against higher neighbours (walls, houses, hills)
+                // neighbourhood: is it flat, is there a higher step / a drop right next to it?
+                boolean flat = true;
+                float minRise = Float.MAX_VALUE;
+                for (int[] o : n8) {
+                    int ii = i + o[0], jj = j + o[1];
+                    if (ii < 0 || jj < 0 || ii >= N || jj >= N) continue;
+                    int nb = base[idx(ii, jj)];
+                    if (same(nb, base[k])) continue;
+                    flat = false;
+                    if (nb != Integer.MIN_VALUE && nb > base[k]) minRise = Math.min(minRise, (nb - base[k]) / 8f);
+                }
+                // drift piled against higher neighbours (steps, walls, houses, trunks)
                 float drift = 0;
                 for (int di = -3; di <= 3; di++) {
                     for (int dj = -3; dj <= 3; dj++) {
@@ -159,7 +184,8 @@ public final class SnowCover {
                         int ii = i + di, jj = j + dj;
                         if (ii < 0 || jj < 0 || ii >= N || jj >= N) continue;
                         int nb = base[idx(ii, jj)];
-                        float wall = (nb == Integer.MIN_VALUE ? wallAt(world, x + di, z + dj, (int) Math.floor(base[k] / 8f)) : (nb - base[k]) / 8f);
+                        float wall = (nb == Integer.MIN_VALUE ? wallAt(world, x + di, z + dj, (int) Math.floor(base[k] / 8f))
+                                : (nb - base[k] > SAME ? (nb - base[k]) / 8f : 0));
                         if (wall <= 0) continue;
                         float dist = (float) Math.sqrt(di * di + dj * dj);
                         if (dist > 3.2f) continue;
@@ -168,38 +194,61 @@ public final class SnowCover {
                     }
                 }
                 drift *= 0.75f + 0.5f * fbm(x * 0.23f + 17, z * 0.23f + 5);
-                // free-standing mounds
-                float m = fbm(x * 0.055f + 41, z * 0.055f + 93);
-                float mound = (float) Math.pow(Math.max(0, m - 0.48f) / 0.52f, 1.3) * 1.7f;
+                // free-standing mounds only on flat ground
+                float mound = 0;
+                if (flat) {
+                    float m = fbm(x * 0.055f + 41, z * 0.055f + 93);
+                    mound = (float) Math.pow(Math.max(0, m - 0.48f) / 0.52f, 1.3) * 1.7f;
+                }
                 float h = kind[k] == 0 ? (d + Math.max(drift, mound)) * size
                         : kind[k] == 1 ? (d + drift * 0.45f) * Math.min(1.2f, size) // roofs: no mounds
                         : 0.1f + 0.12f * fbm(x * 0.3f, z * 0.3f);                  // snow caps on trees
-                // fade the thickness towards the edge of the area
-                float edge = (float) Math.sqrt((i - R) * (i - R) + (j - R) * (j - R)) / R;
-                if (edge > 1f) {
-                    base[k] = Integer.MIN_VALUE;
-                    continue;
-                }
+                // snow never rises above the next step up (no snow "pillars" on slopes)
+                float lim = 2.2f;
+                if (minRise != Float.MAX_VALUE) lim = Math.min(lim, Math.max(0.12f, minRise * 0.88f));
+                if (kind[k] == 2) lim = Math.min(lim, 0.25f);
                 if (edge > 0.75f) h = Math.max(0.05f, h * (1f - (edge - 0.75f) / 0.25f));
-                depth[k] = Math.min(2.2f, Math.max(0.05f, h));
+                cap[k] = lim;
+                depth[k] = Math.min(lim, Math.max(0.05f, h));
             }
         }
-        // 3) soften: average with neighbours on the same level (rounder drifts)
-        float[] tmp = depth.clone();
-        for (int i = 1; i < N - 1; i++) {
-            for (int j = 1; j < N - 1; j++) {
+        for (int i = 0; i < N; i++) {
+            for (int j = 0; j < N; j++) {
+                float edge = (float) Math.sqrt((i - R) * (i - R) + (j - R) * (j - R)) / R;
+                if (edge > 1f) base[idx(i, j)] = Integer.MIN_VALUE;
+            }
+        }
+        // 3) soften: average with neighbours on the same surface (rounder drifts), keep the caps
+        for (int pass = 0; pass < 2; pass++) {
+            float[] tmp = depth.clone();
+            for (int i = 1; i < N - 1; i++) {
+                for (int j = 1; j < N - 1; j++) {
+                    int k = idx(i, j);
+                    if (base[k] == Integer.MIN_VALUE) continue;
+                    float sum = tmp[k] * 3, w = 3;
+                    for (int q = 0; q < 4; q++) {
+                        int kk = idx(i + n8[q][0], j + n8[q][1]);
+                        if (same(base[kk], base[k])) {
+                            sum += tmp[kk] + (base[kk] - base[k]) / 8f;
+                            w++;
+                        }
+                    }
+                    depth[k] = Math.min(cap[k], Math.max(0.05f, sum / w));
+                }
+            }
+        }
+        // 4) neighbours of nearly the same height (e.g. different vanilla snow layers) form one
+        //    continuous surface: the lower one is filled up so no ground shows through
+        for (int i = 0; i < N; i++) {
+            for (int j = 0; j < N; j++) {
                 int k = idx(i, j);
                 if (base[k] == Integer.MIN_VALUE) continue;
-                float sum = tmp[k] * 3, w = 3;
-                int[][] nb = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
-                for (int[] o : nb) {
-                    int kk = idx(i + o[0], j + o[1]);
-                    if (same(base[kk], base[k])) {
-                        sum += tmp[kk] + (base[kk] - base[k]) / 8f;
-                        w++;
-                    }
+                for (int[] o : n8) {
+                    int ii = i + o[0], jj = j + o[1];
+                    if (ii < 0 || jj < 0 || ii >= N || jj >= N) continue;
+                    int nb = base[idx(ii, jj)];
+                    if (same(nb, base[k]) && nb > base[k]) depth[k] = Math.max(depth[k], (nb - base[k]) / 8f + 0.06f);
                 }
-                depth[k] = sum / w;
             }
         }
         built = true;
@@ -311,7 +360,10 @@ public final class SnowCover {
         h[7] = (c01 + c11) / 2f;
         h[3] = (c00 + c01) / 2f;
         h[5] = (c10 + c11) / 2f;
-        h[4] = (c00 + c10 + c01 + c11) / 8f + mid / 2f;
+        boolean open = c00 <= 0.1401f || c10 <= 0.1401f || c01 <= 0.1401f || c11 <= 0.1401f;
+        float avgC = (c00 + c10 + c01 + c11) / 4f;
+        // columns at an edge stay flat (no little "tents" along the edge of a step)
+        h[4] = open ? (h[1] + h[3] + h[5] + h[7]) / 4f : avgC * 0.5f + Math.max(avgC, Math.min(mid, avgC + 0.35f)) * 0.5f;
     }
 
     /** Exact absolute y of the snow surface at a point (matches the rendered mesh), or NaN. */
@@ -395,7 +447,8 @@ public final class SnowCover {
             }
         }
         float avg = sum / Math.max(1, n);
-        return Math.max(0.04f, open ? avg * 0.7f : avg);
+        // corners at a drop or where the snow ends stay low: rounded edges instead of snow walls
+        return Math.max(0.04f, open ? Math.min(avg, 0.14f) : avg);
     }
 
     private static void side(VertexConsumer vc, MatrixStack.Entry e, Sprite sp, int i, int j, int di, int dj,

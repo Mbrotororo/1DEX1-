@@ -81,6 +81,11 @@ public final class ScreenSnow {
 
     private static final class Deer {
         float x, dir, t, y;
+        /** Height above the ground while jumping (negative = up) and vertical speed. */
+        float jump, vy;
+        /** Speed multiplier after being clicked (runs away fast). */
+        float speed = 1;
+        boolean scared;
     }
 
     private static Deer deer;
@@ -112,7 +117,7 @@ public final class ScreenSnow {
     /** Registers an interface element whose top edge can collect snow this frame. */
     public static void surface(String key, float x, float top, float w) {
         NyConfig c = NyConfig.INSTANCE;
-        if (!c.screenSnow || !c.snowDrifts || w < 12) return;
+        if (w < 12) return;
         Drift d = drift(key, x, top, w);
         if (!frame.contains(d)) frame.add(d);
     }
@@ -150,10 +155,6 @@ public final class ScreenSnow {
         long now = System.nanoTime();
         float dt = Math.min(0.05f, (now - lastNanos) / 1e9f);
         lastNanos = now;
-        if (!c.screenSnow) {
-            frame.clear();
-            return;
-        }
         R2D.begin(ctx);
         screenW = ctx.getScaledWindowWidth();
         screenH = ctx.getScaledWindowHeight();
@@ -236,7 +237,7 @@ public final class ScreenSnow {
     private static float gust;
 
     private static void stepFlakes(float dt, NyConfig c) {
-        int target = Math.min(360, Math.round(c.screenSnowAmount * screenW * screenH / 900f * ru.onedex.newyear.music.MusicFx.snowAmount()));
+        int target = Math.min(360, Math.round(0.6f * screenW * screenH / 900f * ru.onedex.newyear.music.MusicFx.snowAmount()));
         float speed = ru.onedex.newyear.music.MusicFx.snowSpeed();
         long b = ru.onedex.newyear.music.MusicPlayer.beats();
         if (b != lastBeats) {
@@ -260,7 +261,7 @@ public final class ScreenSnow {
             if (f.x < -6) f.x += screenW + 8;
             if (f.x > screenW + 4) f.x -= screenW + 8;
             boolean landed = false;
-            if (c.snowDrifts) {
+            if (true) {
                 for (Drift d : frame) {
                     if (d.ground || f.x < d.x || f.x >= d.x + d.w) continue;
                     float surf = d.top - heightAt(d, f.x);
@@ -399,6 +400,18 @@ public final class ScreenSnow {
         if (ru.onedex.newyear.NewYearClient.DEV) ru.onedex.newyear.NewYearClient.LOGGER.info(String.format("[dev] click %.1f,%.1f interactive=%s", mx, my, interactive));
         if (!interactive || button != 0) return false;
         float x = (float) mx, y = (float) my;
+        if (deer != null) {
+            float dh = 38, dw = dh * DEER_W / DEER_H;
+            if (x >= deer.x - dw / 2f && x <= deer.x + dw / 2f && y >= deer.y - dh + deer.jump && y <= deer.y + 2 + deer.jump) {
+                if (deer.jump >= 0 && deer.vy == 0) {
+                    deer.vy = -120;     // hop
+                    deer.jump = -0.01f;
+                }
+                deer.scared = true;     // ...and dash away
+                for (int i = 0; i < 14; i++) puff(deer.x, deer.y - 2, 70);
+                return true;
+            }
+        }
         for (int i = balls.size() - 1; i >= 0; i--) {
             Ball b = balls.get(i);
             if (dist2(b.x, b.y, x, y) <= (b.r + 2) * (b.r + 2)) {
@@ -776,8 +789,18 @@ public final class ScreenSnow {
             }
             return;
         }
-        deer.t += dt;
-        deer.x += deer.dir * 62 * dt;
+        deer.t += dt * (deer.scared ? 2.2f : 1f);
+        if (deer.scared) deer.speed += (4.2f - deer.speed) * (1 - (float) Math.exp(-dt * 3));
+        deer.x += deer.dir * 62 * deer.speed * dt;
+        if (deer.jump < 0 || deer.vy != 0) {
+            deer.vy += GRAVITY * 1.3f * dt;
+            deer.jump += deer.vy * dt;
+            if (deer.jump >= 0) {
+                deer.jump = 0;
+                deer.vy = 0;
+                for (int i = 0; i < 10; i++) puff(deer.x, deer.y - 1, 45);
+            }
+        }
         Drift g = drifts.get("ground");
         float ground = g != null ? surfaceY(g, Math.max(0, Math.min(screenW - 1, deer.x))) : screenH;
         deer.y = ground;
@@ -800,10 +823,10 @@ public final class ScreenSnow {
 
     private static void drawDeer(Deer d) {
         float h = 38, w = h * DEER_W / DEER_H;
-        int frame = (int) (d.t * 11) % 4;
+        int frame = d.jump < -0.5f ? 0 : (int) (d.t * 11) % 4; // stretched pose in the air
         float bob = (float) Math.abs(Math.sin(d.t * 11 * Math.PI / 2)) * 0.8f;
         // hooves are at ~90% of the frame height
-        float top = d.y - h * 0.9f - bob + 1.2f;
+        float top = d.y - h * 0.9f - bob + 1.2f + d.jump;
         // soft shadow on the snow
         for (int i = 0; i < 3; i++) R2D.circle(d.x - d.dir * w * (0.12f - i * 0.1f), d.y - 0.3f, w * 0.14f, 0x18203040);
         R2D.sprite(DEER, d.x - w / 2f, top, w, h, frame * DEER_W, 0, DEER_W, DEER_H, d.dir < 0, 0xFFFFFFFF);

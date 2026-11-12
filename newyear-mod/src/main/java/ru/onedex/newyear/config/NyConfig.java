@@ -15,10 +15,11 @@ public class NyConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Path FILE = FabricLoader.getInstance().getConfigDir().resolve("1dex1-newyear.json");
 
+    /** A fresh install starts with every function switched off; the player turns on what they like. */
     public static NyConfig INSTANCE = new NyConfig();
 
     // ---------- Снегопад в мире ----------
-    public boolean snowfall = true;
+    public boolean snowfall = false;
     /** 1 (light) .. 10 (blizzard) */
     public int snowStrength = 5;
     /** 0 = мелкие, 1 = разные, 2 = крупные */
@@ -26,7 +27,7 @@ public class NyConfig {
     public boolean wind = true;
 
     // ---------- Сугробы в мире ----------
-    public boolean snowCover = true;
+    public boolean snowCover = false;
     /** 0 = небольшие, 1 = средние, 2 = огромные */
     public int driftSize = 1;
     public boolean snowSteps = true;
@@ -35,11 +36,11 @@ public class NyConfig {
 
     /** Snow also lies on roofs (slabs, stairs) and on top of trees. */
     public boolean snowOnRoofs = true;
-    public boolean footprints = true;
-    public boolean icicles = true;
-    public boolean iceOnWater = true;
-    public boolean playerSnow = true;
-    public boolean treeDecor = true;
+    public boolean footprints = false;
+    public boolean icicles = false;
+    public boolean iceOnWater = false;
+    public boolean playerSnow = false;
+    public boolean treeDecor = false;
 
     // ---------- Музыка ----------
     public boolean music = false;
@@ -47,44 +48,37 @@ public class NyConfig {
     /** 0 = по списку, 1 = повтор песни, 2 = случайно */
     public int musicOrder = 0;
     public int lastSong = 0;
-    public boolean fxBeatSnow = true;
-    public boolean fxSpeedSnow = true;
-    public boolean fxGarlands = true;
+    public boolean fxBeatSnow = false;
+    public boolean fxSpeedSnow = false;
+    public boolean fxGarlands = false;
 
-    // ---------- Снег на экране ----------
-    public boolean screenSnow = true;
-    /** 0.1 .. 1.0 */
-    public float screenSnowAmount = 0.5f;
-    /** Snow piles up on top of the chat, hotbar, buttons and menus. */
-    public boolean snowDrifts = true;
-    /** Also show screen snow during gameplay (not only in menus). */
-    public boolean screenSnowInGame = true;
+    // ---------- Главное меню (снег на экране там всегда) ----------
     /** Click the snow to make snowballs / a snowman, swipe to scatter. */
-    public boolean snowPlay = true;
-    public boolean rudolph = true;
+    public boolean snowPlay = false;
+    public boolean rudolph = false;
 
     // ---------- Шапки ----------
-    public boolean hats = true;
+    public boolean hats = false;
     public boolean hatOnMe = true;
     public boolean hatOnOthers = true;
 
     // ---------- Гирлянды ----------
-    public boolean garlands = true;
+    public boolean garlands = false;
     /** 0 = медленно, 1 = быстро */
     public int garlandSpeed = 0;
 
     // ---------- Зимний фильтр ----------
-    public boolean winterFilter = true;
+    public boolean winterFilter = false;
     public boolean snowyGrass = true;
     public boolean frostEdges = true;
     /** 0 .. 1 */
     public float coldTint = 0.35f;
 
     // ---------- Пар изо рта ----------
-    public boolean breath = true;
+    public boolean breath = false;
 
     // ---------- Звёздное небо ----------
-    public boolean starrySky = true;
+    public boolean starrySky = false;
     /** 0 .. 1 */
     public float starBoost = 0.7f;
 
@@ -94,7 +88,7 @@ public class NyConfig {
     public boolean glass = true;
     public boolean menuGarland = true;
     /** New Year picture as the main menu background (over any resource pack). */
-    public boolean titleBackground = true;
+    public boolean titleBackground = false;
     /** Accent color in HSV (festive red by default). */
     public float accentHue = 0.0f;
     public float accentSat = 0.78f;
@@ -134,7 +128,6 @@ public class NyConfig {
         musicOrder = Math.max(0, Math.min(2, musicOrder));
         lastSong = Math.max(0, lastSong);
         flakeSize = Math.max(0, Math.min(2, flakeSize));
-        screenSnowAmount = clamp(screenSnowAmount, 0.1f, 1f);
         garlandSpeed = Math.max(0, Math.min(1, garlandSpeed));
         coldTint = clamp(coldTint, 0f, 1f);
         starBoost = clamp(starBoost, 0f, 1f);

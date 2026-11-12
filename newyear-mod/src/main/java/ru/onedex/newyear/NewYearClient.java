@@ -87,18 +87,12 @@ public class NewYearClient implements ClientModInitializer {
 
         // winter filter under the HUD, screen snow on top of it
         HudElementRegistry.attachElementBefore(VanillaHudElements.MISC_OVERLAYS, Identifier.of(MOD_ID, "winter_filter"), WinterFilter::renderOverlay);
-        HudElementRegistry.addLast(Identifier.of(MOD_ID, "screen_snow"), (ctx, counter) -> {
-            MinecraftClient mc = MinecraftClient.getInstance();
-            NyConfig c = NyConfig.INSTANCE;
-            if (mc.currentScreen != null || mc.options.hudHidden || !c.screenSnow || !c.screenSnowInGame) return;
-            SnowSurfaces.hud(mc, ctx.getScaledWindowWidth(), ctx.getScaledWindowHeight());
-            ScreenSnow.render(ctx, false);
-        });
 
         // every menu: snow on top, drifts on its buttons / windows
         ScreenEvents.AFTER_INIT.register((client, screen, w, h) -> {
             ScreenEvents.afterRender(screen).register((scr, ctx, mx, my, delta) -> {
-                if (!NyConfig.INSTANCE.screenSnow) return;
+                // screen snow is built into the main menu only (never over a world)
+                if (MinecraftClient.getInstance().world != null) return;
                 SnowSurfaces.screen(MinecraftClient.getInstance(), scr);
                 ScreenSnow.render(ctx, true);
             });
@@ -109,7 +103,7 @@ public class NewYearClient implements ClientModInitializer {
                 });
             }
             // snowballs / snowman / scattering with the mouse
-            ScreenMouseEvents.allowMouseClick(screen).register((s, click) -> !ScreenSnow.onClick(click.x(), click.y(), click.button()));
+            ScreenMouseEvents.allowMouseClick(screen).register((s, click) -> client.world != null || !ScreenSnow.onClick(click.x(), click.y(), click.button()));
             ScreenMouseEvents.allowMouseDrag(screen).register((s, click, dx, dy) -> !ScreenSnow.onDrag());
             ScreenMouseEvents.allowMouseRelease(screen).register((s, click) -> !ScreenSnow.onRelease());
         });

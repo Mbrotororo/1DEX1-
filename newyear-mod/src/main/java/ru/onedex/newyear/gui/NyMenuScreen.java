@@ -47,7 +47,6 @@ public class NyMenuScreen extends Screen {
                 new Module("cover", "Сугробы", () -> c().snowCover, () -> c().snowCover = !c().snowCover, NyMenuScreen::pageCover),
                 new Module("prints", "Следы на снегу", () -> c().footprints, () -> c().footprints = !c().footprints, null),
                 new Module("psnow", "Снег на игроках", () -> c().playerSnow, () -> c().playerSnow = !c().playerSnow, null),
-                new Module("screen", "Снег на экране", () -> c().screenSnow, () -> c().screenSnow = !c().screenSnow, NyMenuScreen::pageScreen),
                 new Module("play", "Снежки и снеговик", () -> c().snowPlay, () -> c().snowPlay = !c().snowPlay, null),
                 new Module("rudolph", "Рудольф", () -> c().rudolph, () -> c().rudolph = !c().rudolph, null))));
         COLUMNS.add(new Column("Зима", List.of(
@@ -377,14 +376,15 @@ public class NyMenuScreen extends Screen {
         if (hv > 0.01f) R2D.roundRect(x, y, w, ROW_H, 7, R2D.withAlpha(th.hover(), hv));
         int textCol = toggleable ? R2D.lerpColor(th.sub(), th.text(), Math.max(onT, hv * 0.6f)) : th.text();
         R2D.textMid(R2D.fit(m.name, Font.M8, w - 34), Font.M8, x + 6, y + ROW_H / 2f, textCol);
-        if (onT > 0.01f) {
-            float a = R2D.alpha;
-            R2D.alpha = a * onT;
+        if (toggleable) {
+            // always visible: grey with a shadow when off, accent color when on
             float tw = 20, tht = 11;
             float tx = x + w - tw - 5, tcy = y + ROW_H / 2f;
-            R2D.roundRect(tx, tcy - tht / 2f, tw, tht, tht / 2f, accent);
-            R2D.circle(tx + tw - 5.5f, tcy, 3.9f, th.knob());
-            R2D.alpha = a;
+            R2D.roundRect(tx, tcy - tht / 2f + 0.8f, tw, tht, tht / 2f, R2D.withAlpha(0xFF000000, 0.28f * (1 - onT)));
+            R2D.roundRect(tx, tcy - tht / 2f, tw, tht, tht / 2f, R2D.lerpColor(th.control(), accent, onT));
+            float kx = tx + 5.5f + onT * 9;
+            R2D.circle(kx, tcy + 0.9f, 4.3f, R2D.withAlpha(0xFF000000, 0.22f + 0.12f * (1 - onT)));
+            R2D.circle(kx, tcy, 3.9f, R2D.lerpColor(0xFFB9BEC7, th.knob(), onT));
         } else if (!toggleable) {
             R2D.textMidRight(open > 0.5f ? "–" : "+", Font.M8, x + w - 7, y + ROW_H / 2f, th.sub());
         }
@@ -459,16 +459,6 @@ public class NyMenuScreen extends Screen {
         y = m.toggleRow(th, "c_roof", "Крыши и деревья", c.snowOnRoofs, () -> c.snowOnRoofs = !c.snowOnRoofs, x, y, w);
         y = m.toggleRow(th, "c_step", "Звук шагов", c.snowSteps, () -> c.snowSteps = !c.snowSteps, x, y, w);
         y = m.slider(th, "c_vol", "Громкость", Math.round(c.stepVolume * 100) + "%", x, y, w, c.stepVolume, v -> c.stepVolume = (float) v, mx, my);
-        return y - y0 + 4;
-    }
-
-    private static float pageScreen(NyMenuScreen m, Theme th, float x, float y, float w, int mx, int my) {
-        NyConfig c = c();
-        float y0 = y;
-        y = m.slider(th, "ss_amt", "Количество", Math.round(c.screenSnowAmount * 100) + "%", x, y, w, (c.screenSnowAmount - 0.1f) / 0.9f,
-                v -> c.screenSnowAmount = (float) (0.1 + v * 0.9), mx, my);
-        y = m.toggleRow(th, "ss_drift", "Сугробы", c.snowDrifts, () -> c.snowDrifts = !c.snowDrifts, x, y, w);
-        y = m.toggleRow(th, "ss_game", "Поверх игры", c.screenSnowInGame, () -> c.screenSnowInGame = !c.screenSnowInGame, x, y, w);
         return y - y0 + 4;
     }
 

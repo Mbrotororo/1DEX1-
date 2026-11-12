@@ -87,6 +87,12 @@ public final class WinterDecor {
 
     // ------------------------------------------------------------------ rebuild (with the snow cover)
 
+    public static void clear() {
+        icicles = new ArrayList<>();
+        ice = new ArrayList<>();
+        ornaments = new ArrayList<>();
+    }
+
     public static void rebuild(ClientWorld w, NyConfig c) {
         if (w != world) {
             prints.clear();

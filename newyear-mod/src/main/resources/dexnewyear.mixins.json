@@ -12,7 +12,8 @@
     "HandledScreenAccessor",
     "EntityStepMixin",
     "ScreenBackgroundMixin",
-    "MusicTrackerMixin"
+    "MusicTrackerMixin",
+    "ClientWorldMixin"
   ],
   "injectors": {
     "defaultRequire": 1
