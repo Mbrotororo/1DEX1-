@@ -61,7 +61,7 @@ public final class Brain {
     }
 
     public void save() {
-        if (dirty && cfg().saveProfiles) store.save();
+        if (dirty) store.save();
         dirty = false;
     }
 
@@ -138,8 +138,10 @@ public final class Brain {
         return t;
     }
 
+    /** Profile kept in memory only; it is written to the store once the player takes part in a fight. */
     private Profile profile(PlayerEntity p) {
-        Profile pr = store.profiles.computeIfAbsent(p.getUuid().toString(), k -> new Profile());
+        Profile pr = store.profiles.get(p.getUuid().toString());
+        if (pr == null) pr = new Profile();
         pr.name = p.getGameProfile().name();
         pr.lastSeen = System.currentTimeMillis();
         return pr;
@@ -383,7 +385,6 @@ public final class Brain {
                     dev("ANALYSIS DONE " + s.enemyName + " p=" + pct(s.live.p));
                     s.done = true;
                     s.result = s.live;
-                    announce(mc, s);
                 } else if (s.done && refresh && en != null) {
                     s.result = s.live;
                 }
@@ -402,7 +403,6 @@ public final class Brain {
             s.result = compute(s, mc, enemyEntity(mc, s));
             s.done = true;
             s.partial = true;
-            announce(mc, s);
         }
     }
 
@@ -446,7 +446,6 @@ public final class Brain {
             s.result = compute(s, mc, enemyEntity(mc, s));
             s.done = true;
             s.partial = true;
-            announce(mc, s);
         }
         dev("outcome win=" + win + " vs " + s.enemyName);
         s.outcomeWin = win;
@@ -466,13 +465,6 @@ public final class Brain {
             if ((r.p >= 0.5) == win) store.correct++;
         }
         dirty = true;
-        if (cfg().displayMode == 2 && r != null) {
-            boolean right = (r.p >= 0.5) == win;
-            chat(mc, Text.literal(win ? "Победа над " : "Поражение от ").withColor(0xFFE8EAF0)
-                    .append(Text.literal(s.enemyName).withColor(0xFFFFFFFF))
-                    .append(Text.literal(" · прогноз был " + pct(r.p) + " ").withColor(0xFF9AA0AA))
-                    .append(Text.literal(right ? "✔ сбылся" : "✘ не сбылся").withColor(right ? GREEN : RED)));
-        }
         save();
     }
 
@@ -531,6 +523,9 @@ public final class Brain {
         float expected = melee ? Gear.expectedMelee(attacker, victim, attacker != mc.player && ta.hasStrength() ? 3f : 0f) : 3f;
         PlayerTracker.PendingHit h = new PlayerTracker.PendingHit(attacker.getId(), tick, melee, expected);
 
+        // memory starts recording a player once damage is exchanged
+        store.profiles.putIfAbsent(ta.uuid.toString(), ta.profile);
+        store.profiles.putIfAbsent(tv.uuid.toString(), tv.profile);
         tv.hitsReceivedTotal++;
         ta.lastTargetId = victim.getId();
         ta.lastTargetTick = tick;
@@ -697,21 +692,6 @@ public final class Brain {
         return (seconds / 60) + ":" + String.format("%02d", seconds % 60);
     }
 
-    private void announce(MinecraftClient mc, FightSession s) {
-        if (s.announced || s.result == null) return;
-        s.announced = true;
-        if (cfg().displayMode != 2) return;
-        WinModel.Result r = s.result;
-        int col = color(r.p);
-        chat(mc, Text.literal("Шанс победить ").withColor(0xFFE8EAF0)
-                .append(Text.literal(s.enemyName).withColor(0xFFFFFFFF))
-                .append(Text.literal(": ").withColor(0xFFE8EAF0))
-                .append(Text.literal(pct(r.p) + " ●").withColor(col))
-                .append(Text.literal("  (точность анализа " + Math.round(r.confidence * 100) + "%" + (s.partial ? ", бой был коротким" : "") + ")").withColor(0xFF9AA0AA)));
-        chat(mc, Text.literal(String.format("  урон/с %.1f vs %.1f · попадания %d vs %d · криты %s vs %s · аим %s vs %s",
-                r.dpsMe, r.dpsEnemy, r.hitsMe, r.hitsEnemy, pctOrDash(r.critMe), pctOrDash(r.critEnemy), degOrDash(r.aimMe), degOrDash(r.aimEnemy))).withColor(0xFFB8BEC8));
-    }
-
     public static String pctOrDash(double v) {
         return v < 0 ? "—" : Math.round(v * 100) + "%";
     }
@@ -720,8 +700,4 @@ public final class Brain {
         return v < 0 ? "—" : String.format("%.1f°", v);
     }
 
-    private static void chat(MinecraftClient mc, Text body) {
-        MutableText prefix = Text.literal("1DEX1 AI ").withColor(cfg().accentColor()).append(Text.literal("» ").withColor(0xFF6B7280));
-        mc.inGameHud.getChatHud().addMessage(prefix.append(body));
-    }
 }

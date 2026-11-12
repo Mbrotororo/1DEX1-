@@ -2,48 +2,78 @@ package ru.onedex.pvpai.gui;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
+import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.texture.NativeImage;
+import net.minecraft.client.texture.NativeImageBackedTexture;
 import net.minecraft.text.Style;
 import net.minecraft.text.StyleSpriteSource;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 
+import java.util.HashMap;
+import java.util.Map;
+
 /**
- * Small 2D toolkit: anti-aliased rounded rectangles, circles and lines drawn at real
- * screen-pixel resolution, plus crisp TrueType text (Inter) instead of the Minecraft font.
+ * Lightweight 2D toolkit.
+ *
+ * Every shape is drawn at real screen-pixel resolution from small cached anti-aliased textures,
+ * so a rounded rectangle costs ~7 draw elements instead of hundreds (keeps FPS high).
+ * Text uses Inter rasterized at the exact pixel size, so it is sharp at any scale.
+ *
+ * Coordinates are in "units"; {@link #k} pixels per unit (GUI scale, times HUD scale for the HUD).
  */
 public final class R2D {
     private R2D() {}
 
     private static DrawContext ctx;
-    private static int scale = 2;
-    /** Global opacity multiplier (used by open/close animation). */
+    private static int guiScale = 2;
+    /** Pixels per unit. */
+    private static float k = 2;
+    /** Global opacity multiplier (open/close animation). */
     public static float alpha = 1f;
+    /** Draw elements submitted (for performance checks). */
+    public static int elements;
 
     public enum Font {
-        M7("m7", 7), M8("m8", 8), S9("s9", 9), S11("s11", 11), B20("b20", 20);
+        M6('m', 6), M7('m', 7), M8('m', 8), S8('s', 8), S9('s', 9), S11('s', 11), B13('b', 13), B20('b', 20);
 
-        final String id;
+        final char weight;
         final float size;
 
-        Font(String id, float size) {
-            this.id = id;
+        Font(char weight, float size) {
+            this.weight = weight;
             this.size = size;
         }
     }
 
-    private static final Identifier[][] FONT_IDS = new Identifier[Font.values().length][7];
+    private static final Identifier[][] FONT_IDS = new Identifier[3][73];
 
     static {
-        for (Font f : Font.values()) {
-            for (int s = 1; s <= 6; s++) FONT_IDS[f.ordinal()][s] = Identifier.of("dexpvpai", f.id + "_" + s);
+        char[] w = {'m', 's', 'b'};
+        for (int i = 0; i < 3; i++) {
+            for (int n = 5; n <= 72; n++) FONT_IDS[i][n] = Identifier.of("dexpvpai", "px_" + w[i] + "_" + n);
         }
     }
 
     public static void begin(DrawContext context) {
         ctx = context;
-        scale = Math.max(1, MinecraftClient.getInstance().getWindow().getScaleFactor());
+        guiScale = Math.max(1, MinecraftClient.getInstance().getWindow().getScaleFactor());
+        k = guiScale;
         alpha = 1f;
+    }
+
+    /** Sets how many pixels one unit is (default: GUI scale). */
+    public static void unit(float pxPerUnit) {
+        k = Math.max(0.5f, pxPerUnit);
+    }
+
+    public static float unit() {
+        return k;
+    }
+
+    public static int guiScale() {
+        return guiScale;
     }
 
     public static DrawContext ctx() {
@@ -69,31 +99,86 @@ public final class R2D {
         return argb(Math.round(aa + (ba - aa) * t), Math.round(ar + (br - ar) * t), Math.round(ag + (bg - ag) * t), Math.round(ab + (bb - ab) * t));
     }
 
-    private static int mul(int color, float cov) {
-        return withAlpha(color, cov * alpha);
+    private static int mul(int color) {
+        return withAlpha(color, alpha);
     }
 
     // ------------------------------------------------------------------ pixel space
 
     private static void pushPx() {
         ctx.getMatrices().pushMatrix();
-        ctx.getMatrices().scale(1f / scale, 1f / scale);
+        ctx.getMatrices().scale(1f / guiScale, 1f / guiScale);
     }
 
     private static void popPx() {
         ctx.getMatrices().popMatrix();
     }
 
-    private static void px(int x1, int y1, int x2, int y2, int color, float cov) {
-        if (x2 <= x1 || y2 <= y1) return;
-        int c = mul(color, cov);
-        if ((c >>> 24) == 0) return;
-        ctx.fill(x1, y1, x2, y2, c);
+    private static int p(float units) {
+        return Math.round(units * k);
     }
+
+    private static void fillPx(int x1, int y1, int x2, int y2, int color) {
+        if (x2 <= x1 || y2 <= y1 || (color >>> 24) == 0) return;
+        ctx.fill(x1, y1, x2, y2, color);
+        elements++;
+    }
+
+    private static void texPx(Identifier id, int x, int y, int w, int h, int u, int v, int texW, int texH, int color) {
+        if (w <= 0 || h <= 0 || (color >>> 24) == 0) return;
+        ctx.drawTexture(RenderPipelines.GUI_TEXTURED, id, x, y, u, v, w, h, w, h, texW, texH, color);
+        elements++;
+    }
+
+    // ------------------------------------------------------------------ cached shape textures
+
+    private interface Coverage {
+        float at(int x, int y);
+    }
+
+    private static final Map<String, Identifier> TEXTURES = new HashMap<>();
+    private static int texCounter;
+
+    private static Identifier shapeTexture(String key, int w, int h, Coverage cov) {
+        Identifier id = TEXTURES.get(key);
+        if (id != null) return id;
+        NativeImage img = new NativeImage(w, h, false);
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int a = Math.round(clamp01(cov.at(x, y)) * 255);
+                img.setColorArgb(x, y, (a << 24) | 0xFFFFFF);
+            }
+        }
+        id = Identifier.of("dexpvpai", "dyn/" + (texCounter++));
+        final String name = "dexpvpai " + key;
+        MinecraftClient.getInstance().getTextureManager().registerTexture(id, new NativeImageBackedTexture(() -> name, img));
+        TEXTURES.put(key, id);
+        return id;
+    }
+
+    /** Filled disc of radius R pixels, texture size 2R x 2R. */
+    private static Identifier disc(int R) {
+        return shapeTexture("d" + R, 2 * R, 2 * R, (x, y) -> {
+            double d = Math.hypot(x + 0.5 - R, y + 0.5 - R);
+            return (float) (R - d + 0.5);
+        });
+    }
+
+    /** Ring of outer radius R and thickness T pixels. */
+    private static Identifier ring(int R, int T) {
+        return shapeTexture("r" + R + "_" + T, 2 * R, 2 * R, (x, y) -> {
+            double d = Math.hypot(x + 0.5 - R, y + 0.5 - R);
+            float outer = clamp01((float) (R - d + 0.5));
+            float inner = clamp01((float) (R - T - d + 0.5));
+            return outer - inner;
+        });
+    }
+
+    // ------------------------------------------------------------------ shapes
 
     public static void rect(float x, float y, float w, float h, int color) {
         pushPx();
-        px(Math.round(x * scale), Math.round(y * scale), Math.round((x + w) * scale), Math.round((y + h) * scale), color, 1f);
+        fillPx(p(x), p(y), p(x + w), p(y + h), mul(color));
         popPx();
     }
 
@@ -101,167 +186,234 @@ public final class R2D {
     public static void gradientV(float x, float y, float w, float h, int top, int bottom) {
         if (w <= 0 || h <= 0) return;
         pushPx();
-        ctx.fillGradient(Math.round(x * scale), Math.round(y * scale), Math.round((x + w) * scale), Math.round((y + h) * scale),
-                mul(top, 1f), mul(bottom, 1f));
+        ctx.fillGradient(p(x), p(y), p(x + w), p(y + h), mul(top), mul(bottom));
+        elements++;
         popPx();
     }
 
     /** Anti-aliased filled rounded rectangle. */
     public static void roundRect(float x, float y, float w, float h, float r, int color) {
         if (w <= 0 || h <= 0) return;
+        int c = mul(color);
+        if ((c >>> 24) == 0) return;
+        int x0 = p(x), y0 = p(y), x1 = p(x + w), y1 = p(y + h);
+        int R = Math.min(Math.round(r * k), Math.min(x1 - x0, y1 - y0) / 2);
         pushPx();
-        int x0 = Math.round(x * scale), y0 = Math.round(y * scale);
-        int x1 = Math.round((x + w) * scale), y1 = Math.round((y + h) * scale);
-        float R = Math.min(r * scale, Math.min(x1 - x0, y1 - y0) / 2f);
-        int rc = (int) Math.ceil(R);
-        if (rc <= 0) {
-            px(x0, y0, x1, y1, color, 1f);
-            popPx();
-            return;
-        }
-        px(x0, y0 + rc, x1, y1 - rc, color, 1f);
-        float cxL = x0 + R, cxR = x1 - R;
-        for (int j = 0; j < rc; j++) {
-            int pyTop = y0 + j;
-            int pyBot = y1 - 1 - j;
-            float cyTop = y0 + R;
-            float dy = Math.max(0, cyTop - (pyTop + 0.5f));
-            // left partial pixels until full coverage
-            int k = 0;
-            for (; k < rc; k++) {
-                float dx = Math.max(0, cxL - (x0 + k + 0.5f));
-                float cov = clamp01(R - (float) Math.sqrt(dx * dx + dy * dy) + 0.5f);
-                if (cov >= 0.999f) break;
-                if (cov > 0.002f) {
-                    px(x0 + k, pyTop, x0 + k + 1, pyTop + 1, color, cov);
-                    px(x1 - 1 - k, pyTop, x1 - k, pyTop + 1, color, cov);
-                    if (pyBot != pyTop) {
-                        px(x0 + k, pyBot, x0 + k + 1, pyBot + 1, color, cov);
-                        px(x1 - 1 - k, pyBot, x1 - k, pyBot + 1, color, cov);
-                    }
-                }
-            }
-            px(x0 + k, pyTop, x1 - k, pyTop + 1, color, 1f);
-            if (pyBot != pyTop) px(x0 + k, pyBot, x1 - k, pyBot + 1, color, 1f);
+        if (R <= 0) {
+            fillPx(x0, y0, x1, y1, c);
+        } else {
+            Identifier t = disc(R);
+            int s = 2 * R;
+            texPx(t, x0, y0, R, R, 0, 0, s, s, c);
+            texPx(t, x1 - R, y0, R, R, R, 0, s, s, c);
+            texPx(t, x0, y1 - R, R, R, 0, R, s, s, c);
+            texPx(t, x1 - R, y1 - R, R, R, R, R, s, s, c);
+            fillPx(x0 + R, y0, x1 - R, y0 + R, c);
+            fillPx(x0, y0 + R, x1, y1 - R, c);
+            fillPx(x0 + R, y1 - R, x1 - R, y1, c);
         }
         popPx();
     }
 
-    /** Anti-aliased rounded outline of the given thickness (in GUI units). */
+    /** Anti-aliased rounded outline; thickness is at least one pixel. */
     public static void roundOutline(float x, float y, float w, float h, float r, float thick, int color) {
         if (w <= 0 || h <= 0) return;
+        int c = mul(color);
+        if ((c >>> 24) == 0) return;
+        int x0 = p(x), y0 = p(y), x1 = p(x + w), y1 = p(y + h);
+        int T = Math.max(1, Math.round(thick * k));
+        int R = Math.max(T + 1, Math.min(Math.round(r * k), Math.min(x1 - x0, y1 - y0) / 2));
         pushPx();
-        int x0 = Math.round(x * scale), y0 = Math.round(y * scale);
-        int x1 = Math.round((x + w) * scale), y1 = Math.round((y + h) * scale);
-        int t = Math.max(1, Math.round(thick * scale));
-        float R = Math.min(r * scale, Math.min(x1 - x0, y1 - y0) / 2f);
-        float Ri = Math.max(0, R - t);
-        int rc = (int) Math.ceil(R);
-        int edge = Math.max(rc, t);
-        // straight parts
-        px(x0 + edge, y0, x1 - edge, y0 + t, color, 1f);
-        px(x0 + edge, y1 - t, x1 - edge, y1, color, 1f);
-        px(x0, y0 + edge, x0 + t, y1 - edge, color, 1f);
-        px(x1 - t, y0 + edge, x1, y1 - edge, color, 1f);
-        // corners
-        for (int j = 0; j < edge; j++) {
-            for (int i = 0; i < edge; i++) {
-                float dx = Math.max(0, x0 + R - (x0 + i + 0.5f));
-                float dy = Math.max(0, y0 + R - (y0 + j + 0.5f));
-                float d = (float) Math.sqrt(dx * dx + dy * dy);
-                float outer = clamp01(R - d + 0.5f);
-                float inner;
-                if (Ri > 0) inner = clamp01(Ri - d + 0.5f);
-                else inner = 0;
-                // inner rect boundary for pixels outside the arc zone
-                boolean insideInnerRect = i >= t && j >= t;
-                if (!insideInnerRect) inner = 0;
-                else if (dx == 0 && dy == 0) inner = 1;
-                float cov = outer - inner;
-                if (cov <= 0.002f) continue;
-                px(x0 + i, y0 + j, x0 + i + 1, y0 + j + 1, color, cov);
-                px(x1 - 1 - i, y0 + j, x1 - i, y0 + j + 1, color, cov);
-                px(x0 + i, y1 - 1 - j, x0 + i + 1, y1 - j, color, cov);
-                px(x1 - 1 - i, y1 - 1 - j, x1 - i, y1 - j, color, cov);
-            }
-        }
+        Identifier t = ring(R, T);
+        int s = 2 * R;
+        texPx(t, x0, y0, R, R, 0, 0, s, s, c);
+        texPx(t, x1 - R, y0, R, R, R, 0, s, s, c);
+        texPx(t, x0, y1 - R, R, R, 0, R, s, s, c);
+        texPx(t, x1 - R, y1 - R, R, R, R, R, s, s, c);
+        fillPx(x0 + R, y0, x1 - R, y0 + T, c);
+        fillPx(x0 + R, y1 - T, x1 - R, y1, c);
+        fillPx(x0, y0 + R, x0 + T, y1 - R, c);
+        fillPx(x1 - T, y0 + R, x1, y1 - R, c);
         popPx();
     }
 
     /** Anti-aliased filled circle. */
     public static void circle(float cx, float cy, float r, int color) {
+        int c = mul(color);
+        if ((c >>> 24) == 0) return;
+        int R = Math.max(1, Math.round(r * k));
         pushPx();
-        float CX = cx * scale, CY = cy * scale, Rr = r * scale;
-        int yA = (int) Math.floor(CY - Rr), yB = (int) Math.ceil(CY + Rr);
-        int xA = (int) Math.floor(CX - Rr), xB = (int) Math.ceil(CX + Rr);
-        for (int py = yA; py < yB; py++) {
-            int runStart = -1;
-            for (int pxl = xA; pxl <= xB; pxl++) {
-                float cov = pxl == xB ? 0 : clamp01(Rr - (float) Math.hypot(pxl + 0.5f - CX, py + 0.5f - CY) + 0.5f);
-                if (cov >= 0.999f) {
-                    if (runStart < 0) runStart = pxl;
-                    continue;
-                }
-                if (runStart >= 0) {
-                    px(runStart, py, pxl, py + 1, color, 1f);
-                    runStart = -1;
-                }
-                if (cov > 0.002f) px(pxl, py, pxl + 1, py + 1, color, cov);
-            }
-        }
+        texPx(disc(R), p(cx) - R, p(cy) - R, 2 * R, 2 * R, 0, 0, 2 * R, 2 * R, c);
         popPx();
     }
 
-    /** Anti-aliased line segment with round caps. */
-    public static void line(float ax, float ay, float bx, float by, float thick, int color) {
+    /** Anti-aliased circle outline. */
+    public static void ring(float cx, float cy, float r, float thick, int color) {
+        int c = mul(color);
+        if ((c >>> 24) == 0) return;
+        int R = Math.max(2, Math.round(r * k));
+        int T = Math.max(1, Math.round(thick * k));
         pushPx();
-        float AX = ax * scale, AY = ay * scale, BX = bx * scale, BY = by * scale, hw = thick * scale / 2f;
-        int xA = (int) Math.floor(Math.min(AX, BX) - hw - 1), xB = (int) Math.ceil(Math.max(AX, BX) + hw + 1);
-        int yA = (int) Math.floor(Math.min(AY, BY) - hw - 1), yB = (int) Math.ceil(Math.max(AY, BY) + hw + 1);
-        float vx = BX - AX, vy = BY - AY;
-        float len2 = vx * vx + vy * vy;
-        for (int py = yA; py < yB; py++) {
-            for (int pxl = xA; pxl < xB; pxl++) {
-                float qx = pxl + 0.5f - AX, qy = py + 0.5f - AY;
-                float t = len2 == 0 ? 0 : clamp01((qx * vx + qy * vy) / len2);
-                float dx = qx - vx * t, dy = qy - vy * t;
-                float cov = clamp01(hw - (float) Math.sqrt(dx * dx + dy * dy) + 0.5f);
-                if (cov > 0.002f) px(pxl, py, pxl + 1, py + 1, color, cov);
-            }
-        }
+        texPx(ring(R, T), p(cx) - R, p(cy) - R, 2 * R, 2 * R, 0, 0, 2 * R, 2 * R, c);
         popPx();
     }
 
-    /** Soft shadow made of stacked translucent rounded rects. */
-    public static void shadow(float x, float y, float w, float h, float r, float spread, int color) {
-        int steps = 6;
-        for (int i = steps; i >= 1; i--) {
-            float s = spread * i / steps;
-            roundRect(x - s, y - s + spread * 0.25f, w + s * 2, h + s * 2, r + s, withAlpha(color, 1f / (steps + 2)));
+    // ------------------------------------------------------------------ icons (cached vector drawings)
+
+    /** Small vector canvas in pixel coordinates used to bake icons into textures. */
+    public static final class Canvas {
+        final int size;
+        final float[] cov;
+
+        Canvas(int size) {
+            this.size = size;
+            this.cov = new float[size * size];
         }
+
+        public void line(float ax, float ay, float bx, float by, float thick) {
+            float hw = thick / 2f;
+            float vx = bx - ax, vy = by - ay;
+            float len2 = vx * vx + vy * vy;
+            for (int y = 0; y < size; y++) {
+                for (int x = 0; x < size; x++) {
+                    float qx = x + 0.5f - ax, qy = y + 0.5f - ay;
+                    float t = len2 == 0 ? 0 : clamp01((qx * vx + qy * vy) / len2);
+                    float dx = qx - vx * t, dy = qy - vy * t;
+                    put(x, y, hw - (float) Math.sqrt(dx * dx + dy * dy) + 0.5f);
+                }
+            }
+        }
+
+        public void disc(float cx, float cy, float r) {
+            for (int y = 0; y < size; y++) {
+                for (int x = 0; x < size; x++) put(x, y, r - (float) Math.hypot(x + 0.5f - cx, y + 0.5f - cy) + 0.5f);
+            }
+        }
+
+        public void ring(float cx, float cy, float r, float t) {
+            for (int y = 0; y < size; y++) {
+                for (int x = 0; x < size; x++) {
+                    float d = (float) Math.hypot(x + 0.5f - cx, y + 0.5f - cy);
+                    put(x, y, Math.min(r - d + 0.5f, d - (r - t) + 0.5f));
+                }
+            }
+        }
+
+        private void put(int x, int y, float c) {
+            c = clamp01(c);
+            int i = y * size + x;
+            if (c > cov[i]) cov[i] = c;
+        }
+    }
+
+    public interface Painter {
+        void paint(Canvas c, float s);
+    }
+
+    /**
+     * Draws a cached icon centered on (cx, cy). The painter works in a 16x16 design box scaled by {@code s}.
+     */
+    public static void icon(String key, float cx, float cy, float sizeUnits, int color, Painter painter) {
+        int c = mul(color);
+        if ((c >>> 24) == 0) return;
+        int px = Math.max(4, Math.round(sizeUnits * k));
+        Identifier id = TEXTURES.get("i" + key + "_" + px);
+        if (id == null) {
+            Canvas canvas = new Canvas(px);
+            painter.paint(canvas, px / 16f);
+            id = shapeTexture("i" + key + "_" + px, px, px, (x, y) -> canvas.cov[y * px + x]);
+        }
+        pushPx();
+        texPx(id, p(cx) - px / 2, p(cy) - px / 2, px, px, 0, 0, px, px, c);
+        popPx();
+    }
+
+    /** Player face from the skin (pixel-exact). */
+    public static void head(net.minecraft.entity.player.SkinTextures skin, float x, float y, float size) {
+        pushPx();
+        net.minecraft.client.gui.PlayerSkinDrawer.draw(ctx, skin, p(x), p(y), Math.max(8, Math.round(size * k)), mul(0xFFFFFFFF));
+        elements += 2;
+        popPx();
+    }
+
+    // ------------------------------------------------------------------ procedural images (color picker)
+
+    public interface Pixels {
+        int argb(int x, int y, int w, int h);
+    }
+
+    private static final Map<String, NativeImageBackedTexture> DYN = new HashMap<>();
+    private static final Map<String, String> DYN_VERSION = new HashMap<>();
+    private static final Map<String, Identifier> DYN_ID = new HashMap<>();
+
+    /** Draws an image generated pixel by pixel; regenerated only when {@code version} or size changes. */
+    public static void image(String key, String version, float x, float y, float w, float h, Pixels gen) {
+        int x0 = p(x), y0 = p(y), W = p(x + w) - x0, H = p(y + h) - y0;
+        if (W <= 0 || H <= 0) return;
+        String ver = version + "@" + W + "x" + H;
+        NativeImageBackedTexture tex = DYN.get(key);
+        Identifier id = DYN_ID.get(key);
+        boolean sizeOk = tex != null && tex.getImage() != null && tex.getImage().getWidth() == W && tex.getImage().getHeight() == H;
+        if (!sizeOk) {
+            if (id != null) MinecraftClient.getInstance().getTextureManager().destroyTexture(id);
+            NativeImage img = new NativeImage(W, H, false);
+            final String name = "dexpvpai " + key;
+            tex = new NativeImageBackedTexture(() -> name, img);
+            id = Identifier.of("dexpvpai", "dyn/" + key + "_" + (texCounter++));
+            MinecraftClient.getInstance().getTextureManager().registerTexture(id, tex);
+            DYN.put(key, tex);
+            DYN_ID.put(key, id);
+            DYN_VERSION.remove(key);
+        }
+        if (!ver.equals(DYN_VERSION.get(key))) {
+            NativeImage img = tex.getImage();
+            for (int yy = 0; yy < H; yy++) for (int xx = 0; xx < W; xx++) img.setColorArgb(xx, yy, gen.argb(xx, yy, W, H));
+            tex.upload();
+            DYN_VERSION.put(key, ver);
+        }
+        pushPx();
+        texPx(id, x0, y0, W, H, 0, 0, W, H, mul(0xFFFFFFFF));
+        popPx();
+    }
+
+    /** Coverage of a rounded rectangle of size w x h px with radius r px at pixel (x, y) (used to round images). */
+    public static float roundedCoverage(int x, int y, int w, int h, float r) {
+        float cx = Math.max(r, Math.min(w - r, x + 0.5f));
+        float cy = Math.max(r, Math.min(h - r, y + 0.5f));
+        float d = (float) Math.hypot(x + 0.5f - cx, y + 0.5f - cy);
+        return clamp01(r - d + 0.5f);
     }
 
     // ------------------------------------------------------------------ text
 
-    public static Text text(String s, Font f) {
-        int sc = Math.min(6, Math.max(1, scale));
-        return Text.literal(s).setStyle(Style.EMPTY.withFont(new StyleSpriteSource.Font(FONT_IDS[f.ordinal()][sc])));
+    private static int fontPx(Font f) {
+        return Math.max(5, Math.min(72, Math.round(f.size * k)));
     }
 
-    public static float width(String s, Font f) {
-        return tr().getWidth(text(s, f));
+    private static Text text(String s, Font f) {
+        int w = f.weight == 'm' ? 0 : (f.weight == 's' ? 1 : 2);
+        return Text.literal(s).setStyle(Style.EMPTY.withFont(new StyleSpriteSource.Font(FONT_IDS[w][fontPx(f)])));
     }
 
     private static TextRenderer tr() {
         return MinecraftClient.getInstance().textRenderer;
     }
 
+    /** Text width in units. */
+    public static float width(String s, Font f) {
+        return tr().getWidth(text(s, f)) / k;
+    }
+
     /** Draws text so that the middle of its capital letters sits on {@code cy}. */
     public static void textMid(String s, Font f, float x, float cy, int color) {
-        int c = withAlpha(color, alpha);
+        int c = mul(color);
         if ((c >>> 24) < 4) return;
-        float y = cy - 7f + 0.364f * f.size;
-        ctx.drawText(tr(), text(s, f), Math.round(x), Math.round(y), c, false);
+        int n = fontPx(f);
+        int yPx = Math.round(cy * k - 7f + 0.364f * n);
+        pushPx();
+        ctx.drawText(tr(), text(s, f), p(x), yPx, c, false);
+        elements++;
+        popPx();
     }
 
     public static void textMidCentered(String s, Font f, float cx, float cy, int color) {
@@ -272,11 +424,14 @@ public final class R2D {
         textMid(s, f, rx - width(s, f), cy, color);
     }
 
-    public static int scale() {
-        return scale;
+    /** Shortens the string with an ellipsis so it fits {@code max} units. */
+    public static String fit(String s, Font f, float max) {
+        if (width(s, f) <= max) return s;
+        while (s.length() > 1 && width(s + "…", f) > max) s = s.substring(0, s.length() - 1);
+        return s + "…";
     }
 
-    private static float clamp01(float v) {
+    static float clamp01(float v) {
         return v < 0 ? 0 : (v > 1 ? 1 : v);
     }
 }

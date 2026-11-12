@@ -4,28 +4,21 @@ import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.input.KeyInput;
-import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.text.Text;
 import ru.onedex.pvpai.PvpAiClient;
 import ru.onedex.pvpai.analysis.Brain;
 import ru.onedex.pvpai.config.ModConfig;
 import ru.onedex.pvpai.gui.R2D.Font;
 
-import java.time.LocalTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.DoubleConsumer;
 import java.util.function.IntConsumer;
 
-/** The 1DEX1 menu (F8). Two functions: PvP AI and Визуал. */
+/** The 1DEX1 menu (F8): PvP AI and Визуал. */
 public class MenuScreen extends Screen {
-    private static final DateTimeFormatter HHMM = DateTimeFormatter.ofPattern("HH:mm");
-    private static final String[] MODES = {"Над ником", "HUD", "Чат"};
-    private static final String[] ANIMS = {"Плавная", "Резкая"};
-    private static final int[] ACCENTS = {0xFF4C8DFF, 0xFF8B5CF6, 0xFF34D399, 0xFFF472B6, 0xFFE8EAF0};
+    private static final String[] MODES = {"Над ником", "HUD"};
 
     private static final float MAIN_W = 196;
     private static final float SET_W = 220;
@@ -35,8 +28,7 @@ public class MenuScreen extends Screen {
     /** Which settings panel is open (-1 = none), remembered between openings. */
     private static int openIdx = -1;
     private static int shownIdx = -1;
-    private static final float[] MEASURED = {200, 160};
-    private float scroll, scrollTarget, maxScroll;
+    private static final float[] MEASURED = {200, 190};
 
     private final long openedAt = System.nanoTime();
     private boolean closing;
@@ -49,14 +41,19 @@ public class MenuScreen extends Screen {
     private final Map<String, Float> anims = new HashMap<>();
     private final List<Hot> hots = new ArrayList<>();
     private Hot dragging;
+    private float scroll, scrollTarget, maxScroll;
 
-    // current transform of the menu (open animation) for hit-testing
     private float pivotX, pivotY, curScale = 1, curOffY;
     private float clipTop = -1e9f, clipBottom = 1e9f;
     private boolean resetArmed;
     private long resetArmedAt;
+    private int frames;
 
-    private record Hot(float x, float y, float w, float h, IntConsumer click, DoubleConsumer drag) {
+    private interface Drag {
+        void at(double x, double y);
+    }
+
+    private record Hot(float x, float y, float w, float h, IntConsumer click, Drag drag) {
         boolean contains(double mx, double my) {
             return mx >= x && mx < x + w && my >= y && my < y + h;
         }
@@ -75,10 +72,10 @@ public class MenuScreen extends Screen {
         return false;
     }
 
-    /** Blur strength while this screen is open (read by the blur shader through GameOptions). */
+    /** Blur amount 0..10 while this screen is open (fed to the blur shader as MenuBlurRadius, used to fade it in). */
     public int blurRadius() {
         if (!Theme.current().blur()) return 0;
-        return Math.max(0, Math.round(cfg().blurStrength * openProgress));
+        return Math.max(0, Math.min(10, Math.round(10 * openProgress)));
     }
 
     // ------------------------------------------------------------------ open / close
@@ -86,10 +83,6 @@ public class MenuScreen extends Screen {
     @Override
     public void close() {
         ModConfig.save();
-        if (!cfg().smoothAnimation) {
-            reallyClose();
-            return;
-        }
         if (!closing) {
             closing = true;
             closingAt = System.nanoTime();
@@ -105,10 +98,6 @@ public class MenuScreen extends Screen {
     }
 
     private float computeOpen() {
-        if (!cfg().smoothAnimation) {
-            if (closing) reallyClose();
-            return 1f;
-        }
         long now = System.nanoTime();
         if (closing) {
             float t = (now - closingAt) / 1e6f / 170f;
@@ -116,11 +105,10 @@ public class MenuScreen extends Screen {
                 reallyClose();
                 return 0f;
             }
-            float start = Math.min(1f, (closingAt - openedAt) / 1e6f / 280f);
+            float start = Math.min(1f, (closingAt - openedAt) / 1e6f / 260f);
             return Ease.inCubic(1f - t) * Ease.outCubic(start);
         }
-        float t = Math.min(1f, (now - openedAt) / 1e6f / 280f);
-        return Ease.outCubic(t);
+        return Ease.outCubic(Math.min(1f, (now - openedAt) / 1e6f / 260f));
     }
 
     // ------------------------------------------------------------------ input
@@ -151,7 +139,7 @@ public class MenuScreen extends Screen {
             if (h.contains(mx, my)) {
                 if (h.drag != null && click.button() == 0) {
                     dragging = h;
-                    h.drag.accept(mx);
+                    h.drag.at(mx, my);
                 } else if (h.click != null) {
                     h.click.accept(click.button());
                 }
@@ -164,7 +152,7 @@ public class MenuScreen extends Screen {
     @Override
     public boolean mouseDragged(Click click, double offsetX, double offsetY) {
         if (dragging != null) {
-            dragging.drag.accept(localX(click.x()));
+            dragging.drag.at(localX(click.x()), localY(click.y()));
             return true;
         }
         return super.mouseDragged(click, offsetX, offsetY);
@@ -180,7 +168,13 @@ public class MenuScreen extends Screen {
         return super.mouseReleased(click);
     }
 
-    private void hot(float x, float y, float w, float h, IntConsumer click, DoubleConsumer drag) {
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        scrollTarget = Math.max(0, Math.min(maxScroll, scrollTarget - (float) verticalAmount * 24));
+        return true;
+    }
+
+    private void hot(float x, float y, float w, float h, IntConsumer click, Drag drag) {
         float cy = y + h / 2f;
         if (cy < clipTop || cy > clipBottom) return;
         hots.add(new Hot(x, y, w, h, click, drag));
@@ -194,12 +188,9 @@ public class MenuScreen extends Screen {
         return lx >= x && lx < x + w && ly >= y && ly < y + h;
     }
 
-    // ------------------------------------------------------------------ animation helpers
-
     private float anim(String key, float target, float speed) {
         float v = anims.getOrDefault(key, target);
-        if (!cfg().smoothAnimation) v = target;
-        else v += (target - v) * (1f - (float) Math.exp(-dt * speed));
+        v += (target - v) * (1f - (float) Math.exp(-dt * speed));
         if (Math.abs(target - v) < 0.001f) v = target;
         anims.put(key, v);
         return v;
@@ -227,14 +218,11 @@ public class MenuScreen extends Screen {
         dt = Math.min(0.1f, (now - lastFrame) / 1e9f);
         lastFrame = now;
         R2D.begin(context);
+        R2D.elements = 0;
         hots.clear();
         Theme th = Theme.current();
-
         float e = openProgress;
-        float pillH = 22;
-        float top = 10 + pillH + 10;
 
-        // ---- layout: main panel on the left, settings panel slides in on the right
         float sa = anim("settings", openIdx >= 0 ? 1 : 0, 14);
         float rightW = Math.min(SET_W, width - 20 - MAIN_W - GAP);
         float groupW = MAIN_W + GAP + rightW;
@@ -242,11 +230,11 @@ public class MenuScreen extends Screen {
         float mainOpenX = (width - groupW) / 2f;
         float mainX = mainClosedX + (mainOpenX - mainClosedX) * sa;
         float mainH = 44 + 6 + ROW_H + 4 + ROW_H + 26;
+        float top = Math.max(10, (height - 250) / 2f);
         float maxH = height - top - 10;
-        float mainY = top + Math.max(0, Math.min(30, (maxH - mainH) * 0.25f));
 
         pivotX = width / 2f;
-        pivotY = mainY + 60;
+        pivotY = top + 60;
         curScale = 0.94f + 0.06f * e;
         curOffY = (1f - e) * 10f;
         R2D.alpha = e;
@@ -256,77 +244,39 @@ public class MenuScreen extends Screen {
         context.getMatrices().scale(curScale, curScale);
         context.getMatrices().translate(-pivotX, -pivotY);
 
-        drawTopPill(th, 10, pillH);
-        drawMain(th, mainX, mainY, mainH, mouseX, mouseY);
+        drawMain(th, mainX, top, mainH, mouseX, mouseY);
         if (sa > 0.01f && shownIdx >= 0) {
             float a = R2D.alpha;
             R2D.alpha = a * sa;
             float sx = mainX + MAIN_W + GAP + (1 - sa) * 14;
-            drawSettingsPanel(th, shownIdx, sx, mainY, rightW, maxH - (mainY - top), mouseX, mouseY, sa > 0.6f);
+            drawSettingsPanel(th, shownIdx, sx, top, rightW, maxH, mouseX, mouseY, sa > 0.6f);
             R2D.alpha = a;
         }
 
         context.getMatrices().popMatrix();
         R2D.alpha = 1f;
-    }
 
-    @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        scrollTarget = Math.max(0, Math.min(maxScroll, scrollTarget - (float) verticalAmount * 24));
-        return true;
-    }
-
-    private void drawTopPill(Theme th, float y, float h) {
-        int fps = client.getCurrentFps();
-        String time = LocalTime.now().format(HHMM);
-        int ping = 0;
-        if (client.getNetworkHandler() != null && client.player != null) {
-            PlayerListEntry pe = client.getNetworkHandler().getPlayerListEntry(client.player.getUuid());
-            if (pe != null) ping = pe.getLatency();
-        }
-        boolean on = cfg().pvpAiEnabled;
-        String[] parts = {"1DEX1", "PvP AI " + (on ? "вкл" : "выкл"), fps + " fps", time, ping + " ms"};
-        float gap = 14;
-        float total = 0;
-        for (int i = 0; i < parts.length; i++) total += R2D.width(parts[i], i == 0 ? Font.S9 : Font.M8) + (i == 1 ? 9 : 0);
-        total += gap * (parts.length - 1) + 22 + 16;
-        float x = (width - total) / 2f;
-        panelBg(th, x, y, total, h, h / 2f);
-        float cx = x + 12;
-        float cy = y + h / 2f;
-        R2D.circle(cx + 3, cy, 3.2f, cfg().accentColor());
-        cx += 12;
-        for (int i = 0; i < parts.length; i++) {
-            if (i > 0) R2D.circle(cx - gap / 2f, cy, 1f, R2D.withAlpha(th.sub(), 0.5f));
-            if (i == 1) {
-                R2D.circle(cx + 3, cy, 2.6f, on ? Brain.GREEN : 0xFF6B7280);
-                cx += 9;
-            }
-            Font f = i == 0 ? Font.S9 : Font.M8;
-            R2D.textMid(parts[i], f, cx, cy, i == 0 ? th.text() : th.sub());
-            cx += R2D.width(parts[i], f) + gap;
+        if (PvpAiClient.DEV && ++frames % 120 == 0) {
+            PvpAiClient.LOGGER.info("[dev] menu draw elements per frame: {}", R2D.elements);
         }
     }
 
     private void panelBg(Theme th, float x, float y, float w, float h, float r) {
-        if (th.shadow()) R2D.shadow(x, y, w, h, r, 10, 0x60000000);
         R2D.roundRect(x, y, w, h, r, th.panel());
-        // soft frosted highlight fading down from the top edge
-        R2D.gradientV(x + r * 0.6f, y + 1, w - r * 1.2f, Math.min(h * 0.45f, 40), th.highlight(), th.highlight() & 0x00FFFFFF);
         R2D.roundOutline(x, y, w, h, r, 0.5f, th.border());
     }
 
     private void drawMain(Theme th, float x, float y, float h, int mouseX, int mouseY) {
         panelBg(th, x, y, MAIN_W, h, 14);
+        int accent = cfg().accentColor();
         float hx = x + 14;
         float hcy = y + 22;
-        R2D.roundRect(hx, hcy - 11, 22, 22, 7, cfg().accentColor());
-        R2D.gradientV(hx + 3, hcy - 10, 16, 10, 0x30FFFFFF, 0x00FFFFFF);
-        R2D.textMidCentered("1D", Font.S9, hx + 11, hcy, 0xFFFFFFFF);
+        R2D.roundRect(hx, hcy - 11, 22, 22, 7, accent);
+        R2D.textMidCentered("1D", Font.S9, hx + 11, hcy, Theme.onAccent());
         R2D.textMid("1DEX1", Font.S11, hx + 31, hcy - 5, th.text());
         R2D.textMid("PvP AI client", Font.M7, hx + 31, hcy + 7, th.sub());
-        R2D.textMidRight("v1.0", Font.M7, x + MAIN_W - 14, hcy - 5, R2D.withAlpha(th.sub(), 0.7f));
-        R2D.rect(x + 12, y + 44, MAIN_W - 24, 1f / R2D.scale(), th.border());
+        R2D.textMidRight("v1.1", Font.M7, x + MAIN_W - 14, hcy - 5, R2D.withAlpha(th.sub(), 0.7f));
+        R2D.rect(x + 12, y + 44, MAIN_W - 24, 1f / R2D.guiScale(), th.border());
 
         float ry = y + 44 + 6;
         drawModuleRow(th, 0, x, ry, mouseX, mouseY);
@@ -342,6 +292,7 @@ public class MenuScreen extends Screen {
             shownIdx = idx;
             scroll = scrollTarget = 0;
             anims.put("content", 0f);
+            anims.remove("setH");
         }
     }
 
@@ -351,16 +302,16 @@ public class MenuScreen extends Screen {
         boolean hov = hovered(x, y, w, ROW_H, mouseX, mouseY);
         float hv = anim("hover" + idx, hov ? 1 : 0, 18);
         float sel = anim("sel" + idx, openIdx == idx ? 1 : 0, 14);
-        if (sel > 0.01f) R2D.roundRect(x, y, w, ROW_H, 10, R2D.withAlpha(cfg().accentColor(), 0.16f * sel));
+        int accent = cfg().accentColor();
+        if (sel > 0.01f) R2D.roundRect(x, y, w, ROW_H, 10, R2D.withAlpha(accent, 0.16f * sel));
         if (hv > 0.01f) R2D.roundRect(x, y, w, ROW_H, 10, R2D.withAlpha(th.hover(), hv));
 
-        int accent = cfg().accentColor();
         boolean active = idx != 0 || cfg().pvpAiEnabled;
         float icx = x + 18, icy = y + ROW_H / 2f;
         R2D.roundRect(icx - 11, icy - 11, 22, 22, 7, R2D.withAlpha(accent, active ? 0.22f : 0.10f));
         int ic = active ? accent : R2D.withAlpha(th.sub(), 0.8f);
-        if (idx == 0) iconCrosshair(icx, icy, ic);
-        else iconSliders(icx, icy, ic);
+        if (idx == 0) R2D.icon("crosshair", icx, icy, 16, ic, Icons::crosshair);
+        else R2D.icon("sliders", icx, icy, 16, ic, Icons::sliders);
 
         String title = idx == 0 ? "PvP AI" : "Визуал";
         String sub = idx == 0 ? (cfg().pvpAiEnabled ? "Анализирует бой" : "Шанс победы в бою") : "Внешний вид меню";
@@ -368,7 +319,8 @@ public class MenuScreen extends Screen {
         R2D.textMid(sub, Font.M7, x + 35, icy + 6, th.sub());
 
         float rightX = x + w - 8;
-        chevron(rightX - 2, icy, sel, th.sub());
+        int bucket = Math.round(sel * 9);
+        R2D.icon("chev" + bucket, rightX - 2, icy, 10, th.sub(), (c, s) -> Icons.chevron(c, s, bucket * 10));
         if (idx == 0) {
             float t = anim("tgl_main", cfg().pvpAiEnabled ? 1 : 0, 16);
             toggle(th, rightX - 12 - 28, icy, t);
@@ -382,7 +334,6 @@ public class MenuScreen extends Screen {
                 openSettings(idx);
             }
         }, null);
-        // the arrow always opens settings
         hot(rightX - 8, y, 12, ROW_H, b -> openSettings(idx), null);
     }
 
@@ -392,9 +343,10 @@ public class MenuScreen extends Screen {
         float h = Math.min(maxH, headerH + contentH);
         float animH = animFrom("setH", h, h, 16);
         panelBg(th, x, y, w, animH, 14);
-        R2D.textMid(idx == 0 ? "PvP AI" : "Визуал", Font.S9, x + 14, y + 13, th.text());
-        R2D.textMid("настройки", Font.M7, x + 14 + R2D.width(idx == 0 ? "PvP AI" : "Визуал", Font.S9) + 6, y + 13.5f, th.sub());
-        R2D.rect(x + 12, y + 26, w - 24, 1f / R2D.scale(), th.border());
+        String name = idx == 0 ? "PvP AI" : "Визуал";
+        R2D.textMid(name, Font.S9, x + 14, y + 13, th.text());
+        R2D.textMid("настройки", Font.M7, x + 14 + R2D.width(name, Font.S9) + 6, y + 13.5f, th.sub());
+        R2D.rect(x + 12, y + 26, w - 24, 1f / R2D.guiScale(), th.border());
 
         float viewTop = y + headerH - 4;
         float viewH = animH - headerH + 4;
@@ -409,8 +361,7 @@ public class MenuScreen extends Screen {
         clipTop = interactive ? viewTop : 1e9f;
         clipBottom = interactive ? viewTop + viewH - 2 : -1e9f;
         float a = R2D.alpha;
-        float c = anim("content", 1, 12);
-        R2D.alpha = a * c;
+        R2D.alpha = a * anim("content", 1, 12);
         float cy = viewTop - scroll;
         float used = idx == 0 ? drawAiSettings(th, x + 14, cy, w - 28, mouseX, mouseY) : drawVisualSettings(th, x + 14, cy, w - 28, mouseX, mouseY);
         R2D.alpha = a;
@@ -419,7 +370,7 @@ public class MenuScreen extends Screen {
         ctx.disableScissor();
         MEASURED[idx] = used;
 
-        if (maxScroll > 6) {
+        if (maxScroll > 0) {
             float trackH = viewH - 12;
             float barH = Math.max(14, trackH * viewH / (contentH + 6));
             float barY = viewTop + 4 + (trackH - barH) * (scroll / maxScroll);
@@ -434,21 +385,26 @@ public class MenuScreen extends Screen {
         y += 4;
         int secs = cfg().analysisSeconds;
         String quality = secs <= 45 ? "слабый" : secs <= 90 ? "средний" : secs <= 180 ? "хороший" : "самый точный";
-        y = slider(th, "ai_time", "Время анализа", Brain.time(secs) + " · " + quality, x, y, w,
-                (secs - 30) / 270f, v -> {
-                    int s = (int) Math.round(30 + v * 270);
-                    s = Math.round(s / 15f) * 15;
-                    cfg().analysisSeconds = Math.max(30, Math.min(300, s));
-                }, mx, my);
-        y = segmented(th, "ai_mode", "Режим отображения", MODES, cfg().displayMode, i -> cfg().displayMode = i, x, y, w, mx, my);
-        y = toggleRow(th, "ai_all", "Прогноз для всех игроков", cfg().forecastAll, () -> cfg().forecastAll = !cfg().forecastAll, x, y, w, mx, my);
-        y = toggleRow(th, "ai_save", "Запоминать игроков", cfg().saveProfiles, () -> cfg().saveProfiles = !cfg().saveProfiles, x, y, w, mx, my);
+        y = slider(th, "ai_time", "Время анализа", Brain.time(secs) + " · " + quality, x, y, w, (secs - 30) / 270f, v -> {
+            int s = (int) Math.round(30 + v * 270);
+            cfg().analysisSeconds = Math.max(30, Math.min(300, Math.round(s / 15f) * 15));
+        }, mx, my);
+        y = segmented(th, "ai_mode", "Режим отображения", MODES, cfg().displayMode, i -> cfg().displayMode = i, x, y, w);
 
-        var st = Brain.INSTANCE.store;
-        String acc = st.predictions == 0 ? "пока нет боёв" : st.correct + " из " + st.predictions + " (" + Math.round(100.0 * st.correct / st.predictions) + "%)";
+        boolean hud = cfg().displayMode == 1;
+        float a = R2D.alpha;
+        if (!hud) R2D.alpha = a * 0.45f;
+        y = slider(th, "ai_hud", "Размер HUD", Math.round(cfg().hudScale * 100) + "%", x, y, w, (cfg().hudScale - 0.5f),
+                v -> cfg().hudScale = Math.round((0.5f + (float) v) * 20f) / 20f, mx, my);
+        R2D.alpha = a;
+        if (hud) {
+            R2D.textMid("Открой чат (T), чтобы двигать HUD мышкой", Font.M6, x, y - 3, R2D.withAlpha(th.sub(), 0.85f));
+            y += 9;
+        }
+
+        y = toggleRow(th, "ai_all", "Прогноз для всех игроков", cfg().forecastAll, () -> cfg().forecastAll = !cfg().forecastAll, x, y, w);
+
         R2D.textMid("В анализе: " + Brain.INSTANCE.trackedPlayers() + "  ·  в памяти: " + Brain.INSTANCE.knownProfiles(), Font.M7, x, y + 6, th.sub());
-        y += 13;
-        R2D.textMid("Прогнозов сбылось: " + acc, Font.M7, x, y + 6, th.sub());
         y += 16;
 
         if (resetArmed && System.nanoTime() - resetArmedAt > 3_000_000_000L) resetArmed = false;
@@ -467,43 +423,39 @@ public class MenuScreen extends Screen {
     private float drawVisualSettings(Theme th, float x, float y, float w, int mx, int my) {
         float y0 = y;
         y += 4;
-        y = segmented(th, "v_style", "Стиль меню", Theme.NAMES, cfg().menuStyle, i -> cfg().menuStyle = i, x, y, w, mx, my);
-        y = segmented(th, "v_anim", "Открытие", ANIMS, cfg().smoothAnimation ? 0 : 1, i -> cfg().smoothAnimation = i == 0, x, y, w, mx, my);
-        y = swatches(th, x, y, w, mx, my);
-        boolean glass = Theme.current().blur();
-        float a = R2D.alpha;
-        if (!glass) R2D.alpha = a * 0.45f;
-        y = slider(th, "v_blur", "Размытие стекла", String.valueOf(cfg().blurStrength), x, y, w, (cfg().blurStrength - 1) / 9f,
-                v -> cfg().blurStrength = (int) Math.max(1, Math.min(10, Math.round(1 + v * 9))), mx, my);
-        R2D.alpha = a;
+        y = segmented(th, "v_bg", "Фон", Theme.BACKGROUNDS, cfg().background, i -> cfg().background = i, x, y, w);
+        y = segmented(th, "v_type", "Тип", Theme.TYPES, cfg().glass ? 1 : 0, i -> cfg().glass = i == 1, x, y, w);
+        y = colorPicker(th, x, y, w);
         return y - y0 + 8;
     }
 
     // ------------------------------------------------------------------ widgets
 
-    private float slider(Theme th, String id, String label, String value, float x, float y, float w, float v,
-                         DoubleConsumer setter, int mx, int my) {
+    private interface Setter {
+        void set(double v);
+    }
+
+    private float slider(Theme th, String id, String label, String value, float x, float y, float w, float v, Setter setter, int mx, int my) {
         R2D.textMid(label, Font.M8, x, y + 6, th.text());
         R2D.textMidRight(value, Font.M7, x + w, y + 6, th.sub());
         float ty = y + 18;
-        float tv = anim(id, v, 18);
+        float tv = anim(id, Math.max(0, Math.min(1, v)), 18);
+        int accent = cfg().accentColor();
         R2D.roundRect(x, ty - 2, w, 4, 2, th.control());
-        R2D.roundRect(x, ty - 2, Math.max(4, w * tv), 4, 2, cfg().accentColor());
-        boolean hov = hovered(x - 4, ty - 7, w + 8, 14, mx, my) || (dragging != null && dragging.y() == ty - 7);
+        R2D.roundRect(x, ty - 2, Math.max(4, w * tv), 4, 2, accent);
+        boolean hov = hovered(x - 4, ty - 7, w + 8, 14, mx, my);
         float hk = anim(id + "_h", hov ? 1 : 0, 18);
-        R2D.circle(x + w * tv, ty, 5.5f + hk * 0.8f, 0x40000000);
-        R2D.circle(x + w * tv, ty, 4.8f + hk * 0.8f, 0xFFFFFFFF);
-        hot(x - 4, ty - 7, w + 8, 14, null, mxv -> setter.accept(Math.max(0, Math.min(1, (mxv - x) / w))));
+        R2D.circle(x + w * tv, ty, 6f + hk * 0.8f, 0x33000000);
+        R2D.circle(x + w * tv, ty, 5f + hk * 0.8f, th.knob());
+        hot(x - 4, ty - 7, w + 8, 14, null, (px, py) -> setter.set(Math.max(0, Math.min(1, (px - x) / w))));
         return y + 30;
     }
 
-    private float segmented(Theme th, String id, String label, String[] opts, int sel, IntConsumer setter,
-                            float x, float y, float w, int mx, int my) {
+    private float segmented(Theme th, String id, String label, String[] opts, int sel, IntConsumer setter, float x, float y, float w) {
         R2D.textMid(label, Font.M8, x, y + 6, th.text());
         float sy = y + 13;
         float sh = 18;
         R2D.roundRect(x, sy, w, sh, 7, th.control());
-        // segment widths follow text width so long labels get more room
         float[] segX = new float[opts.length + 1];
         float textSum = 0;
         for (String o : opts) textSum += R2D.width(o, Font.M7);
@@ -516,11 +468,11 @@ public class MenuScreen extends Screen {
         float f = pos - lo;
         float hx = segX[lo] + (segX[hi] - segX[lo]) * f;
         float hw = (segX[lo + 1] - segX[lo]) + ((segX[hi + 1] - segX[hi]) - (segX[lo + 1] - segX[lo])) * f;
-        R2D.roundRect(hx + 2, sy + 2, hw - 4, sh - 4, 5.5f, R2D.withAlpha(cfg().accentColor(), 0.9f));
+        R2D.roundRect(hx + 2, sy + 2, hw - 4, sh - 4, 5.5f, cfg().accentColor());
         for (int i = 0; i < opts.length; i++) {
             float sw = segX[i + 1] - segX[i];
             float closeness = Math.max(0, 1 - Math.abs(pos - i));
-            int col = R2D.lerpColor(th.sub(), 0xFFFFFFFF, closeness);
+            int col = R2D.lerpColor(th.sub(), Theme.onAccent(), closeness);
             R2D.textMidCentered(opts[i], Font.M7, segX[i] + sw / 2f, sy + sh / 2f, col);
             final int idx = i;
             hot(segX[i], sy, sw, sh, b -> {
@@ -533,11 +485,10 @@ public class MenuScreen extends Screen {
         return y + 13 + sh + 9;
     }
 
-    private float toggleRow(Theme th, String id, String label, boolean value, Runnable flip, float x, float y, float w, int mx, int my) {
+    private float toggleRow(Theme th, String id, String label, boolean value, Runnable flip, float x, float y, float w) {
         float cy = y + 9;
         R2D.textMid(label, Font.M8, x, cy, th.text());
-        float t = anim(id, value ? 1 : 0, 16);
-        toggle(th, x + w - 28, cy, t);
+        toggle(th, x + w - 28, cy, anim(id, value ? 1 : 0, 16));
         hot(x, y, w, 18, b -> {
             if (b == 0) {
                 flip.run();
@@ -551,7 +502,7 @@ public class MenuScreen extends Screen {
         float h = 18;
         boolean hov = hovered(x, y, w, h, mx, my);
         float hv = anim(id, hov ? 1 : 0, 18);
-        int bg = tint != 0 ? R2D.withAlpha(tint, 0.30f + 0.15f * hv) : R2D.lerpColor(th.control(), R2D.withAlpha(0xFFFFFFFF, 0.28f), hv * 0.5f);
+        int bg = tint != 0 ? R2D.withAlpha(tint, 0.30f + 0.15f * hv) : R2D.lerpColor(th.control(), R2D.withAlpha(th.text(), 0.22f), hv * 0.5f);
         R2D.roundRect(x, y, w, h, 7, bg);
         R2D.textMidCentered(label, Font.M7, x + w / 2f, y + h / 2f, th.text());
         hot(x, y, w, h, b -> {
@@ -560,58 +511,52 @@ public class MenuScreen extends Screen {
         return y + h + 4;
     }
 
-    private float swatches(Theme th, float x, float y, float w, int mx, int my) {
-        R2D.textMid("Акцент", Font.M8, x, y + 9, th.text());
-        float gap = 20;
-        float sx = x + w - gap * ACCENTS.length + gap / 2f;
-        for (int i = 0; i < ACCENTS.length; i++) {
-            float cx = sx + i * gap, cy = y + 9;
-            float s = anim("sw" + i, cfg().accent == i ? 1 : 0, 16);
-            if (s > 0.01f) R2D.roundOutline(cx - 8, cy - 8, 16, 16, 8, 1.2f, R2D.withAlpha(0xFFFFFFFF, s));
-            R2D.circle(cx, cy, 5.5f, ACCENTS[i]);
-            final int idx = i;
-            hot(cx - 9, cy - 9, 18, 18, b -> {
-                if (b == 0) {
-                    cfg().accent = idx;
-                    ModConfig.save();
-                }
-            }, null);
-        }
-        return y + 24;
+    /** Photoshop-style color picker: saturation/brightness square + hue strip. */
+    private float colorPicker(Theme th, float x, float y, float w) {
+        ModConfig c = cfg();
+        int accent = c.accentColor();
+        R2D.textMid("Цвет", Font.M8, x, y + 6, th.text());
+        String hex = String.format("#%06X", accent & 0xFFFFFF);
+        R2D.textMidRight(hex, Font.M7, x + w - 16, y + 6, th.sub());
+        R2D.roundRect(x + w - 11, y + 1, 11, 11, 3.5f, accent);
+        R2D.roundOutline(x + w - 11, y + 1, 11, 11, 3.5f, 0.5f, th.border());
+
+        float sy = y + 16, sh = 58;
+        final float hue = c.accentHue;
+        int radiusPx = Math.round(6 * R2D.unit());
+        R2D.image("sv", "h" + Math.round(hue * 1000), x, sy, w, sh, (px, py, W, H) -> {
+            float s = px / (float) (W - 1);
+            float v = 1f - py / (float) (H - 1);
+            int rgb = net.minecraft.util.math.MathHelper.hsvToRgb(Math.min(hue, 0.9999f), s, v);
+            int a = Math.round(R2D.roundedCoverage(px, py, W, H, radiusPx) * 255);
+            return (a << 24) | (rgb & 0xFFFFFF);
+        });
+        float kx = x + c.accentSat * w, ky = sy + (1 - c.accentVal) * sh;
+        R2D.ring(kx, ky, 5f, 1.6f, 0xFFFFFFFF);
+        R2D.ring(kx, ky, 6f, 0.8f, 0x66000000);
+        hot(x, sy, w, sh, null, (px, py) -> {
+            c.accentSat = (float) Math.max(0, Math.min(1, (px - x) / w));
+            c.accentVal = (float) Math.max(0, Math.min(1, 1 - (py - sy) / sh));
+        });
+
+        float hy = sy + sh + 8, hh = 8;
+        int hr = Math.round(4 * R2D.unit());
+        R2D.image("hue", "static", x, hy, w, hh, (px, py, W, H) -> {
+            int rgb = net.minecraft.util.math.MathHelper.hsvToRgb(Math.min(px / (float) (W - 1), 0.9999f), 1f, 1f);
+            int a = Math.round(R2D.roundedCoverage(px, py, W, H, hr) * 255);
+            return (a << 24) | (rgb & 0xFFFFFF);
+        });
+        float hx = x + hue * w;
+        R2D.roundRect(hx - 2.5f, hy - 2, 5, hh + 4, 2.5f, 0xFFFFFFFF);
+        R2D.roundOutline(hx - 2.5f, hy - 2, 5, hh + 4, 2.5f, 0.5f, 0x66000000);
+        hot(x - 3, hy - 3, w + 6, hh + 6, null, (px, py) -> c.accentHue = (float) Math.max(0, Math.min(1, (px - x) / w)));
+        return hy + hh + 10;
     }
 
     private void toggle(Theme th, float x, float cy, float t) {
         float w = 28, h = 16;
         R2D.roundRect(x, cy - h / 2f, w, h, h / 2f, R2D.lerpColor(th.control(), cfg().accentColor(), t));
-        R2D.circle(x + 8 + t * 12, cy, 6f, 0x30000000);
-        R2D.circle(x + 8 + t * 12, cy, 5.6f, 0xFFFFFFFF);
-    }
-
-    private void chevron(float cx, float cy, float open, int color) {
-        double ang = Math.toRadians(open * 90);
-        float[][] pts = {{-1.8f, -3.6f}, {1.8f, 0f}, {-1.8f, 3.6f}};
-        float[][] r = new float[3][2];
-        for (int i = 0; i < 3; i++) {
-            r[i][0] = cx + (float) (pts[i][0] * Math.cos(ang) - pts[i][1] * Math.sin(ang));
-            r[i][1] = cy + (float) (pts[i][0] * Math.sin(ang) + pts[i][1] * Math.cos(ang));
-        }
-        R2D.line(r[0][0], r[0][1], r[1][0], r[1][1], 1.3f, color);
-        R2D.line(r[1][0], r[1][1], r[2][0], r[2][1], 1.3f, color);
-    }
-
-    private void iconCrosshair(float cx, float cy, int color) {
-        R2D.roundOutline(cx - 5.5f, cy - 5.5f, 11, 11, 5.5f, 1.2f, color);
-        R2D.circle(cx, cy, 1.6f, color);
-        R2D.line(cx, cy - 8, cx, cy - 6, 1.2f, color);
-        R2D.line(cx, cy + 6, cx, cy + 8, 1.2f, color);
-        R2D.line(cx - 8, cy, cx - 6, cy, 1.2f, color);
-        R2D.line(cx + 6, cy, cx + 8, cy, 1.2f, color);
-    }
-
-    private void iconSliders(float cx, float cy, int color) {
-        R2D.line(cx - 6, cy - 3, cx + 6, cy - 3, 1.2f, color);
-        R2D.line(cx - 6, cy + 3, cx + 6, cy + 3, 1.2f, color);
-        R2D.circle(cx - 2, cy - 3, 2.3f, color);
-        R2D.circle(cx + 3, cy + 3, 2.3f, color);
+        R2D.circle(x + 8 + t * 12, cy, 6.2f, 0x2E000000);
+        R2D.circle(x + 8 + t * 12, cy, 5.6f, th.knob());
     }
 }

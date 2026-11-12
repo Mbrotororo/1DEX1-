@@ -2,26 +2,34 @@ package ru.onedex.pvpai.gui;
 
 import ru.onedex.pvpai.config.ModConfig;
 
-/** Colors of the menu for each visual style. */
+/** Colors of the menu/HUD: background white / gray / black, normal or glass. */
 public record Theme(int overlay, int panel, int highlight, int border, int text, int sub, int hover, int control,
-                    boolean blur, boolean shadow) {
+                    int knob, boolean blur, boolean light) {
 
-    public static final String[] NAMES = {"Стекло", "Прозрачный", "Тёмный", "Серый"};
+    public static final String[] BACKGROUNDS = {"Белый", "Серый", "Чёрный"};
+    public static final String[] TYPES = {"Обычный", "Стекло"};
 
     public static Theme current() {
-        return of(ModConfig.INSTANCE.menuStyle);
+        ModConfig c = ModConfig.INSTANCE;
+        return of(c.background, c.glass);
     }
 
-    public static Theme of(int style) {
-        return switch (style) {
-            // transparent: no blur, light see-through panels
-            case 1 -> new Theme(0x14000000, 0x4A0B0D12, 0x0DFFFFFF, 0x24FFFFFF, 0xFFFFFFFF, 0xB3E6E9F0, 0x14FFFFFF, 0x26FFFFFF, false, false);
-            // dark: solid, deep black panels
-            case 2 -> new Theme(0x66000000, 0xF50D0F14, 0x08FFFFFF, 0x14FFFFFF, 0xFFF4F5F7, 0x9AC4C8D0, 0x0FFFFFFF, 0x1FFFFFFF, false, true);
-            // gray
-            case 3 -> new Theme(0x4D000000, 0xF52A2D34, 0x0AFFFFFF, 0x1AFFFFFF, 0xFFF4F5F7, 0xA6D0D4DC, 0x12FFFFFF, 0x24FFFFFF, false, true);
-            // glass (iOS-like): blurred background, tinted frosted panels, bright hairline border
-            default -> new Theme(0x1F05070C, 0x66161A22, 0x12FFFFFF, 0x38FFFFFF, 0xFFFFFFFF, 0xB8E8ECF4, 0x14FFFFFF, 0x2EFFFFFF, true, false);
+    public static Theme of(int bg, boolean glass) {
+        return switch (bg) {
+            case 0 -> glass
+                    ? new Theme(0x1AFFFFFF, 0xB8F5F7FA, 0x40FFFFFF, 0x80FFFFFF, 0xFF14161B, 0xB3363A44, 0x0F000000, 0x1F000000, 0xFFFFFFFF, true, true)
+                    : new Theme(0x33000000, 0xFAF4F5F8, 0x00FFFFFF, 0x1F000000, 0xFF14161B, 0xA6363A44, 0x0D000000, 0x1A000000, 0xFFFFFFFF, false, true);
+            case 1 -> glass
+                    ? new Theme(0x14000000, 0x8C3A3D45, 0x14FFFFFF, 0x33FFFFFF, 0xFFFFFFFF, 0xB8E4E7EE, 0x14FFFFFF, 0x2EFFFFFF, 0xFFFFFFFF, true, false)
+                    : new Theme(0x4D000000, 0xF72C2F36, 0x08FFFFFF, 0x1AFFFFFF, 0xFFF4F5F7, 0xA6D0D4DC, 0x12FFFFFF, 0x26FFFFFF, 0xFFFFFFFF, false, false);
+            default -> glass
+                    ? new Theme(0x1F05070C, 0x8C0E1016, 0x12FFFFFF, 0x2EFFFFFF, 0xFFFFFFFF, 0xB8E4E7EE, 0x14FFFFFF, 0x2EFFFFFF, 0xFFFFFFFF, true, false)
+                    : new Theme(0x59000000, 0xF70D0F14, 0x06FFFFFF, 0x14FFFFFF, 0xFFF4F5F7, 0x9AC4C8D0, 0x0FFFFFFF, 0x1FFFFFFF, 0xFFFFFFFF, false, false);
         };
+    }
+
+    /** Text color to use on top of the accent color. */
+    public static int onAccent() {
+        return ModConfig.INSTANCE.accentIsLight() ? 0xFF14161B : 0xFFFFFFFF;
     }
 }
