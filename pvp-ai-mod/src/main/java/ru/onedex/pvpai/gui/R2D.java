@@ -328,6 +328,58 @@ public final class R2D {
         popPx();
     }
 
+    private static NativeImage avatarSource;
+    private static boolean avatarFailed;
+
+    /**
+     * Draws a picture from the mod resources with rounded corners. It is downscaled on the CPU with
+     * area averaging to the exact pixel size once (cached), so it stays smooth and sharp.
+     */
+    public static void picture(Identifier resource, float x, float y, float size, float radius) {
+        int px = Math.max(4, Math.round(size * k));
+        int rpx = Math.round(radius * k);
+        String key = "pic" + resource + "_" + px + "_" + rpx;
+        Identifier id = TEXTURES.get(key);
+        if (id == null) {
+            if (avatarSource == null && !avatarFailed) {
+                try (var in = MinecraftClient.getInstance().getResourceManager().getResource(resource).orElseThrow().getInputStream()) {
+                    avatarSource = NativeImage.read(in);
+                } catch (Exception e) {
+                    avatarFailed = true;
+                }
+            }
+            if (avatarSource == null) return;
+            NativeImage srcImg = avatarSource;
+            int sw = srcImg.getWidth(), sh = srcImg.getHeight();
+            NativeImage img = new NativeImage(px, px, false);
+            for (int ty = 0; ty < px; ty++) {
+                int y0 = ty * sh / px, y1 = Math.max(y0 + 1, (ty + 1) * sh / px);
+                for (int tx = 0; tx < px; tx++) {
+                    int x0 = tx * sw / px, x1 = Math.max(x0 + 1, (tx + 1) * sw / px);
+                    long r = 0, g = 0, b = 0, n = 0;
+                    for (int yy = y0; yy < y1; yy++) {
+                        for (int xx = x0; xx < x1; xx++) {
+                            int c = srcImg.getColorArgb(xx, yy);
+                            r += (c >> 16) & 255;
+                            g += (c >> 8) & 255;
+                            b += c & 255;
+                            n++;
+                        }
+                    }
+                    int a = Math.round(roundedCoverage(tx, ty, px, px, rpx) * 255);
+                    img.setColorArgb(tx, ty, (a << 24) | ((int) (r / n) << 16) | ((int) (g / n) << 8) | (int) (b / n));
+                }
+            }
+            id = Identifier.of("dexpvpai", "dyn/" + (texCounter++));
+            final String name = "dexpvpai " + key;
+            MinecraftClient.getInstance().getTextureManager().registerTexture(id, new NativeImageBackedTexture(() -> name, img));
+            TEXTURES.put(key, id);
+        }
+        pushPx();
+        texPx(id, p(x), p(y), px, px, 0, 0, px, px, mul(0xFFFFFFFF));
+        popPx();
+    }
+
     /** Player face from the skin (pixel-exact). */
     public static void head(net.minecraft.entity.player.SkinTextures skin, float x, float y, float size) {
         pushPx();

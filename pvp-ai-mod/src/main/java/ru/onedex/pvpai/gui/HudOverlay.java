@@ -3,6 +3,7 @@ package ru.onedex.pvpai.gui;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.cursor.StandardCursors;
 import net.minecraft.client.gui.screen.ChatScreen;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.network.PlayerListEntry;
@@ -41,7 +42,6 @@ public final class HudOverlay {
     private static boolean resizing;
     private static int edgeX, edgeY; // -1 = left/top, 1 = right/bottom, 0 = not grabbed
     private static double anchorX, anchorY;
-    private static float hoverEdges;
     private static final float EDGE = 5;
 
     private static boolean editing(MinecraftClient mc) {
@@ -168,17 +168,14 @@ public final class HudOverlay {
         }
 
         if (edit) {
-            // resize handles on the corners and edge midpoints
+            // no handles: the mouse cursor shows what will happen (move / resize)
             double mx = mc.mouse.getScaledX(mc.getWindow()), my = mc.mouse.getScaledY(mc.getWindow());
-            boolean nearEdge = resizing || (!dragging && edgeAt(mx, my) != 0);
-            hoverEdges += ((nearEdge ? 1 : 0) - hoverEdges) * (1 - (float) Math.exp(-dt * 14));
-            float hr = 2.2f + hoverEdges * 0.8f;
-            int hc = R2D.lerpColor(R2D.withAlpha(accent, 0.75f), accent, hoverEdges);
-            float[][] pts = {{x, y}, {x + W, y}, {x, y + shownH}, {x + W, y + shownH},
-                    {x + W / 2f, y}, {x + W / 2f, y + shownH}, {x, y + shownH / 2f}, {x + W, y + shownH / 2f}};
-            for (float[] pt : pts) {
-                R2D.circle(pt[0], pt[1], hr + 0.8f, 0xFFFFFFFF);
-                R2D.circle(pt[0], pt[1], hr, hc);
+            int edges = resizing ? ((edgeX != 0 ? 1 : 0) | (edgeY != 0 ? 4 : 0)) : (dragging ? 0 : edgeAt(mx, my));
+            if (edges != 0) {
+                boolean horiz = (edges & 3) != 0, vert = (edges & 12) != 0;
+                ctx.setCursor(horiz && vert ? StandardCursors.RESIZE_ALL : horiz ? StandardCursors.RESIZE_EW : StandardCursors.RESIZE_NS);
+            } else if (dragging || over(mx, my)) {
+                ctx.setCursor(StandardCursors.RESIZE_ALL);
             }
             String tip = resizing ? "размер " + Math.round(c.hudScale * 100) + "%"
                     : "тяни — двигать · тяни за край — размер " + Math.round(c.hudScale * 100) + "% · ПКМ — сброс";

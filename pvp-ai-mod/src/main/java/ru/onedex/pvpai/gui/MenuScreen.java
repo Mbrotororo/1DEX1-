@@ -20,6 +20,7 @@ import java.util.function.IntConsumer;
 public class MenuScreen extends Screen {
     private static final String[] MODES = {"Над ником", "HUD"};
 
+    private static final net.minecraft.util.Identifier AVATAR = net.minecraft.util.Identifier.of("dexpvpai", "textures/gui/avatar.png");
     private static final float MAIN_W = 196;
     private static final float SET_W = 220;
     private static final float GAP = 8;
@@ -128,6 +129,10 @@ public class MenuScreen extends Screen {
     @Override
     public boolean mouseClicked(Click click, boolean doubled) {
         if (closing) return true;
+        if (PvpAiClient.MENU_KEY.matchesMouse(click)) {
+            close();
+            return true;
+        }
         double mx = localX(click.x()), my = localY(click.y());
         for (int i = hots.size() - 1; i >= 0; i--) {
             Hot h = hots.get(i);
@@ -283,11 +288,11 @@ public class MenuScreen extends Screen {
         int accent = cfg().accentColor();
         float hx = x + 14;
         float hcy = y + 22;
-        R2D.roundRect(hx, hcy - 11, 22, 22, 7, accent);
-        R2D.textMidCentered("1D", Font.S9, hx + 11, hcy, Theme.onAccent());
+        R2D.picture(AVATAR, hx, hcy - 11, 22, 7);
+        R2D.roundOutline(hx, hcy - 11, 22, 22, 7, 0.5f, R2D.withAlpha(accent, 0.6f));
         R2D.textMid("1DEX1", Font.S11, hx + 31, hcy - 5, th.text());
         R2D.textMid("PvP AI client", Font.M7, hx + 31, hcy + 7, th.sub());
-        R2D.textMidRight("v1.2", Font.M7, x + MAIN_W - 14, hcy - 5, R2D.withAlpha(th.sub(), 0.7f));
+        R2D.textMidRight("v1.3", Font.M7, x + MAIN_W - 14, hcy - 5, R2D.withAlpha(th.sub(), 0.7f));
         R2D.rect(x + 12, y + 44, MAIN_W - 24, 1f / R2D.guiScale(), th.border());
 
         float ry = y + 44 + 6;

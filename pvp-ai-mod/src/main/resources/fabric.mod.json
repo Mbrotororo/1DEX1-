@@ -4,10 +4,23 @@
   "version": "${version}",
   "name": "1DEX1 PvP AI",
   "description": "PvP-анализатор: следит за игроками в прорисовке и считает шанс победы.",
-  "authors": ["1DEX1"],
+  "authors": [
+    "1DEX1"
+  ],
   "license": "MIT",
   "environment": "client",
-  "entrypoints": { "client": ["ru.onedex.pvpai.PvpAiClient"] },
-  "mixins": ["dexpvpai.mixins.json"],
-  "depends": { "fabricloader": ">=0.17.3", "minecraft": "~1.21.11", "java": ">=21" }
+  "entrypoints": {
+    "client": [
+      "ru.onedex.pvpai.PvpAiClient"
+    ]
+  },
+  "mixins": [
+    "dexpvpai.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.17.3",
+    "minecraft": "~1.21.11",
+    "java": ">=21"
+  },
+  "icon": "assets/dexpvpai/icon.png"
 }
