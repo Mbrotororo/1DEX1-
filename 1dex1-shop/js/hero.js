@@ -11,10 +11,10 @@
 //   сайта), кубики смотрят прямо на зрителя. Клик ломает кучку блоков, они быстро вырастают. Остров справа.
 // - Сзади галактика, а звёзды по всему фону медленно вращаются вокруг её ядра.
 // - На краю острова — портал в Незер. Клик по порталу: персонаж заходит в него; летающего персонажа
-//   можно в него закинуть. За порталом — большой адский остров с фермой адского нароста:
-//   грядки из песка душ, нарост растёт несколько часов, урожай даёт бесплатный кейс.
+//   можно в него закинуть. За порталом — большой адский остров. В нём есть древние обломки:
+//   алмазной киркой персонаж добывает их и получает незеритовую кирку. Ей он ломает портал
+//   в Незер на главном острове — на его месте появляется портал в Энд, а за ним — остров Энда.
 import * as THREE from '../vendor/three.module.min.js';
-import {FARM} from './data.js';
 import {t} from './i18n.js';
 import {CROSSHAIR, icon} from './pixel.js';
 import {burst, cellIndex, rasterize, voxelState} from './voxelword.js';
@@ -190,13 +190,6 @@ const makeTextures = () => {
 			return v > 0.88 ? [86, 58, 134] : v > 0.64 ? [40, 27, 64] : v < 0.12 ? [9, 6, 16] : [22, 15, 36];
 		}),
 		netherrack: pixelTexture(netherrackPx),
-		soulSand: pixelTexture((x, y) => {
-			const v = n(x, y, 5);
-			const fx = x % 8;
-			const fy = y % 8;
-			const face = (fx === 2 || fx === 5) && fy === 3 ? 1 : fy === 5 && fx >= 2 && fx <= 5 ? 1 : 0; // «лица» в песке душ
-			return shade([92, 70, 54], face ? 0.58 : v < 0.2 ? 0.82 : v > 0.85 ? 1.15 : 1);
-		}),
 		quartzOre: netherOre([238, 228, 212], 6),
 		netherGold: netherOre([255, 204, 70], 7),
 		magma: pixelTexture((x, y) => {
@@ -230,6 +223,37 @@ const makeTextures = () => {
 			const w = Math.sin(x * 0.7 + y * 0.35) * 0.5 + 0.5;
 			return v > 0.82 ? [255, 238, 122] : w > 0.6 ? [255, 152, 32] : [230, 92, 20];
 		}),
+		// древние обломки: бурые, с волнистыми прожилками; сверху — кольца
+		ancientDebrisSide: pixelTexture((x, y) => {
+			const band = Math.sin(y * 1.25 + Math.sin(x * 0.8) * 1.3);
+			const v = n(x, y, 15);
+			return shade(band > 0.45 ? [140, 104, 90] : band < -0.5 ? [62, 42, 38] : [98, 70, 60], v < 0.15 ? 0.85 : v > 0.88 ? 1.12 : 1);
+		}),
+		ancientDebrisTop: pixelTexture((x, y) => {
+			const d = Math.max(Math.abs(x - 7.5), Math.abs(y - 7.5));
+			return d > 6.5 ? [70, 48, 42] : Math.floor(d) % 2 ? [124, 92, 78] : [88, 62, 54];
+		}),
+		// ---------- Энд ----------
+		endStone: pixelTexture((x, y) => {
+			const v = n(x, y, 16);
+			return shade([222, 224, 166], v < 0.14 ? 0.86 : v > 0.86 ? 1.06 : (x * 3 + y) % 9 === 0 ? 0.92 : 1);
+		}),
+		endFrameSide: pixelTexture((x, y) => {
+			if (y < 4) return shade([58, 104, 86], y === 0 ? 1.2 : n(x, y, 17) > 0.7 ? 1.1 : 1);
+			if (y === 4) return [40, 70, 58];
+			return shade([214, 214, 168], n(x, y, 18) < 0.15 ? 0.88 : 1);
+		}),
+		endFrameTop: pixelTexture((x, y) => {
+			const d = Math.hypot(x - 7.5, y - 7.5);
+			if (d < 4.2) return d < 3 ? [26, 44, 38] : [36, 62, 52];
+			return shade([62, 110, 92], x === 0 || y === 0 || x === 15 || y === 15 ? 0.7 : n(x, y, 19) > 0.8 ? 1.12 : 1);
+		}),
+		bedrock: pixelTexture((x, y) => {
+			const v = n(x, y, 20);
+			return v > 0.7 ? [124, 124, 128] : v > 0.35 ? [82, 82, 86] : [42, 42, 46];
+		}),
+		chorus: pixelTexture((x, y) => shade([132, 90, 140], n(x, y, 21) < 0.2 ? 0.75 : n(x, y, 21) > 0.85 ? 1.2 : 1)),
+		chorusFlower: pixelTexture((x, y) => shade([200, 164, 214], n(x, y, 22) < 0.2 ? 0.8 : n(x, y, 22) > 0.8 ? 1.12 : 1)),
 		crimsonRoots: plant((x, y) => {
 			for (const b of [3, 6, 9, 12]) {
 				const top = 5 + ((b * 3) % 5);
@@ -238,22 +262,6 @@ const makeTextures = () => {
 			}
 			return null;
 		}),
-		// адский нарост: четыре стадии роста, на последней — крупные красные головки
-		wart: [0, 1, 2, 3].map((stage) =>
-			plant((x, y) => {
-				const cols = stage < 1 ? [5, 10] : stage < 2 ? [3, 7, 11] : [2, 5, 8, 11, 14];
-				const h = [4, 7, 10, 13][stage];
-				for (const c of cols) {
-					const top = 15 - h + ((c * 5) % 3);
-					const r = 0.8 + stage * 0.55;
-					const dx = x - c;
-					const dy = y - top;
-					if (dx * dx + dy * dy <= r * r) return dx + dy < -0.5 ? [240, 90, 88] : [178, 26, 40];
-					if (x === c && y > top) return [112, 24, 32];
-				}
-				return null;
-			}),
-		),
 		grassTuft: plant((x, y) => {
 			const blades = [2, 5, 7, 10, 12, 14];
 			for (const b of blades) {
@@ -449,10 +457,11 @@ export const TIERS = [
 	{id: 'stone', head: '#76767c', hi: '#a9a9b0'},
 	{id: 'iron', head: '#cfcfd6', hi: '#ffffff'},
 	{id: 'diamond', head: '#26cfc0', hi: '#a6fff2'},
+	{id: 'netherite', head: '#4b4150', hi: '#8f8098'},
 ];
 // какую кирку нужно иметь, чтобы добыть блок, и что даёт добыча
-const NEED = {iron: 1, gold: 2, diamond: 2};
-const UPGRADE = {stone: 1, iron: 2, diamond: 3};
+const NEED = {iron: 1, gold: 2, diamond: 2, ancientDebris: 3};
+const UPGRADE = {stone: 1, iron: 2, diamond: 3, ancientDebris: 4};
 
 // ---------- константы сцены ----------
 const WORD_DEPTH = 1.8;
@@ -478,9 +487,10 @@ const smooth = (t, a, b) => {
 const loadProgress = () => {
 	try {
 		const p = JSON.parse(localStorage.getItem(PROGRESS_KEY)) || {};
-		return {tier: clamp(p.tier | 0, 0, 3), torches: clamp(p.torches | 0, 0, 4)};
+		// endPortal — портал в Незер сломан незеритовой киркой, на его месте портал в Энд
+		return {tier: clamp(p.tier | 0, 0, 4), torches: clamp(p.torches | 0, 0, 4), endPortal: Boolean(p.endPortal)};
 	} catch {
-		return {tier: 0, torches: 0};
+		return {tier: 0, torches: 0, endPortal: false};
 	}
 };
 const saveProgress = (p) => {
@@ -496,7 +506,7 @@ const saveProgress = (p) => {
 //  'torch' — факел на дереве, 'need' / 'far' / 'busy' — почему блок не добыть,
 //  'drag' — персонажа подняли, 'diamond' — алмазная кирка, 'wallNeed' — стену не сломать,
 //  'free' — стена сломана, 'tickle' — пять кликов по скину
-export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = null, sky = null, farm: farmApi = null} = {}) => {
+export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = null, sky = null} = {}) => {
 	let renderer;
 	try {
 		renderer = new THREE.WebGLRenderer({canvas, antialias: true, alpha: true, powerPreference: 'high-performance'});
@@ -589,6 +599,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	// rot — поворот вокруг вертикали; рамка 4×5 блоков по PORTAL_S.
 	const PORTAL_O = {x: 2.3, z: -1.3, rot: -0.6};
 	const PORTAL_S = 0.8;
+	// портал в Энд (появляется на месте сломанного портала в Незер) — плоский, в земле
+	const END_O = {x: 1.7, z: -1.1, rot: -0.6};
 	// расстояние по земле от точки до рамки портала
 	const portalDist = (o, x, z) => {
 		const tx = Math.cos(o.rot);
@@ -644,7 +656,11 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		log: [logSide, logSide, logTop, logTop, logSide, logSide],
 		leaves: lambert(tex.leaves),
 	};
-	const BLOCK_COLOR = {grass: '#5fae3f', dirt: '#7d5a3e', stone: '#7c7888', coal: '#38363f', iron: '#c9a585', gold: '#ffc83d', diamond: '#3fe6d8', amethystOre: '#9a6bff', log: '#6a4a2a', leaves: '#3e842c'};
+	const BLOCK_COLOR = {
+		grass: '#5fae3f', dirt: '#7d5a3e', stone: '#7c7888', coal: '#38363f', iron: '#c9a585', gold: '#ffc83d', diamond: '#3fe6d8', amethystOre: '#9a6bff', log: '#6a4a2a', leaves: '#3e842c',
+		netherrack: '#73342f', quartzOre: '#e8dccb', netherGold: '#ffc83d', ancientDebris: '#6a4a3e', magma: '#ff8a22', glowstone: '#ffd27a', shroomlight: '#ffaa55', wartBlock: '#98161c', crimsonStem: '#7e2840',
+		endStone: '#dedfa6', obsidian: '#2a1d40', bedrock: '#555558',
+	};
 
 	const setBlock = (b, s) => {
 		b.scale = s;
@@ -692,7 +708,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const {x, z} = b.pos;
 		if (Math.hypot(x - HOME.x, z - HOME.z) < 1.4) continue;
 		if (Math.hypot(x - CHEST.x, z - CHEST.z) < 1.2) continue;
-		if (portalDist(PORTAL_O, x, z) < 1.0) continue;
+		if (portalDist(PORTAL_O, x, z) < 1.0 || Math.hypot(x - END_O.x, z - END_O.z) < 1.8) continue;
 		if (blockAt.has(`${x},0.5,${z}`)) continue;
 		const roll = rand();
 		if (roll > 0.42) continue;
@@ -747,7 +763,9 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	showTorches();
 
 	// препятствия на верхушке острова: персонаж их обходит
-	const OBSTACLES = [{x: TREE.x, z: TREE.z, r: 0.8}, {x: CHEST.x, z: CHEST.z, r: 0.85}, ...BUSHES.map((b) => ({x: b.x, z: b.z, r: 0.75})), ...portalObstacles(PORTAL_O)];
+	// препятствия; портал добавляется ниже (в Незер или в Энд — смотря что стоит)
+	const OVER_BASE_OBSTACLES = [{x: TREE.x, z: TREE.z, r: 0.8}, {x: CHEST.x, z: CHEST.z, r: 0.85}, ...BUSHES.map((b) => ({x: b.x, z: b.z, r: 0.75}))];
+	const OBSTACLES = [...OVER_BASE_OBSTACLES];
 
 	// ================= ПЕРСОНАЖ =================
 	const skin = new THREE.TextureLoader().load('img/skin.png');
@@ -805,25 +823,30 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	rig.root.scale.setScalar(PLAYER_SCALE);
 	island.add(rig.pivot); // стоит на острове и качается вместе с ним
 
-	// mode: idle | walk | chest | mine | land | portal | farm — на острове; free — снят с острова и летает по сайту
+	// mode: idle | walk | chest | mine | land | portal | breakPortal — на острове; free — снят с острова и летает по сайту
 	const P = {mode: 'idle', pos: HOME.clone(), face: 0.15, path: [], queue: [], actT: 0, walkPhase: 0, holding: false, landT: 0};
 
-	// всё, что стоит на обычном острове, — в своей группе: за порталом её сменяет адский остров
+	// всё, что стоит на обычном острове, — в своей группе: за порталом её сменяет другой мир
 	const overGround = new THREE.Group();
 	for (const c of [...island.children]) if (c !== rig.pivot) overGround.add(c);
 	island.add(overGround);
 
-	// ================= ПОРТАЛ В НЕЗЕР =================
-	// Рамка из обсидиана 4×5 блоков, внутри переливается фиолетовая «завеса», вверх летят искры.
-	const portalCanvas = document.createElement('canvas');
-	portalCanvas.width = portalCanvas.height = 16;
-	const portalCtx = portalCanvas.getContext('2d');
-	const portalImg = portalCtx.createImageData(16, 16);
-	const portalTex = new THREE.CanvasTexture(portalCanvas);
-	portalTex.magFilter = THREE.NearestFilter;
-	portalTex.minFilter = THREE.NearestFilter;
-	portalTex.generateMipmaps = false;
-	portalTex.colorSpace = THREE.SRGBColorSpace;
+	// ================= ПОРТАЛЫ =================
+	// В Незер — рамка из обсидиана 4×5, внутри переливается фиолетовая завеса.
+	// В Энд — плоский, в земле: рамка из 12 блоков с глазами Края, внутри — звёздная бездна.
+	// to — куда ведёт портал; spot — где встать, чтобы зайти; mid и corners — для броска персонажа.
+	const pixelCanvasTex = (size) => {
+		const c = document.createElement('canvas');
+		c.width = c.height = size;
+		const t2 = new THREE.CanvasTexture(c);
+		t2.magFilter = THREE.NearestFilter;
+		t2.minFilter = THREE.NearestFilter;
+		t2.generateMipmaps = false;
+		t2.colorSpace = THREE.SRGBColorSpace;
+		return {ctx: c.getContext('2d'), tex: t2};
+	};
+	const portalPx = pixelCanvasTex(16);
+	const portalImg = portalPx.ctx.createImageData(16, 16);
 	const paintPortal = (time) => {
 		const d = portalImg.data;
 		for (let y = 0; y < 16; y++) {
@@ -837,15 +860,37 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				d[i + 3] = 200 + k * 52;
 			}
 		}
-		portalCtx.putImageData(portalImg, 0, 0);
-		portalTex.needsUpdate = true;
+		portalPx.ctx.putImageData(portalImg, 0, 0);
+		portalPx.tex.needsUpdate = true;
 	};
 	paintPortal(0);
-	const portalMat = new THREE.MeshBasicMaterial({map: portalTex, transparent: true, side: THREE.DoubleSide, depthWrite: false});
+	// бездна портала в Энд: чёрная, с медленно плывущими цветными звёздами
+	const voidPx = pixelCanvasTex(32);
+	const voidStars = Array.from({length: 46}, (_, i) => ({x: (i * 37) % 32, y: (i * 53) % 32, v: 0.6 + ((i * 7) % 5) * 0.35, c: ['#ffffff', '#9fe8d8', '#c9a6ff', '#7dd3ff', '#e8ffd0'][i % 5]}));
+	const paintVoid = (time) => {
+		const g = voidPx.ctx;
+		g.fillStyle = '#06040c';
+		g.fillRect(0, 0, 32, 32);
+		for (const s of voidStars) {
+			g.fillStyle = s.c;
+			g.fillRect(Math.floor((s.x + time * s.v) % 32), Math.floor((s.y + time * s.v * 0.6) % 32), 1, 1);
+		}
+		voidPx.tex.needsUpdate = true;
+	};
+	paintVoid(0);
+	const portalMat = new THREE.MeshBasicMaterial({map: portalPx.tex, transparent: true, side: THREE.DoubleSide, depthWrite: false});
+	const voidMat = new THREE.MeshBasicMaterial({map: voidPx.tex});
 	const obsidianMat = lambert(tex.obsidian);
-	const sparkMat = new THREE.MeshBasicMaterial({color: '#d4b4ff'});
+	const sparkMats = {nether: new THREE.MeshBasicMaterial({color: '#d4b4ff'}), end: new THREE.MeshBasicMaterial({color: '#9ff0d8'})};
 	const portals = [];
-	const buildPortal = (parent, o) => {
+	const addSparks = (g, kind, area) => {
+		const sparks = new THREE.InstancedMesh(box, sparkMats[kind], 10);
+		sparks.frustumCulled = false;
+		const sp = Array.from({length: 10}, () => ({x: (Math.random() - 0.5) * area.w, y: area.y0 + Math.random() * (area.y1 - area.y0), z: (Math.random() - 0.5) * area.d, v: 0.3 + Math.random() * 0.5, ph: Math.random() * 6}));
+		g.add(sparks);
+		return {sparks, sp, area};
+	};
+	const buildNetherPortal = (parent, o, to) => {
 		const g = new THREE.Group();
 		g.position.set(o.x, 0, o.z);
 		g.rotation.y = o.rot;
@@ -861,44 +906,130 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		});
 		const plane = new THREE.Mesh(new THREE.PlaneGeometry(2 * PORTAL_S, 3 * PORTAL_S), portalMat);
 		plane.position.set(0, 2.5 * PORTAL_S, 0);
-		const halo = new THREE.Sprite(new THREE.SpriteMaterial({map: glow, color: '#9a4bff', transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending}));
+		const halo = new THREE.Sprite(new THREE.SpriteMaterial({map: glow, color: '#9a4bff', transparent: true, opacity: 0.4, depthWrite: false, blending: THREE.AdditiveBlending}));
 		halo.position.set(0, 2.5 * PORTAL_S, 0);
-		halo.scale.set(4.4, 5.2, 1);
-		const sparks = new THREE.InstancedMesh(box, sparkMat, 12);
-		sparks.frustumCulled = false;
-		const sp = Array.from({length: 12}, () => ({x: (Math.random() - 0.5) * 2.6, y: Math.random() * 4.2, z: (Math.random() - 0.5) * 1.4, v: 0.35 + Math.random() * 0.6, ph: Math.random() * 6}));
-		g.add(frameMesh, plane, halo, sparks);
+		halo.scale.set(3.6, 4.4, 1);
+		g.add(frameMesh, plane, halo);
 		parent.add(g);
-		const p = {o, group: g, sparks, sp, pick: [frameMesh, plane], center: new THREE.Vector3(o.x, 0, o.z), spot: new THREE.Vector3(o.x + Math.sin(o.rot) * 1.15, 0, o.z + Math.cos(o.rot) * 1.15), parent};
+		const S = PORTAL_S;
+		const p = {
+			kind: 'nether',
+			to,
+			o,
+			group: g,
+			plane,
+			frameMesh,
+			...addSparks(g, 'nether', {w: 2.1, d: 0.9, y0: 0.7, y1: 3.4}),
+			pick: [frameMesh, plane],
+			center: new THREE.Vector3(o.x, 0, o.z),
+			spot: new THREE.Vector3(o.x + Math.sin(o.rot) * 1.15, 0, o.z + Math.cos(o.rot) * 1.15),
+			mid: new THREE.Vector3(0, 2.5 * S, 0),
+			corners: [[-S, S, 0], [S, S, 0], [S, 4 * S, 0], [-S, 4 * S, 0]].map((v) => new THREE.Vector3(...v)),
+			parent,
+		};
 		portals.push(p);
 		return p;
 	};
-	const portalOver = buildPortal(overGround, PORTAL_O);
+	const END_S = 0.52; // блок рамки портала в Энд
+	const endFrameSide = lambert(tex.endFrameSide);
+	const endFrameMats = [endFrameSide, endFrameSide, lambert(tex.endFrameTop), lambert(tex.endStone), endFrameSide, endFrameSide];
+	const eyeMat = new THREE.MeshLambertMaterial({color: '#2f8f62', emissive: '#0d3a26'});
+	const hitMat = new THREE.MeshBasicMaterial({colorWrite: false, depthWrite: false});
+	const buildEndPortal = (parent, o, to) => {
+		const g = new THREE.Group();
+		g.position.set(o.x, 0, o.z);
+		g.rotation.y = o.rot;
+		const S = END_S;
+		const cells = [];
+		for (let i = 0; i < 5; i++) for (let j = 0; j < 5; j++) if ((i === 0 || i === 4 || j === 0 || j === 4) && !((i === 0 || i === 4) && (j === 0 || j === 4))) cells.push([i, j]);
+		const frameMesh = new THREE.InstancedMesh(box, endFrameMats, cells.length);
+		const eyes = new THREE.InstancedMesh(box, eyeMat, cells.length);
+		cells.forEach(([i, j], k) => {
+			dummy.rotation.set(0, 0, 0);
+			dummy.position.set((i - 2) * S, 0.4 * S, (j - 2) * S);
+			dummy.scale.set(S, 0.8 * S, S);
+			dummy.updateMatrix();
+			frameMesh.setMatrixAt(k, dummy.matrix);
+			dummy.position.set((i - 2) * S, 0.88 * S, (j - 2) * S);
+			dummy.scale.set(0.42 * S, 0.18 * S, 0.42 * S);
+			dummy.updateMatrix();
+			eyes.setMatrixAt(k, dummy.matrix);
+		});
+		const plane = new THREE.Mesh(new THREE.PlaneGeometry(3 * S, 3 * S), voidMat);
+		plane.rotation.x = -Math.PI / 2;
+		plane.position.y = 0.62 * S;
+		// портал плоский и сбоку почти не виден — клики ловит невидимая коробка на всю рамку
+		const hit = new THREE.Mesh(new THREE.BoxGeometry(5 * S, 1.3, 5 * S), hitMat);
+		hit.position.y = 0.5;
+		g.add(frameMesh, eyes, plane, hit);
+		parent.add(g);
+		// встаёт с той стороны, что ближе к середине острова
+		const toward = new THREE.Vector2(-o.x, -o.z).normalize();
+		const y = 0.62 * S;
+		const p = {
+			kind: 'end',
+			to,
+			o,
+			group: g,
+			plane,
+			frameMesh,
+			...addSparks(g, 'end', {w: 2.6 * S, d: 2.6 * S, y0: y, y1: y + 1.6}),
+			pick: [hit],
+			center: new THREE.Vector3(o.x, 0, o.z),
+			spot: new THREE.Vector3(o.x + toward.x * 1.9, 0, o.z + toward.y * 1.9),
+			mid: new THREE.Vector3(0, y, 0),
+			corners: [[-1.5, -1.5], [1.5, -1.5], [1.5, 1.5], [-1.5, 1.5]].map(([a, b]) => new THREE.Vector3(a * S, y, b * S)),
+			parent,
+		};
+		portals.push(p);
+		return p;
+	};
+	// на главном острове: портал в Незер, а после того как его сломают незеритовой киркой — портал в Энд
+	const portalOver = buildNetherPortal(overGround, PORTAL_O, 'nether');
+	const portalEndOver = buildEndPortal(overGround, END_O, 'end');
+	portalOver.group.visible = !progress.endPortal;
+	portalEndOver.group.visible = progress.endPortal;
+	const overObstacles = () => [...OVER_BASE_OBSTACLES, ...(progress.endPortal ? [{x: END_O.x, z: END_O.z, r: 1.35}] : portalObstacles(PORTAL_O))];
+	OBSTACLES.splice(0, OBSTACLES.length, ...overObstacles());
 
-	// ================= АДСКИЙ ОСТРОВ (НЕЗЕР) =================
-	// Больше обычного: незерак с кварцем, золотом и магмой, багровый гриб с грибосветами,
-	// лавопад с края, светокамень снизу, портал домой и ферма из шести грядок песка душ.
-	const netherGround = new THREE.Group();
-	netherGround.visible = false;
-	island.add(netherGround);
-	const N_HOME = new THREE.Vector3(-0.4, 0, 0.5);
-	const N_PORTAL = {x: 2.8, z: -2.6, rot: -0.55};
-	const N_TREE = {x: -2, z: -2};
-	const PLOTS = [
-		[0, 2],
-		[1, 2],
-		[2, 2],
-		[0, 3],
-		[1, 3],
-		[2, 3],
-	].slice(0, FARM.plots);
-	const N_LAMPS = [
-		{x: -1, z: 3},
-		{x: 3, z: 2},
-	];
-	const LAVA_AT = {x: -3, z: 4};
-	const nether = (() => {
-		const nr = rng(23);
+	// ================= МИРЫ =================
+	// Каждый мир — своя группа на острове. Незер и Энд строятся при первом входе:
+	// пока туда не заглянули, они не занимают память и не замедляют загрузку.
+	const BASIC = (map) => new THREE.MeshBasicMaterial({map});
+	const hullRing = (r0, r1, r2, y2) => {
+		const out = [];
+		for (let i = 0; i < 16; i++) {
+			const a = (i / 16) * Math.PI * 2;
+			out.push(new THREE.Vector3(Math.cos(a) * r0, 0.05, Math.sin(a) * r0));
+			out.push(new THREE.Vector3(Math.cos(a) * r1, -2, Math.sin(a) * r1));
+			out.push(new THREE.Vector3(Math.cos(a) * r2, y2, Math.sin(a) * r2));
+		}
+		return out;
+	};
+	// блоки мира: по одному InstancedMesh на тип; блоки можно добывать, они вырастают снова
+	const meshBlocks = (list, mats, parent) => {
+		const groups = new Map();
+		for (const b of list) {
+			b.minedAt = -1;
+			b.scale = 1;
+			if (!groups.has(b.type)) groups.set(b.type, []);
+			groups.get(b.type).push(b);
+		}
+		const meshes = [];
+		for (const [type, bl] of groups) {
+			const mesh = new THREE.InstancedMesh(box, mats[type], bl.length);
+			mesh.userData.blocks = bl;
+			bl.forEach((b, i) => {
+				b.mesh = mesh;
+				b.index = i;
+				setBlock(b, 1);
+			});
+			parent.add(mesh);
+			meshes.push(mesh);
+		}
+		return meshes;
+	};
+	const blockSet = () => {
 		const list = [];
 		const at = new Map();
 		const key = (x, y, z) => `${x},${y},${z}`;
@@ -913,6 +1044,24 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			at.set(k, b);
 			return b;
 		};
+		// блоки на краю слоя, видные спереди (ближе к зрителю — первыми)
+		const exposedAt = (y) =>
+			list
+				.filter((b) => b.pos.y === y && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => !at.has(key(b.pos.x + dx, y, b.pos.z + dz))))
+				.sort((a, b) => b.pos.z + b.pos.x * 0.3 - (a.pos.z + a.pos.x * 0.3));
+		return {list, at, key, add, exposedAt};
+	};
+
+	// --- Незер: большой остров из незерака с кварцем, золотом, магмой и древними обломками,
+	// багровый гриб с грибосветами, лавопад, светокамень снизу и портал домой ---
+	const buildNether = () => {
+		const ground = new THREE.Group();
+		island.add(ground);
+		const N_PORTAL = {x: 2.8, z: -2.6, rot: -0.55};
+		const N_TREE = {x: -2, z: -2};
+		const LAVA_AT = {x: -3, z: 4};
+		const nr = rng(23);
+		const B = blockSet();
 		[5.6, 5.1, 4.5, 3.8, 3.0, 2.2, 1.3].forEach((radius, layer) => {
 			for (let x = -6; x <= 6; x++) {
 				for (let z = -6; z <= 6; z++) {
@@ -925,19 +1074,18 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 					} else if (o < 0.07) type = 'quartzOre';
 					else if (o < 0.1) type = 'netherGold';
 					else if (o < 0.13 && layer > 1) type = 'magma';
-					add(type, x, -layer - 0.5, z);
+					B.add(type, x, -layer - 0.5, z);
 				}
 			}
 		});
-		for (const [x, z] of PLOTS) add('soulSand', x, -0.5, z);
-		add('lava', LAVA_AT.x, -0.5, LAVA_AT.z);
-		// светокамень гроздью снизу и два фонаря у фермы
-		for (const [x, z] of [[0, 0], [1, 0], [0, 1], [-1, 0], [0, -1], [1, 1]]) add('glowstone', x, -7.5, z);
-		add('glowstone', 0, -8.5, 0);
-		for (const l of N_LAMPS) add('glowstone', l.x, 0.5, l.z);
-		// багровый гриб: ствол, шапка из блоков нароста, внутри — грибосветы
-		for (let y = 0; y < 5; y++) add('crimsonStem', N_TREE.x, y + 0.5, N_TREE.z);
-		const cap = (dx, y, dz) => add(nr() < 0.13 ? 'shroomlight' : 'wartBlock', N_TREE.x + dx, y, N_TREE.z + dz);
+		// древние обломки (из них незерит): на краю острова спереди — их видно сверху, и до них можно дотянуться
+		const edge = B.exposedAt(-0.5).filter((b) => Math.hypot(b.pos.x - LAVA_AT.x, b.pos.z - LAVA_AT.z) > 1.5);
+		[edge[1], edge[5], edge[9]].forEach((b) => b && (b.type = 'ancientDebris'));
+		B.add('lava', LAVA_AT.x, -0.5, LAVA_AT.z);
+		for (const [x, z] of [[0, 0], [1, 0], [0, 1], [-1, 0], [0, -1], [1, 1]]) B.add('glowstone', x, -7.5, z);
+		B.add('glowstone', 0, -8.5, 0);
+		for (let y = 0; y < 5; y++) B.add('crimsonStem', N_TREE.x, y + 0.5, N_TREE.z);
+		const cap = (dx, y, dz) => B.add(nr() < 0.13 ? 'shroomlight' : 'wartBlock', N_TREE.x + dx, y, N_TREE.z + dz);
 		for (const y of [3.5, 4.5]) {
 			for (let dx = -2; dx <= 2; dx++) {
 				for (let dz = -2; dz <= 2; dz++) {
@@ -950,126 +1098,228 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		}
 		for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) cap(dx, 5.5, dz);
 		cap(0, 6.5, 0);
-		// блоки, со всех сторон закрытые другими, не рисуем
-		const hidden = (b) => [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]].every(([dx, dy, dz]) => at.has(key(b.pos.x + dx, b.pos.y + dy, b.pos.z + dz)));
 		const stemSide = lambert(tex.crimsonStem);
 		const stemTop = lambert(tex.crimsonTop);
-		const basic = (map) => new THREE.MeshBasicMaterial({map});
-		const NMATS = {
-			netherrack: lambert(tex.netherrack),
-			soulSand: lambert(tex.soulSand),
-			quartzOre: lambert(tex.quartzOre),
-			netherGold: lambert(tex.netherGold),
-			magma: basic(tex.magma),
-			glowstone: basic(tex.glowstone),
-			shroomlight: basic(tex.shroomlight),
-			lava: basic(tex.lava),
-			wartBlock: lambert(tex.wartBlock),
-			crimsonStem: [stemSide, stemSide, stemTop, stemTop, stemSide, stemSide],
-		};
-		const groups = new Map();
-		for (const b of list) {
-			if (hidden(b)) continue;
-			if (!groups.has(b.type)) groups.set(b.type, []);
-			groups.get(b.type).push(b);
-		}
-		for (const [type, bl] of groups) {
-			const mesh = new THREE.InstancedMesh(box, NMATS[type], bl.length);
-			bl.forEach((b, i) => {
-				dummy.position.copy(b.pos);
-				dummy.rotation.set(0, 0, 0);
-				dummy.scale.setScalar(1);
-				dummy.updateMatrix();
-				mesh.setMatrixAt(i, dummy.matrix);
-			});
-			netherGround.add(mesh);
-		}
-		// багровые корни на незераке
-		const rootMat = plantMat(tex.crimsonRoots);
-		for (const b of list) {
-			if (b.type !== 'netherrack' || b.pos.y !== -0.5) continue;
+		const debrisSide = lambert(tex.ancientDebrisSide);
+		const debrisTop = lambert(tex.ancientDebrisTop);
+		const meshes = meshBlocks(
+			B.list,
+			{
+				netherrack: lambert(tex.netherrack),
+				quartzOre: lambert(tex.quartzOre),
+				netherGold: lambert(tex.netherGold),
+				ancientDebris: [debrisSide, debrisSide, debrisTop, debrisTop, debrisSide, debrisSide],
+				magma: BASIC(tex.magma),
+				glowstone: BASIC(tex.glowstone),
+				shroomlight: BASIC(tex.shroomlight),
+				lava: BASIC(tex.lava),
+				wartBlock: lambert(tex.wartBlock),
+				crimsonStem: [stemSide, stemSide, stemTop, stemTop, stemSide, stemSide],
+			},
+			ground,
+		);
+		// багровые корни — один InstancedMesh на все (одна отрисовка вместо десятков)
+		const spots = B.list.filter((b) => {
+			if (b.type !== 'netherrack' || b.pos.y !== -0.5) return false;
 			const {x, z} = b.pos;
-			if (Math.hypot(x - N_HOME.x, z - N_HOME.z) < 1.3 || portalDist(N_PORTAL, x, z) < 1.2) continue;
-			if (at.has(key(x, 0.5, z)) || (x >= -1 && x <= 3 && z >= 1 && z <= 4)) continue; // не на ферме
-			if (nr() > 0.16) continue;
-			const m = new THREE.Mesh(crossGeo, rootMat);
-			m.position.set(x + (nr() - 0.5) * 0.2, 0, z + (nr() - 0.5) * 0.2);
-			m.rotation.y = nr() * Math.PI;
-			m.scale.setScalar(0.75 + nr() * 0.3);
-			netherGround.add(m);
-		}
-		return {at};
-	})();
-	// лавопад: стекает с края острова вниз
-	const lavaFallTex = tex.lava.clone();
-	lavaFallTex.wrapS = lavaFallTex.wrapT = THREE.RepeatWrapping;
-	lavaFallTex.repeat.set(1, 7);
-	lavaFallTex.needsUpdate = true;
-	const lavaFall = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 7), new THREE.MeshBasicMaterial({map: lavaFallTex, side: THREE.DoubleSide}));
-	lavaFall.position.set(LAVA_AT.x, -3.5, LAVA_AT.z + 0.52);
-	netherGround.add(lavaFall);
-	const portalNether = buildPortal(netherGround, N_PORTAL);
-
-	// --- ферма: на каждой грядке — нарост своей стадии ---
-	const wartMats = tex.wart.map((m) => plantMat(m));
-	const crops = PLOTS.map(([x, z]) => {
-		const mesh = new THREE.Mesh(crossGeo, wartMats[0]);
-		mesh.position.set(x, 0, z);
-		mesh.visible = false;
-		netherGround.add(mesh);
-		return {x, z, mesh};
-	});
-	const N_OBSTACLES = [
-		{x: N_TREE.x, z: N_TREE.z, r: 0.8},
-		...N_LAMPS.map((l) => ({x: l.x, z: l.z, r: 0.7})),
-		...[0, 1, 2].map((x) => ({x, z: 2.5, r: 0.55})), // грядки: по ним не ходит
-		...portalObstacles(N_PORTAL),
-	];
-	// где встать, чтобы дотянуться до грядки: перед первым рядом или за вторым
-	const plotStand = (i) => new THREE.Vector3(crops[i].x, 0, crops[i].z <= 2 ? 1.05 : 3.95);
-	const N_HULL = [];
-	for (let i = 0; i < 16; i++) {
-		const a = (i / 16) * Math.PI * 2;
-		N_HULL.push(new THREE.Vector3(Math.cos(a) * 5.8, 0.05, Math.sin(a) * 5.8));
-		N_HULL.push(new THREE.Vector3(Math.cos(a) * 5.2, -2, Math.sin(a) * 5.2));
-		N_HULL.push(new THREE.Vector3(Math.cos(a) * 2.2, -8, Math.sin(a) * 2.2));
-	}
-
-	// искры-угольки и красное зарево вокруг адского острова (не качаются вместе с ним)
-	const netherFx = new THREE.Group();
-	netherFx.visible = false;
-	world.add(netherFx);
-	const EMBERS = 140;
-	const emberPos = new Float32Array(EMBERS * 3);
-	const emberCol = new Float32Array(EMBERS * 3);
-	{
-		const er = rng(5);
+			if (Math.hypot(x + 0.4, z - 0.5) < 1.3 || portalDist(N_PORTAL, x, z) < 1.2 || B.at.has(B.key(x, 0.5, z))) return false;
+			return nr() < 0.16;
+		});
+		const roots = new THREE.InstancedMesh(crossGeo, plantMat(tex.crimsonRoots), spots.length);
+		spots.forEach((b, i) => {
+			dummy.position.set(b.pos.x + (nr() - 0.5) * 0.2, 0, b.pos.z + (nr() - 0.5) * 0.2);
+			dummy.rotation.set(0, nr() * Math.PI, 0);
+			dummy.scale.setScalar(0.75 + nr() * 0.3);
+			dummy.updateMatrix();
+			roots.setMatrixAt(i, dummy.matrix);
+		});
+		ground.add(roots);
+		// лавопад с края острова
+		const lavaTex = tex.lava.clone();
+		lavaTex.wrapS = lavaTex.wrapT = THREE.RepeatWrapping;
+		lavaTex.repeat.set(1, 6);
+		lavaTex.needsUpdate = true;
+		const lavaFall = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 6), new THREE.MeshBasicMaterial({map: lavaTex, side: THREE.DoubleSide}));
+		lavaFall.position.set(LAVA_AT.x, -3, LAVA_AT.z + 0.52);
+		ground.add(lavaFall);
+		// искры-угольки и красное зарево (не качаются вместе с островом); на телефоне искр меньше
+		const fx = new THREE.Group();
+		world.add(fx);
+		const EMB = innerWidth < 900 ? 55 : 100;
+		const pos = new Float32Array(EMB * 3);
+		const col = new Float32Array(EMB * 3);
 		const c = new THREE.Color();
-		for (let i = 0; i < EMBERS; i++) {
-			emberPos[i * 3] = (er() - 0.5) * 22;
-			emberPos[i * 3 + 1] = (er() - 0.5) * 20;
-			emberPos[i * 3 + 2] = (er() - 0.5) * 12 - 2;
-			c.set(['#ff7a1f', '#ffb02e', '#ff4a1a', '#ffd36b'][Math.floor(er() * 4)]);
-			emberCol[i * 3] = c.r;
-			emberCol[i * 3 + 1] = c.g;
-			emberCol[i * 3 + 2] = c.b;
+		for (let i = 0; i < EMB; i++) {
+			pos[i * 3] = (nr() - 0.5) * 22;
+			pos[i * 3 + 1] = (nr() - 0.5) * 20;
+			pos[i * 3 + 2] = (nr() - 0.5) * 12 - 2;
+			c.set(['#ff7a1f', '#ffb02e', '#ff4a1a', '#ffd36b'][Math.floor(nr() * 4)]);
+			col.set([c.r, c.g, c.b], i * 3);
 		}
-	}
-	const emberGeo = new THREE.BufferGeometry();
-	emberGeo.setAttribute('position', new THREE.BufferAttribute(emberPos, 3));
-	emberGeo.setAttribute('color', new THREE.BufferAttribute(emberCol, 3));
-	netherFx.add(new THREE.Points(emberGeo, new THREE.PointsMaterial({size: 3, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending})));
-	const netherGlow = new THREE.Sprite(new THREE.SpriteMaterial({map: glow, color: '#ff3a12', transparent: true, opacity: 0.4, depthWrite: false, blending: THREE.AdditiveBlending}));
-	netherGlow.position.set(0, -2, -16);
-	netherGlow.scale.setScalar(34);
-	netherFx.add(netherGlow);
+		const emberGeo = new THREE.BufferGeometry();
+		emberGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+		emberGeo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+		fx.add(new THREE.Points(emberGeo, new THREE.PointsMaterial({size: 3, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0.85, depthWrite: false})));
+		const redGlow = new THREE.Sprite(new THREE.SpriteMaterial({map: glow, color: '#ff3a12', transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending}));
+		redGlow.position.set(0, -2, -16);
+		redGlow.scale.setScalar(24);
+		fx.add(redGlow);
+		const portal = buildNetherPortal(ground, N_PORTAL, 'over');
+		return {
+			id: 'nether',
+			ground,
+			fx,
+			blocks: B.list,
+			meshes,
+			portal,
+			home: new THREE.Vector3(-0.4, 0, 0.5),
+			standR: 4.5,
+			obstacles: () => [{x: N_TREE.x, z: N_TREE.z, r: 0.8}, ...portalObstacles(N_PORTAL)],
+			box: {w: 14.5, h: 16.5, cy: -0.9},
+			view: [0.2, 0.5, 1],
+			hull: hullRing(5.8, 5.2, 2.2, -8),
+			light: ['#ffb49c', '#ffd8b8', '#ff5a1f'],
+			sky: ['#ffd2a6', '#ffb27a', '#ff8a4a', '#ff5a2a', '#ffd36b', '#ff9a5a'],
+			css: 'is-nether',
+			tick: (dt) => {
+				lavaTex.offset.y = (lavaTex.offset.y - dt * 0.55) % 1;
+				for (let i = 0; i < EMB; i++) {
+					pos[i * 3 + 1] += dt * (0.4 + (i % 7) * 0.08);
+					if (pos[i * 3 + 1] > 10) pos[i * 3 + 1] = -10;
+				}
+				emberGeo.attributes.position.needsUpdate = true;
+			},
+		};
+	};
+
+	// --- Энд: остров из камня Края, обсидиановые колонны с кристаллами Края,
+	// хорус, яйцо дракона на бедроке и портал домой ---
+	const buildEnd = () => {
+		const ground = new THREE.Group();
+		island.add(ground);
+		const er = rng(41);
+		const B = blockSet();
+		[5.0, 4.4, 3.6, 2.6, 1.5].forEach((radius, layer) => {
+			for (let x = -6; x <= 6; x++) {
+				for (let z = -6; z <= 6; z++) {
+					const d = Math.hypot(x, z) + (er() - 0.5) * 0.8;
+					if (d <= radius) B.add('endStone', x, -layer - 0.5, z);
+				}
+			}
+		});
+		const PILLARS = [
+			{x: -3, z: -2, h: 5},
+			{x: 3, z: -3, h: 6},
+			{x: -1, z: -4, h: 4},
+		];
+		for (const p of PILLARS) for (let y = 0; y < p.h; y++) B.add('obsidian', p.x, y + 0.5, p.z);
+		const EGG = {x: -2, z: 1};
+		B.add('bedrock', EGG.x, 0.5, EGG.z);
+		const meshes = meshBlocks(B.list, {endStone: lambert(tex.endStone), obsidian: obsidianMat, bedrock: lambert(tex.bedrock)}, ground);
+		// кристаллы Края на колоннах: светятся, вращаются в клетке
+		const crystalMat = new THREE.MeshBasicMaterial({color: '#ffb3e6'});
+		const cageMat = new THREE.MeshBasicMaterial({color: '#e8d6ff', wireframe: true});
+		const crystals = PILLARS.map((p) => {
+			const g = new THREE.Group();
+			g.position.set(p.x, p.h + 0.9, p.z);
+			const core = new THREE.Mesh(box, crystalMat);
+			core.scale.setScalar(0.42);
+			const cage = new THREE.Mesh(box, cageMat);
+			cage.scale.setScalar(0.85);
+			const halo = new THREE.Sprite(new THREE.SpriteMaterial({map: glow, color: '#ff6ad5', transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending}));
+			halo.scale.setScalar(2.4);
+			g.add(core, cage, halo);
+			ground.add(g);
+			return {g, core, cage, base: p.h + 0.9};
+		});
+		// хорус: фиолетовые стебли с цветами
+		const chorusParts = [];
+		const grow = (x, y, z, n, dir) => {
+			for (let i = 0; i < n; i++) chorusParts.push([x, y + i * 0.5, z, 'stem']);
+			const top = y + n * 0.5;
+			if (dir) {
+				chorusParts.push([x + dir[0] * 0.5, top - 0.5, z + dir[1] * 0.5, 'stem']);
+				chorusParts.push([x + dir[0] * 0.5, top, z + dir[1] * 0.5, 'flower']);
+			}
+			chorusParts.push([x, top, z, 'flower']);
+		};
+		grow(2, 0.25, 2, 4, [1, 0]);
+		grow(-3.5, 0.25, -0.2, 3, [0, 1]);
+		grow(0.5, 0.25, -2.6, 5, [-1, 0]);
+		const chorusMat = {stem: lambert(tex.chorus), flower: lambert(tex.chorusFlower)};
+		for (const kind of ['stem', 'flower']) {
+			const parts = chorusParts.filter((p) => p[3] === kind);
+			const m = new THREE.InstancedMesh(box, chorusMat[kind], parts.length);
+			parts.forEach(([x, y, z], i) => {
+				dummy.position.set(x, y, z);
+				dummy.rotation.set(0, 0, 0);
+				dummy.scale.setScalar(kind === 'flower' ? 0.5 : 0.42);
+				dummy.updateMatrix();
+				m.setMatrixAt(i, dummy.matrix);
+			});
+			ground.add(m);
+		}
+		// яйцо дракона на бедроке
+		const eggMat = new THREE.MeshLambertMaterial({color: '#1d0f2b', emissive: '#14052a'});
+		[[0.62, 0.3], [0.5, 0.25], [0.32, 0.2]].reduce((y, [s, h]) => {
+			const m = new THREE.Mesh(box, eggMat);
+			m.scale.set(s, h, s);
+			m.position.set(EGG.x, y + h / 2, EGG.z);
+			ground.add(m);
+			return y + h;
+		}, 1);
+		// фиолетовые пылинки вокруг
+		const fx = new THREE.Group();
+		world.add(fx);
+		const DUST = innerWidth < 900 ? 40 : 70;
+		const pos = new Float32Array(DUST * 3);
+		for (let i = 0; i < DUST; i++) pos.set([(er() - 0.5) * 22, (er() - 0.5) * 18, (er() - 0.5) * 12 - 2], i * 3);
+		const dustGeo = new THREE.BufferGeometry();
+		dustGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+		fx.add(new THREE.Points(dustGeo, new THREE.PointsMaterial({color: '#c9a6ff', size: 2.5, sizeAttenuation: false, transparent: true, opacity: 0.7, depthWrite: false})));
+		const portal = buildEndPortal(ground, {x: 1.8, z: 1.4, rot: 0.3}, 'over');
+		return {
+			id: 'end',
+			ground,
+			fx,
+			blocks: B.list,
+			meshes,
+			portal,
+			home: new THREE.Vector3(-0.6, 0, 1.6),
+			standR: 4,
+			obstacles: () => [...PILLARS.map((p) => ({x: p.x, z: p.z, r: 0.75})), {x: EGG.x, z: EGG.z, r: 0.7}, {x: 2, z: 2, r: 0.6}, {x: -3.5, z: -0.2, r: 0.6}, {x: 0.5, z: -2.6, r: 0.6}, {x: 1.8, z: 1.4, r: 1.35}],
+			box: {w: 13.5, h: 16, cy: 0.4},
+			view: [0.2, 0.42, 1],
+			hull: hullRing(5.2, 4.6, 1.8, -5.5),
+			light: ['#d9c8ff', '#fff4e0', '#b06bff'],
+			sky: ['#ffffff', '#efe6ff', '#d4b8ff', '#b48aff', '#f0c6ff', '#d9fff1'],
+			css: 'is-end',
+			tick: (dt, idle) => {
+				for (const c of crystals) {
+					c.g.position.y = c.base + Math.sin(idle * 1.6 + c.base) * 0.18;
+					c.core.rotation.set(idle * 1.3, idle * 1.7, 0);
+					c.cage.rotation.set(-idle * 0.9, idle * 0.6, idle * 0.4);
+				}
+				for (let i = 0; i < DUST; i++) {
+					pos[i * 3 + 1] += dt * 0.25;
+					if (pos[i * 3 + 1] > 9) pos[i * 3 + 1] = -9;
+				}
+				dustGeo.attributes.position.needsUpdate = true;
+			},
+		};
+	};
 
 	// ================= ПЕРЕХОД МЕЖДУ МИРАМИ =================
 	let worldId = 'over';
-	let warp = null; // {at, to, swapped} — фиолетовая вспышка, на её пике мир меняется
+	const worlds = {over: {id: 'over', ground: overGround, fx: null, blocks, meshes: islandMeshes, home: HOME.clone(), standR: 3.0, obstacles: overObstacles, view: [0.2, 0.2, 1], light: ['#bfb4ff', '#ffffff', '#9a6bff'], sky: null, css: ''}};
+	const ensureWorld = (id) => {
+		if (!worlds[id]) worlds[id] = id === 'nether' ? buildNether() : buildEnd();
+		return worlds[id];
+	};
+	let warp = null; // {at, to, swapped} — вспышка портала, на её пике мир меняется
 	let portalShrink = 1;
-	const portalHere = () => (worldId === 'over' ? portalOver : portalNether);
-	const otherWorld = () => (worldId === 'over' ? 'nether' : 'over');
+	let endPopAt = -1; // когда появился портал в Энд (выпрыгивает из земли)
+	const portalHere = () => (worldId === 'over' ? (progress.endPortal ? portalEndOver : portalOver) : worlds[worldId].portal);
 	const NETHER_KEY = 'dex.nether';
 	let visitedNether = false;
 	try {
@@ -1081,37 +1331,45 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	warpFx.className = 'hero-warp';
 	warpFx.setAttribute('aria-hidden', 'true');
 	canvas.parentElement.append(warpFx);
-	const worldData = {};
 	const startWarp = () => {
 		if (warp) return;
-		warp = {at: now, to: otherWorld(), swapped: false};
+		warp = {at: now, to: portalHere().to, swapped: false};
 		const z = canvas.parentElement;
-		z.classList.remove('is-warping');
+		z.classList.remove('is-warping', 'warp-end');
 		void z.offsetWidth; // перезапуск анимации
 		z.classList.add('is-warping');
+		z.classList.toggle('warp-end', portalHere().kind === 'end');
 		on('portal', warp.to);
 	};
 	const switchWorld = (to) => {
-		if (!worldData.over) worldData.over = {home: HOME.clone(), standR: STAND_R, obstacles: [...OBSTACLES], box: {...BOX}, hull: [...ISLAND_PTS]};
-		worldData.nether ||= {home: N_HOME.clone(), standR: 4.5, obstacles: N_OBSTACLES, box: {w: 14.5, h: 16.5, cy: -0.9}, hull: N_HULL, view: [0.2, 0.62, 1]};
-		worldData.over.view ||= [0.2, 0.2, 1];
-		const W = worldData[to];
-		const hot = to === 'nether';
+		worlds.over.box ||= {...BOX};
+		worlds.over.hull ||= [...ISLAND_PTS];
+		const W = ensureWorld(to);
+		// добытые блоки старого мира сразу вырастают
+		for (const b of activeBlocks) {
+			b.minedAt = -1;
+			setBlock(b, 1);
+		}
+		activeBlocks.clear();
 		worldId = to;
-		overGround.visible = !hot;
-		netherGround.visible = hot;
-		netherFx.visible = hot;
-		galaxy.visible = !hot;
+		for (const w of Object.values(worlds)) {
+			w.ground.visible = w === W;
+			if (w.fx) w.fx.visible = w === W;
+		}
+		galaxy.visible = to === 'over';
 		HOME.copy(W.home);
 		STAND_R = W.standR;
-		OBSTACLES.splice(0, OBSTACLES.length, ...W.obstacles);
+		OBSTACLES.splice(0, OBSTACLES.length, ...W.obstacles());
 		Object.assign(BOX, W.box);
 		viewDir.set(...W.view).normalize();
 		ISLAND_PTS.splice(0, ISLAND_PTS.length, ...W.hull);
-		amb.color.set(hot ? '#ffb49c' : '#bfb4ff');
-		key.color.set(hot ? '#ffd8b8' : '#ffffff');
-		rim.color.set(hot ? '#ff5a1f' : '#9a6bff');
-		canvas.parentElement.classList.toggle('is-nether', hot);
+		amb.color.set(W.light[0]);
+		key.color.set(W.light[1]);
+		rim.color.set(W.light[2]);
+		skyColors = W.sky || SKY_COLORS;
+		const z = canvas.parentElement;
+		z.classList.remove('is-nether', 'is-end');
+		if (W.css) z.classList.add(W.css);
 		frame();
 		widgetsAt = -1;
 		// персонаж выходит из портала другого мира
@@ -1119,12 +1377,11 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		P.mode = 'idle';
 		P.queue = [walkTo(HOME)];
 		P.pos.copy(p.spot);
-		P.face = p.o.rot + Math.PI;
+		P.face = Math.atan2(p.spot.x - p.center.x, p.spot.z - p.center.z);
 		P.holding = false;
 		portalShrink = 1;
 		popAt = now;
-		activeBlocks.clear();
-		if (hot && !visitedNether) {
+		if (to === 'nether' && !visitedNether) {
 			visitedNether = true;
 			try {
 				localStorage.setItem(NETHER_KEY, '1');
@@ -1132,14 +1389,37 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				// приватный режим
 			}
 		}
-		paintFarm();
-		say(hot ? oneOf('say.nether', 'say.hot') : 'say.homeBack', 1.8);
+		say(to === 'nether' ? oneOf('say.nether', 'say.hot') : to === 'end' ? 'say.end' : 'say.homeBack', 1.8);
 		on('world', to);
 	};
-	// клик по порталу: персонаж идёт и заходит в него; летающий — летит в портал
+	// незеритовой киркой ломает портал в Незер — на его месте появляется портал в Энд
+	const breakNetherPortal = () => {
+		const p = portalOver;
+		for (let i = 0; i < 26; i++) {
+			const at = islandToWorldLocal(p.group.localToWorld(tmp.set((Math.random() - 0.5) * 2.6, Math.random() * 3.8, 0)), tmp2);
+			spawnDebris(at, i % 3 ? '#2a1d40' : '#9a4bff', 1, 0.9, 1);
+		}
+		const c = toPx(p.group.localToWorld(tmp.copy(p.mid)));
+		const r = canvas.getBoundingClientRect();
+		flash(r.left + c.x, r.top + c.y);
+		p.group.visible = false;
+		portalMat.opacity = 1;
+		progress.endPortal = true;
+		saveProgress(progress);
+		portalEndOver.group.visible = true;
+		portalEndOver.group.scale.setScalar(0.001);
+		endPopAt = now;
+		OBSTACLES.splice(0, OBSTACLES.length, ...overObstacles());
+		say('say.endPortal', 2);
+		on('endPortal');
+	};
+	// клик по порталу: персонаж идёт и заходит в него; летающий — летит в портал.
+	// С незеритовой киркой портал в Незер на главном острове он ломает.
 	const enterPortal = () => {
 		if (warp) return;
+		const breaking = worldId === 'over' && !progress.endPortal && progress.tier >= 4;
 		if (P.mode === 'free') {
+			if (breaking) return warn('away');
 			const c = portalCenterDoc();
 			PB.held = false;
 			PB.perch = null;
@@ -1148,24 +1428,26 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			PB.auto = {x: c.x, y: c.y, then: 'portal'};
 			return;
 		}
-		if (P.queue.some((a) => a.type === 'portal')) return;
-		const steps = [walkTo(portalHere().spot), {type: 'portal'}];
-		// занят фермой — сначала доделает, потом пойдёт в портал
-		if (P.queue.length && P.queue.every((a) => a.type === 'farm' || a.type === 'walk')) P.queue.push(...steps);
-		else if (busy()) return warn('busy');
-		else P.queue = steps;
-		say(worldId === 'over' ? 'say.portalGo' : 'say.homeGo', 1.4);
+		if (busy()) return warn('busy');
+		if (breaking) {
+			P.queue = [walkTo(CHEST_SPOT), {type: 'chest', take: true}, walkTo(portalOver.spot), {type: 'breakPortal'}, walkTo(CHEST_SPOT), {type: 'chest', take: false}, walkTo(HOME)];
+			say('say.breakPortal', 1.5);
+			return;
+		}
+		P.queue = [walkTo(portalHere().spot), {type: 'portal'}];
+		say(portalHere().to === 'over' ? 'say.homeGo' : portalHere().to === 'end' ? 'say.endGo' : 'say.portalGo', 1.4);
 	};
 	const portalCenterDoc = () => {
 		const o = docOffset();
-		const c = toPx(portalHere().group.localToWorld(tmp.set(0, 2.5 * PORTAL_S, 0)));
+		const p = portalHere();
+		const c = toPx(p.group.localToWorld(tmp.copy(p.mid)));
 		return {x: c.x + o.x, y: c.y + o.y};
 	};
-	// внутренняя часть портала на странице (для броска летающего персонажа)
+	// завеса портала на странице (для броска летающего персонажа)
 	const portalPolyDoc = () => {
 		const o = docOffset();
-		const g = portalHere().group;
-		const pts = [[-1, 1], [1, 1], [1, 4], [-1, 4]].map(([a, b]) => toPx(g.localToWorld(tmp.set(a * PORTAL_S, b * PORTAL_S, 0))));
+		const p = portalHere();
+		const pts = p.corners.map((v) => toPx(p.group.localToWorld(tmp.copy(v))));
 		return convexHull(pts).map((q) => ({x: q.x + o.x, y: q.y + o.y}));
 	};
 	// летающего персонажа закинули в портал
@@ -1184,71 +1466,6 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		drag = null;
 		overlay.classList.remove('is-on');
 		startWarp();
-	};
-
-	// ================= ФЕРМА АДСКОГО НАРОСТА =================
-	// Состояние фермы хранит аккаунт (на сервере или в браузере), сюда его передаёт app.js.
-	// Посадить и собрать — через farmApi; персонаж подходит к грядке и делает это сам.
-	const GROW = FARM.growHours * 3600e3;
-	let farm = {plots: PLOTS.map(() => null), warts: 0};
-	let farmPaintAt = -9;
-	let sparkleAt = 0;
-	// стадия: -1 — пусто, 0..2 — растёт, 3 — созрел
-	const stageOf = (plantedAt) => {
-		if (plantedAt == null) return -1;
-		const k = (Date.now() - plantedAt) / GROW;
-		return k >= 1 ? 3 : clamp(Math.floor(k * 3), 0, 2);
-	};
-	const leftText = (plantedAt) => {
-		const total = Math.max(1, Math.ceil((plantedAt + GROW - Date.now()) / 60e3)); // минут осталось
-		const h = Math.floor(total / 60);
-		const m = total % 60;
-		return h ? t('farm.hm', {h, m}) : t('farm.m', {m});
-	};
-	const paintFarm = () => {
-		farmPaintAt = now;
-		crops.forEach((c, i) => {
-			const st = stageOf(farm.plots[i]);
-			c.mesh.visible = st >= 0;
-			if (st < 0) return;
-			c.mesh.material = wartMats[st];
-			c.mesh.scale.setScalar([0.55, 0.75, 0.9, 1.05][st]);
-		});
-	};
-	const setFarm = (f) => {
-		farm = {plots: PLOTS.map((_, i) => (f?.plots?.[i] ?? null)), warts: f?.warts || 0};
-		paintFarm();
-	};
-	const farmClick = (i) => {
-		if (P.mode === 'free') return warn('away');
-		if (!farmApi?.loggedIn()) {
-			say('say.farmLogin', 1.8);
-			on('farmLogin');
-			return;
-		}
-		const st = stageOf(farm.plots[i]);
-		if (st >= 0 && st < 3) return say(t('say.grows', {time: leftText(farm.plots[i])}), 2.2);
-		if (P.queue.some((a) => a.type === 'farm' && a.plot === i)) return; // эта грядка уже в очереди
-		const steps = [walkTo(plotStand(i)), {type: 'farm', plot: i, act: st === 3 ? 'harvest' : 'plant'}];
-		// занят фермой — грядка встаёт в очередь: кликай по грядкам подряд, он обойдёт их сам
-		const farming = P.queue.length && P.queue.every((a) => a.type === 'farm' || a.type === 'walk');
-		if (farming) P.queue.push(...steps);
-		else if (busy()) return warn('busy');
-		else P.queue = steps;
-	};
-	const farmDo = (a) => {
-		const fn = a.act === 'plant' ? farmApi.plant : farmApi.harvest;
-		const c = crops[a.plot];
-		Promise.resolve(fn(a.plot)).then((res) => {
-			if (!res || res.error) return on('farmError', res?.error || 'server');
-			if (res.user?.farm) setFarm(res.user.farm);
-			spawnDebris(islandToWorldLocal(tmp.set(c.x, 0.4, c.z), tmp2), a.act === 'plant' ? '#6b4f3c' : '#d4202e', 10, 0.5, 0.8);
-			if (a.act === 'plant') say(oneOf('say.planted', 'icon:heart'), 1.3);
-			else {
-				say('say.harvest', 1.4);
-				on('harvest', res);
-			}
-		});
 	};
 
 	// ================= БОЛЬШАЯ НАДПИСЬ «1DEX1 SHOP» ПОСЕРЕДИНЕ =================
@@ -1428,6 +1645,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	// все углы экрана при любом повороте.
 	const skyCtx = sky ? sky.getContext('2d') : null;
 	const SKY_COLORS = ['#ffffff', '#ece6ff', '#cdb8ff', '#a883ff', '#d4ff8a', '#ffe7a3'];
+	let skyColors = SKY_COLORS;
 	const SKY_WEIGHTS = [0.42, 0.24, 0.14, 0.1, 0.05, 0.05];
 	const skyC = {x: 0, y: 0};
 	let skyW = 1;
@@ -1475,7 +1693,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const s = Math.sin(th);
 		const {x: X, y: Y, a: A, tw: TW, ph: PH, size: SZ, groups} = skyStars;
 		for (let k = 0; k < groups.length; k++) {
-			g.fillStyle = SKY_COLORS[k];
+			g.fillStyle = skyColors[k];
 			for (const i of groups[k]) {
 				const x = Math.round(skyC.x + X[i] * c - Y[i] * s);
 				if (x < -2 || x > skyW + 2) continue;
@@ -1593,36 +1811,12 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		castRay();
 		return raycaster.intersectObjects(portalHere().pick, false).length > 0;
 	};
-	const plotA = new THREE.Vector3();
-	const plotB = new THREE.Vector3();
-	const pickPlot = () => {
-		if (worldId !== 'nether' || !lastClient) return -1;
-		const r = canvas.getBoundingClientRect();
-		const [cx, cy] = lastClient;
-		let best = -1;
-		let bestD = Infinity;
-		crops.forEach((c, i) => {
-			// точка посередине между грядкой и верхом нароста; радиус — полширины грядки на экране
-			const a = toPx(island.localToWorld(plotA.set(c.x - 0.5, 0.25, c.z)));
-			const b = toPx(island.localToWorld(plotB.set(c.x + 0.5, 0.25, c.z)));
-			const mx = (a.x + b.x) / 2 + r.left;
-			const my = (a.y + b.y) / 2 + r.top;
-			const rad = Math.max(10, Math.hypot(b.x - a.x, b.y - a.y) * 0.55);
-			const d = Math.hypot(cx - mx, (cy - my) * 1.15);
-			if (d < rad && d < bestD) {
-				best = i;
-				bestD = d;
-			}
-		});
-		return best;
-	};
 	const pickBlock = () => {
-		if (worldId !== 'over') return null; // в Незере блоки не добываются
 		castRay();
-		const hit = raycaster.intersectObjects(islandMeshes, false)[0];
+		const hit = raycaster.intersectObjects(worlds[worldId].meshes, false)[0];
 		if (!hit) return null;
 		const b = hit.object.userData.blocks[hit.instanceId];
-		return b && b.minedAt < 0 ? b : null;
+		return b && b.minedAt < 0 && b.type !== 'lava' ? b : null; // лаву не добыть
 	};
 	const busy = () => P.mode !== 'idle' || P.queue.length > 0;
 
@@ -1725,8 +1919,10 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		if (!canReach(b, stand)) return warn('far');
 		const need = NEED[b.type] || 0;
 		if (progress.tier < need) return warn('need', TIERS[need].id);
-		// сходить к сундуку за киркой, добыть блок, вернуть кирку, вернуться домой
-		P.queue = [walkTo(CHEST_SPOT), {type: 'chest', take: true}, walkTo(stand), {type: 'mine', block: b}, walkTo(CHEST_SPOT), {type: 'chest', take: false}, walkTo(HOME)];
+		// дома: сходить к сундуку за киркой, добыть блок, вернуть кирку, вернуться на место.
+		// В Незере и Энде сундука нет — кирка у него с собой
+		if (worldId === 'over') P.queue = [walkTo(CHEST_SPOT), {type: 'chest', take: true}, walkTo(stand), {type: 'mine', block: b}, walkTo(CHEST_SPOT), {type: 'chest', take: false}, walkTo(HOME)];
+		else P.queue = [walkTo(stand), {type: 'mine', block: b, carry: true}, walkTo(HOME)];
 		activeBlocks.add(b);
 	};
 	const finishMining = (b) => {
@@ -1740,8 +1936,9 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			paintPickaxe();
 			saveProgress(progress);
 			on('tier', TIERS[up].id);
-			say(up === 3 ? 'say.diamond' : 'say.yay', 1.6);
+			say(up === 3 ? 'say.diamond' : up === 4 ? 'say.netherite' : 'say.yay', 1.6);
 			if (up === 3) on('diamond');
+			if (up === 4) on('netherite');
 		}
 		if (b.type === 'coal' && progress.torches < 4) {
 			progress.torches++;
@@ -2252,21 +2449,15 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		if (e.target.closest('a, button')) return;
 		updatePointer(e.clientX, e.clientY);
 		const hit = pickVoxel();
-		const plotFirst = pickPlot(); // на ферме клик по грядке важнее, чем по персонажу перед ней
 		if (hit) breakVoxel(hit);
-		else if (plotFirst >= 0) farmClick(plotFirst);
 		else if (pickPlayer()) {
 			if (P.mode === 'idle') jumpAt = now;
 			if (++tickles === 5) on('tickle');
 			if (Math.random() < 0.6) say(oneOf('say.giggle', 'icon:heart', 'say.hi'), 1.4);
 		} else if (pickPortal()) enterPortal();
 		else {
-			const plot = pickPlot();
-			if (plot >= 0) farmClick(plot);
-			else {
-				const b = pickBlock();
-				if (b) startMining(b);
-			}
+			const b = pickBlock();
+			if (b) startMining(b);
 		}
 	});
 	addEventListener('pointerup', (e) => {
@@ -2395,14 +2586,15 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			} else if (a.type === 'mine') {
 				P.mode = 'mine';
 				P.actT = 0;
+				if (a.carry) P.holding = true;
 			} else if (a.type === 'portal') {
 				// заходит в портал
 				P.mode = 'portal';
 				P.actT = 0;
 				a.from = P.pos.clone();
 				a.to = new THREE.Vector3(portalHere().center.x, 0, portalHere().center.z);
-			} else if (a.type === 'farm') {
-				P.mode = 'farm';
+			} else if (a.type === 'breakPortal') {
+				P.mode = 'breakPortal';
 				P.actT = 0;
 			} else if (a.type === 'leap') {
 				// прыжок с острова к стене — с алмазной киркой в руке
@@ -2469,6 +2661,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				if (Math.floor(P.actT / 0.25) > hitsBefore) spawnDebris(islandToWorldLocal(b.pos, tmp2), BLOCK_COLOR[b.type], 2, 0.4);
 				if (P.actT >= MINE_TIME) {
 					finishMining(b);
+					if (P.queue[0].carry) P.holding = false;
 					P.mode = 'idle';
 					P.queue.shift();
 				}
@@ -2489,17 +2682,20 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				}
 				break;
 			}
-			case 'farm': {
-				// присел у грядки: сажает или собирает
-				const a = P.queue[0];
-				const c = crops[a.plot];
+			case 'breakPortal': {
+				// бьёт незеритовой киркой по обсидиану: осколки, завеса тускнеет — и портал рассыпается
 				P.actT += dt;
+				const c = portalOver.center;
 				P.face = Math.atan2(c.x - P.pos.x, c.z - P.pos.z);
-				if (!a.done && P.actT > 0.55) {
-					a.done = true;
-					farmDo(a);
+				const hitsBefore = Math.floor((P.actT - dt) / 0.3);
+				if (Math.floor(P.actT / 0.3) > hitsBefore) {
+					const at = islandToWorldLocal(portalOver.group.localToWorld(tmp.set((Math.random() - 0.5) * 2.4, 0.6 + Math.random() * 2.6, 0)), tmp2);
+					spawnDebris(at, Math.random() < 0.3 ? '#9a4bff' : '#2a1d40', 4, 0.6);
+					on('wallHit');
 				}
-				if (P.actT > 1) {
+				portalMat.opacity = 1 - Math.min(0.7, P.actT / 2.4);
+				if (P.actT >= 1.8) {
+					breakNetherPortal();
 					P.mode = 'idle';
 					P.queue.shift();
 				}
@@ -2834,8 +3030,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				Object.assign(target, {armRx: swing(0.25), armRz: 0.1, sneak: down ? 0.6 : 0, headPitch: down ? 0.7 : 0.2});
 				break;
 			}
-			case 'farm':
-				Object.assign(target, {armRx: swing(0.32), armRz: 0.1, sneak: 1, drop: 0.13, headPitch: 0.65});
+			case 'breakPortal':
+				Object.assign(target, {armRx: swing(0.3), armRz: 0.1, headPitch: -0.1});
 				break;
 			case 'wall': {
 				const ph = (PB.poseT / 0.45) % 1;
@@ -2960,39 +3156,27 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				warp = null;
 			}
 		}
-		if (frameNo % 3 === 0) paintPortal(idle);
-		for (const p of portals) {
-			if (!p.parent.visible) continue;
-			p.sp.forEach((s, i) => {
-				s.y += s.v * dt;
-				if (s.y > 4.3) s.y = 0.2;
-				dummy.position.set(s.x * PORTAL_S + Math.sin(idle * 2 + s.ph) * 0.12, s.y * PORTAL_S, s.z * PORTAL_S);
-				dummy.rotation.set(idle + s.ph, idle * 0.7, 0);
-				dummy.scale.setScalar(0.07 + 0.04 * Math.sin(idle * 5 + s.ph));
-				dummy.updateMatrix();
-				p.sparks.setMatrixAt(i, dummy.matrix);
-			});
-			p.sparks.instanceMatrix.needsUpdate = true;
+		// завеса портала: переливается только та, что сейчас на экране
+		if (frameNo % 4 === 0) (portalHere().kind === 'nether' ? paintPortal : paintVoid)(idle);
+		const ph = portalHere();
+		ph.sp.forEach((sp, i) => {
+			sp.y += sp.v * dt;
+			if (sp.y > ph.area.y1) sp.y = ph.area.y0;
+			dummy.position.set(sp.x + Math.sin(idle * 2 + sp.ph) * 0.1, sp.y, sp.z);
+			dummy.rotation.set(idle + sp.ph, idle * 0.7, 0);
+			dummy.scale.setScalar(0.06 + 0.035 * Math.sin(idle * 5 + sp.ph));
+			dummy.updateMatrix();
+			ph.sparks.setMatrixAt(i, dummy.matrix);
+		});
+		ph.sparks.instanceMatrix.needsUpdate = true;
+		// портал в Энд выпрыгивает из земли
+		if (endPopAt >= 0) {
+			const k = (now - endPopAt) / 0.55;
+			portalEndOver.group.scale.setScalar(Math.max(0.001, easeOutBack(k)));
+			if (k >= 1) endPopAt = -1;
 		}
-		if (worldId === 'nether') {
-			lavaFallTex.offset.y = (lavaFallTex.offset.y - dt * 0.55) % 1;
-			for (let i = 0; i < EMBERS; i++) {
-				emberPos[i * 3 + 1] += dt * (0.4 + (i % 7) * 0.08);
-				emberPos[i * 3] += Math.sin(idle * 0.8 + i) * dt * 0.15;
-				if (emberPos[i * 3 + 1] > 10) emberPos[i * 3 + 1] = -10;
-			}
-			emberGeo.attributes.position.needsUpdate = true;
-			if (now - farmPaintAt > 1) paintFarm();
-			// созревший нарост поблёскивает
-			if (now > sparkleAt) {
-				sparkleAt = now + 0.7;
-				const ripe = crops.filter((c, i) => stageOf(farm.plots[i]) === 3);
-				if (ripe.length) {
-					const c = ripe[Math.floor(Math.random() * ripe.length)];
-					spawnDebris(islandToWorldLocal(tmp.set(c.x, 0.7, c.z), tmp2), '#ff5a5a', 1, 0.2, 0.5);
-				}
-			}
-		} else if (!visitedNether && P.mode === 'idle' && !P.queue.length && heroVisible && now > portalHintAt) {
+		worlds[worldId].tick?.(dt, idle);
+		if (worldId === 'over' && !visitedNether && P.mode === 'idle' && !P.queue.length && heroVisible && now > portalHintAt) {
 			// подсказка: что там, в портале?
 			portalHintAt = now + 32 + Math.random() * 20;
 			say('say.portal', 2.4);
@@ -3103,7 +3287,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			let cur = '';
 			if (hovered) cur = CROSSHAIR;
 			else if (pickPlayer()) cur = 'grab';
-			else if (pickPortal() || pickPlot() >= 0) cur = 'pointer';
+			else if (pickPortal()) cur = 'pointer';
 			else if (!busy()) {
 				const b = pickBlock();
 				if (b && canReach(b, standFor(b))) cur = CROSSHAIR;
@@ -3233,7 +3417,6 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	};
 	return {
 		tier: () => TIERS[progress.tier].id,
-		setFarm,
 		world: () => worldId,
 		debug: {
 			portal: () => {
@@ -3244,17 +3427,13 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				const c = portalCenterDoc();
 				return {x: c.x - scrollX, y: c.y - scrollY};
 			},
-			plotPx: (i) => {
-				const c = toPx(island.localToWorld(tmp.set(crops[i].x, 0.3, crops[i].z)));
-				return page(c);
-			},
-			farm: () => ({...farm, stages: farm.plots.map(stageOf)}),
+			progress: () => ({...progress}),
 			pick: (x, y) => {
 				updatePointer(x, y);
-				return {voxel: !!pickVoxel(), player: pickPlayer(), portal: pickPortal(), plot: pickPlot(), busy: busy(), mode: P.mode, warp: !!warp};
+				return {voxel: !!pickVoxel(), player: pickPlayer(), portal: pickPortal(), busy: busy(), mode: P.mode, warp: !!warp};
 			},
 			blockPx: (type) => {
-				const b = blocks.find((x) => x.type === type && x.minedAt < 0 && canReach(x, standFor(x)) && (() => {
+				const b = worlds[worldId].blocks.find((x) => x.type === type && x.minedAt < 0 && canReach(x, standFor(x)) && (() => {
 					const w = island.localToWorld(tmp.copy(x.pos));
 					const toCam = camera.position.clone().sub(w).normalize();
 					return toCam.z > 0.3 && w.z > 0.5;
@@ -3292,7 +3471,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			},
 			tp: () => ({tp: !!tp, tpHome, islandTpAt: islandTpAt > 0, visible: P.mode === 'free' ? oRig.pivot.visible : rig.pivot.visible, k: +playerK.toFixed(1)}),
 			mine: (type) => {
-				const b = blocks.find((x) => x.type === type && x.minedAt < 0 && canReach(x, standFor(x)));
+				const b = worlds[worldId].blocks.find((x) => x.type === type && x.minedAt < 0 && canReach(x, standFor(x)));
 				if (b) startMining(b);
 				return !!b;
 			},

@@ -19,8 +19,9 @@ if (!db.prepare('PRAGMA table_info(users)').all().some((c) => c.name === 'num'))
 	db.exec('UPDATE users SET num = (SELECT COUNT(*) FROM users AS o WHERE o.verified = 1 AND o.id <= users.id) WHERE verified = 1');
 }
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_num ON users (num)');
-// База, созданная до адской фермы: счётчик собранных наростов
-if (!db.prepare('PRAGMA table_info(users)').all().some((c) => c.name === 'warts')) db.exec('ALTER TABLE users ADD COLUMN warts INTEGER NOT NULL DEFAULT 0');
+// Адской фермы больше нет: убрать её таблицу и счётчик наростов, если остались
+db.exec('DROP TABLE IF EXISTS farm');
+if (db.prepare('PRAGMA table_info(users)').all().some((c) => c.name === 'warts')) db.exec('ALTER TABLE users DROP COLUMN warts');
 
 // Несколько изменений как одно целое: либо все, либо ни одного
 export const tx = (fn) => {

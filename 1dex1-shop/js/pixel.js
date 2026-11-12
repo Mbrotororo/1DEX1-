@@ -99,6 +99,8 @@ export const ICONS = {
 	gem: ['....l....', '...lLl...', '..lLLLl..', '.lLLwLLl.', 'lLLwLLLLl', '.lLLLLLl.', '..lLLLl..', '...lLl...', '....l....'],
 	// портал в Незер: рамка из обсидиана, внутри — фиолетовая завеса
 	portal: ['.ddddddd.', '.dqpPpqd.', '.dpPqPpd.', '.dqpPpqd.', '.dpqPqpd.', '.dPpqpPd.', '.dqPpPqd.', '.dpqpqpd.', '.ddddddd.'],
+	// глаз Края
+	eye: ['..mmmmm..', '.mlllllm.', 'mllkkkllm', 'mlkkwkklm', 'mlkkkkklm', 'mllkkkllm', '.mlllllm.', '..mmmmm..', '.........'],
 	feather: ['......PPP', '.....PwwP', '....PwwP.', '...PwwP..', '..PwwP...', '.PwPP....', '.PP......', 'p........', '.........'],
 	// интерфейс
 	lock: ['...ddd...', '..d...d..', '..d...d..', '.ddddddd.', '.dsssssd.', '.dssdssd.', '.dssdssd.', '.dsssssd.', '.ddddddd.'],

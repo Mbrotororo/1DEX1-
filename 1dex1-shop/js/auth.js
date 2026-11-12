@@ -8,7 +8,7 @@
 //    живут в браузере посетителя (localStorage), почта не проверяется.
 // Режим определяется сам: если по адресу api/health отвечает сервер магазина — с сервером.
 
-import {CASE, FARM, PRODUCTS, TASKS} from './data.js';
+import {CASE, PRODUCTS, TASKS} from './data.js';
 
 export let serverMode = false;
 let cached = null; // текущий пользователь (или null), чтобы current() отвечал мгновенно
@@ -120,7 +120,6 @@ const publicUser = (u, users = read(USERS, {})) =>
 		coupons: (u.coupons || []).filter((c) => !c.used),
 		orders: u.orders || [],
 		tasks: taskStates(u),
-		farm: {plots: Array.from({length: FARM.plots}, (_, i) => u.farm?.plots?.[i] ?? null), warts: u.farm?.warts || 0},
 	};
 const localSession = () => {
 	const key = read(SESSION, null);
@@ -285,38 +284,6 @@ export const claimTask = async (id) => {
 	user.tasks[id] = {...user.tasks[id], claimed: Date.now()};
 	user.bonusCases = (user.bonusCases || 0) + task.reward;
 	return localSave(users) ? {user: cached} : {error: 'save'};
-};
-
-// Адская ферма: посадить нарост на грядку и собрать созревший.
-// Каждые FARM.wartsForCase собранных наростов — бесплатный кейс.
-const plotOk = (plot) => Number.isInteger(plot) && plot >= 0 && plot < FARM.plots;
-export const farmPlant = async (plot) => {
-	if (serverMode) return api('farm/plant', {plot});
-	if (!plotOk(plot)) return {error: 'bad_plot'};
-	const {users, user} = localSession();
-	if (!user) return {error: 'login'};
-	user.farm ||= {plots: [], warts: 0};
-	if (user.farm.plots[plot] != null) return {error: 'farm_busy'};
-	user.farm.plots[plot] = Date.now();
-	return localSave(users) ? {user: cached} : {error: 'save'};
-};
-export const farmHarvest = async (plot) => {
-	if (serverMode) return api('farm/harvest', {plot});
-	if (!plotOk(plot)) return {error: 'bad_plot'};
-	const {users, user} = localSession();
-	if (!user) return {error: 'login'};
-	const at = user.farm?.plots?.[plot];
-	if (at == null) return {error: 'farm_empty'};
-	if (Date.now() - at < FARM.growHours * 3600e3) return {error: 'farm_growing', ready: at + FARM.growHours * 3600e3};
-	user.farm.plots[plot] = null;
-	user.farm.warts = (user.farm.warts || 0) + 1;
-	let caseAwarded = false;
-	if (user.farm.warts >= FARM.wartsForCase) {
-		user.farm.warts -= FARM.wartsForCase;
-		user.bonusCases = (user.bonusCases || 0) + 1;
-		caseAwarded = true;
-	}
-	return localSave(users) ? {user: cached, caseAwarded} : {error: 'save'};
 };
 
 // +5 ₽ за все достижения — один раз на аккаунт
