@@ -33,6 +33,25 @@ public class NyConfig {
     /** 0 .. 1 */
     public float stepVolume = 0.8f;
 
+    /** Snow also lies on roofs (slabs, stairs) and on top of trees. */
+    public boolean snowOnRoofs = true;
+    public boolean footprints = true;
+    public boolean icicles = true;
+    public boolean iceOnWater = true;
+    public boolean playerSnow = true;
+    public boolean treeDecor = true;
+
+    // ---------- Музыка ----------
+    public boolean music = false;
+    public float musicVolume = 0.7f;
+    /** 0 = по списку, 1 = повтор песни, 2 = случайно */
+    public int musicOrder = 0;
+    public int lastSong = 0;
+    public boolean fxBeatSnow = true;
+    public boolean fxSpeedSnow = true;
+    public boolean fxGarlands = true;
+    public boolean fxPulse = true;
+
     // ---------- Снег на экране ----------
     public boolean screenSnow = true;
     /** 0.1 .. 1.0 */
@@ -43,6 +62,7 @@ public class NyConfig {
     public boolean screenSnowInGame = true;
     /** Click the snow to make snowballs / a snowman, swipe to scatter. */
     public boolean snowPlay = true;
+    public boolean rudolph = true;
 
     // ---------- Шапки ----------
     public boolean hats = true;
@@ -74,6 +94,8 @@ public class NyConfig {
     public int background = 2;
     public boolean glass = true;
     public boolean menuGarland = true;
+    /** New Year picture as the main menu background (over any resource pack). */
+    public boolean titleBackground = true;
     /** Accent color in HSV (festive red by default). */
     public float accentHue = 0.0f;
     public float accentSat = 0.78f;
@@ -109,6 +131,9 @@ public class NyConfig {
         snowStrength = Math.max(1, Math.min(10, snowStrength));
         driftSize = Math.max(0, Math.min(2, driftSize));
         stepVolume = clamp(stepVolume, 0f, 1f);
+        musicVolume = clamp(musicVolume, 0f, 1f);
+        musicOrder = Math.max(0, Math.min(2, musicOrder));
+        lastSong = Math.max(0, lastSong);
         flakeSize = Math.max(0, Math.min(2, flakeSize));
         screenSnowAmount = clamp(screenSnowAmount, 0.1f, 1f);
         garlandSpeed = Math.max(0, Math.min(1, garlandSpeed));

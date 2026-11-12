@@ -10,7 +10,9 @@
     "PlayerEntityRendererMixin",
     "ChatHudAccessor",
     "HandledScreenAccessor",
-    "EntityStepMixin"
+    "EntityStepMixin",
+    "ScreenBackgroundMixin",
+    "MusicTrackerMixin"
   ],
   "injectors": {
     "defaultRequire": 1

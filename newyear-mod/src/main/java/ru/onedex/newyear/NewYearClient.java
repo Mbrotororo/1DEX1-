@@ -40,6 +40,7 @@ public class NewYearClient implements ClientModInitializer {
     public void onInitializeClient() {
         NyConfig.load();
         WinterFilter.init();
+        ru.onedex.newyear.music.MusicPlayer.reload();
 
         KeyBinding.Category category = KeyBinding.Category.create(Identifier.of(MOD_ID, "main"));
         MENU_KEY = KeyBindingHelper.registerKeyBinding(new KeyBinding("key.dexnewyear.open_menu", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_F8, category));
@@ -49,8 +50,16 @@ public class NewYearClient implements ClientModInitializer {
                 if (client.currentScreen == null) client.setScreen(new NyMenuScreen());
             }
             try {
+                ru.onedex.newyear.music.MusicFx.tick();
+                ru.onedex.newyear.music.MusicPlayer.tick(client);
+            } catch (Throwable t) {
+                LOGGER.error("Music tick failed", t);
+            }
+            try {
                 WorldEffects.tick(client);
                 ru.onedex.newyear.snow.SnowCover.tick(client);
+                ru.onedex.newyear.snow.WinterDecor.tick(client);
+                ru.onedex.newyear.render.PlayerSnow.tick(client);
                 WinterFilter.tick(client);
             } catch (Throwable t) {
                 LOGGER.error("New Year tick failed", t);
@@ -61,6 +70,7 @@ public class NewYearClient implements ClientModInitializer {
         WorldRenderEvents.AFTER_ENTITIES.register(ctx -> {
             try {
                 ru.onedex.newyear.snow.SnowCover.render(ctx);
+                ru.onedex.newyear.snow.WinterDecor.render(ctx);
             } catch (Throwable t) {
                 LOGGER.error("Snow cover render failed", t);
             }
@@ -69,7 +79,9 @@ public class NewYearClient implements ClientModInitializer {
         // Santa hats on every player model
         LivingEntityFeatureRendererRegistrationCallback.EVENT.register((type, renderer, helper, context) -> {
             if (renderer instanceof PlayerEntityRenderer<?> playerRenderer) {
-                helper.register(new SantaHatFeature((FeatureRendererContext<PlayerEntityRenderState, PlayerEntityModel>) (FeatureRendererContext) playerRenderer));
+                FeatureRendererContext<PlayerEntityRenderState, PlayerEntityModel> fc = (FeatureRendererContext<PlayerEntityRenderState, PlayerEntityModel>) (FeatureRendererContext) playerRenderer;
+                helper.register(new ru.onedex.newyear.render.PlayerSnow.Feature(fc));
+                helper.register(new SantaHatFeature(fc));
             }
         });
 
@@ -82,21 +94,34 @@ public class NewYearClient implements ClientModInitializer {
             SnowSurfaces.hud(mc, ctx.getScaledWindowWidth(), ctx.getScaledWindowHeight());
             ScreenSnow.render(ctx, false);
         });
+        HudElementRegistry.addLast(Identifier.of(MOD_ID, "music_pulse"), (ctx, counter) -> {
+            if (MinecraftClient.getInstance().currentScreen == null) ru.onedex.newyear.music.MusicFx.renderPulse(ctx);
+        });
 
         // every menu: snow on top, drifts on its buttons / windows
         ScreenEvents.AFTER_INIT.register((client, screen, w, h) -> {
             ScreenEvents.afterRender(screen).register((scr, ctx, mx, my, delta) -> {
+                if (!(scr instanceof NyMenuScreen)) ru.onedex.newyear.music.MusicFx.renderPulse(ctx);
                 if (!NyConfig.INSTANCE.screenSnow) return;
                 SnowSurfaces.screen(MinecraftClient.getInstance(), scr);
                 ScreenSnow.render(ctx, true);
             });
+            // F8 also opens the New Year menu from the main menu
+            if (screen instanceof net.minecraft.client.gui.screen.TitleScreen) {
+                net.fabricmc.fabric.api.client.screen.v1.ScreenKeyboardEvents.afterKeyPress(screen).register((scr, key) -> {
+                    if (MENU_KEY.matchesKey(key)) client.setScreen(new NyMenuScreen(scr));
+                });
+            }
             // snowballs / snowman / scattering with the mouse
             ScreenMouseEvents.allowMouseClick(screen).register((s, click) -> !ScreenSnow.onClick(click.x(), click.y(), click.button()));
             ScreenMouseEvents.allowMouseDrag(screen).register((s, click, dx, dy) -> !ScreenSnow.onDrag());
             ScreenMouseEvents.allowMouseRelease(screen).register((s, click) -> !ScreenSnow.onRelease());
         });
 
-        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> NyConfig.save());
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
+            ru.onedex.newyear.music.MusicPlayer.stop();
+            NyConfig.save();
+        });
         LOGGER.info("1DEX1 New Year loaded — press F8");
     }
 }

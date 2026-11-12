@@ -41,6 +41,8 @@ public final class SnowCover {
     private static final int[] base = new int[N * N];      // y of the snow bottom (top face of the ground)
     private static final float[] depth = new float[N * N]; // snow depth in blocks, 0 = none
     private static final int[] light = new int[N * N];
+    /** 0 = natural ground, 1 = roof / built block, 2 = tree leaves */
+    private static final byte[] kind = new byte[N * N];
     private static long lastBuild = -1000;
     private static ClientWorld builtFor;
     private static int builtSize = -1;
@@ -61,11 +63,13 @@ public final class SnowCover {
         int px = mc.player.getBlockX(), pz = mc.player.getBlockZ();
         long t = mc.world.getTime();
         boolean moved = Math.abs(px - centerX) >= 4 || Math.abs(pz - centerZ) >= 4;
-        if (mc.world != builtFor || builtSize != c.driftSize || moved || t - lastBuild >= 40 || t < lastBuild) {
+        int sizeKey = c.driftSize + (c.snowOnRoofs ? 10 : 0);
+        if (mc.world != builtFor || builtSize != sizeKey || moved || t - lastBuild >= 40 || t < lastBuild) {
             build(mc.world, px, pz, c);
             lastBuild = t;
             builtFor = mc.world;
-            builtSize = c.driftSize;
+            builtSize = sizeKey;
+            WinterDecor.rebuild(mc.world, c);
         }
     }
 
@@ -73,25 +77,42 @@ public final class SnowCover {
         centerX = cx;
         centerZ = cz;
         BlockPos.Mutable p = new BlockPos.Mutable();
-        // 1) ground level of every column
+        // 1) ground level of every column (base is stored in half blocks: slabs hold snow too)
+        boolean roofs = c.snowOnRoofs;
+        Heightmap.Type hm = roofs ? Heightmap.Type.MOTION_BLOCKING : Heightmap.Type.MOTION_BLOCKING_NO_LEAVES;
         for (int i = 0; i < N; i++) {
             for (int j = 0; j < N; j++) {
                 int x = cx + i - R, z = cz + j - R;
                 int k = idx(i, j);
                 base[k] = Integer.MIN_VALUE;
                 depth[k] = 0;
+                kind[k] = 0;
                 if (!world.getChunkManager().isChunkLoaded(x >> 4, z >> 4)) continue;
-                int top = world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, x, z);
+                int top = world.getTopY(hm, x, z);
                 if (top <= world.getBottomY()) continue;
                 p.set(x, top - 1, z);
                 BlockState ground = world.getBlockState(p);
-                if (!ground.getFluidState().isEmpty() || ground.getBlock() instanceof LeavesBlock) continue;
-                if (!ground.isSideSolidFullSquare(world, p, Direction.UP)) continue;
+                if (!ground.getFluidState().isEmpty()) continue;
+                boolean leaves = ground.getBlock() instanceof LeavesBlock;
+                if (leaves && !roofs) continue;
+                int halves;
+                if (leaves || ground.isSideSolidFullSquare(world, p, Direction.UP)) {
+                    halves = top * 2;
+                } else {
+                    if (!roofs) continue;
+                    net.minecraft.util.shape.VoxelShape shape = ground.getCollisionShape(world, p);
+                    if (shape.isEmpty()) continue;
+                    net.minecraft.util.math.Box b = shape.getBoundingBox();
+                    if (b.minX > 0.01 || b.maxX < 0.99 || b.minZ > 0.01 || b.maxZ < 0.99) continue; // fences, walls, ...
+                    if (b.maxY > 1.01) continue;
+                    halves = (top - 1) * 2 + (int) Math.round(b.maxY * 2);
+                }
                 p.set(x, top, z);
                 BlockState above = world.getBlockState(p);
                 if (!above.isAir() && !above.isReplaceable()) continue;
                 if (!above.getFluidState().isEmpty()) continue;
-                base[k] = top;
+                base[k] = halves;
+                kind[k] = (byte) (leaves ? 2 : (natural(ground) ? 0 : 1));
                 light[k] = WorldRenderer.getLightmapCoordinates(world, p);
             }
         }
@@ -115,7 +136,7 @@ public final class SnowCover {
                         int ii = i + di, jj = j + dj;
                         if (ii < 0 || jj < 0 || ii >= N || jj >= N) continue;
                         int nb = base[idx(ii, jj)];
-                        int wall = (nb == Integer.MIN_VALUE ? wallAt(world, x + di, z + dj, base[k]) : nb - base[k]);
+                        float wall = (nb == Integer.MIN_VALUE ? wallAt(world, x + di, z + dj, (int) Math.floor(base[k] / 2f)) : (nb - base[k]) / 2f);
                         if (wall <= 0) continue;
                         float dist = (float) Math.sqrt(di * di + dj * dj);
                         if (dist > 3.2f) continue;
@@ -127,7 +148,9 @@ public final class SnowCover {
                 // free-standing mounds
                 float m = fbm(x * 0.055f + 41, z * 0.055f + 93);
                 float mound = (float) Math.pow(Math.max(0, m - 0.48f) / 0.52f, 1.3) * 1.7f;
-                float h = (d + Math.max(drift, mound)) * size;
+                float h = kind[k] == 0 ? (d + Math.max(drift, mound)) * size
+                        : kind[k] == 1 ? (d + drift * 0.45f) * Math.min(1.2f, size) // roofs: no mounds
+                        : 0.1f + 0.12f * fbm(x * 0.3f, z * 0.3f);                  // snow caps on trees
                 // fade the thickness towards the edge of the area
                 float edge = (float) Math.sqrt((i - R) * (i - R) + (j - R) * (j - R)) / R;
                 if (edge > 1f) {
@@ -159,8 +182,14 @@ public final class SnowCover {
         built = true;
     }
 
+    private static boolean natural(BlockState s) {
+        return s.isIn(net.minecraft.registry.tag.BlockTags.DIRT) || s.isIn(net.minecraft.registry.tag.BlockTags.SAND)
+                || s.isIn(net.minecraft.registry.tag.BlockTags.BASE_STONE_OVERWORLD) || s.isOf(net.minecraft.block.Blocks.SNOW_BLOCK)
+                || s.isOf(net.minecraft.block.Blocks.GRAVEL) || s.isOf(net.minecraft.block.Blocks.GRASS_BLOCK) || s.isOf(net.minecraft.block.Blocks.PODZOL);
+    }
+
     /** Height of a wall at (x, z) relative to level y when the column itself has no snow (e.g. a fence, a tree trunk). */
-    private static int wallAt(ClientWorld world, int x, int z, int y) {
+    private static float wallAt(ClientWorld world, int x, int z, int y) {
         BlockPos pos = new BlockPos(x, y, z);
         BlockState s = world.getBlockState(pos);
         if (s.isAir() || s.isReplaceable() || !s.getFluidState().isEmpty()) return 0;
@@ -176,7 +205,7 @@ public final class SnowCover {
         if (i < 0 || j < 0 || i >= N || j >= N) return Float.NaN;
         int k = idx(i, j);
         if (base[k] == Integer.MIN_VALUE || depth[k] <= 0) return Float.NaN;
-        return base[k] + depth[k];
+        return base[k] / 2f + depth[k];
     }
 
     /** Whether the local player is standing in the visual snow. */
@@ -186,7 +215,7 @@ public final class SnowCover {
         int i = p.getBlockX() - centerX + R, j = p.getBlockZ() - centerZ + R;
         if (i < 0 || j < 0 || i >= N || j >= N) return false;
         int k = idx(i, j);
-        return base[k] != Integer.MIN_VALUE && Math.abs(p.getY() - base[k]) < 0.6;
+        return base[k] != Integer.MIN_VALUE && Math.abs(p.getY() - base[k] / 2f) < 0.6;
     }
 
     /** Plays the snow step sound for the local player (replaces the vanilla step sound on snow). */
@@ -217,19 +246,8 @@ public final class SnowCover {
                 int k = idx(i, j);
                 int b = base[k];
                 if (b == Integer.MIN_VALUE) continue;
-                float y0 = (float) (b - cam.y);
-                // corner heights (shared with neighbours on the same level -> smooth surface)
-                float c00 = corner(i, j, -1, -1), c10 = corner(i, j, 1, -1), c01 = corner(i, j, -1, 1), c11 = corner(i, j, 1, 1);
-                float mid = depth[k];
-                h[0] = c00;
-                h[2] = c10;
-                h[6] = c01;
-                h[8] = c11;
-                h[1] = (c00 + c10) / 2f;
-                h[7] = (c01 + c11) / 2f;
-                h[3] = (c00 + c01) / 2f;
-                h[5] = (c10 + c11) / 2f;
-                h[4] = (c00 + c10 + c01 + c11) / 8f + mid / 2f;
+                float y0 = (float) (b / 2.0 - cam.y);
+                fillHeights(i, j, h);
                 float x0 = ox + i, z0 = oz + j;
                 int lt = light[k];
                 for (int sq = 0; sq < 4; sq++) {
@@ -256,6 +274,68 @@ public final class SnowCover {
                 side(vc, e, sprite, i, j, 0, 1, x0, y0, z0 + 1, h[6], h[7], h[8], lt);
             }
         }
+    }
+
+    /** 3x3 grid of snow heights over column (i, j) (corners shared with neighbours -> smooth surface). */
+    private static void fillHeights(int i, int j, float[] h) {
+        float c00 = corner(i, j, -1, -1), c10 = corner(i, j, 1, -1), c01 = corner(i, j, -1, 1), c11 = corner(i, j, 1, 1);
+        float mid = depth[idx(i, j)];
+        h[0] = c00;
+        h[2] = c10;
+        h[6] = c01;
+        h[8] = c11;
+        h[1] = (c00 + c10) / 2f;
+        h[7] = (c01 + c11) / 2f;
+        h[3] = (c00 + c01) / 2f;
+        h[5] = (c10 + c11) / 2f;
+        h[4] = (c00 + c10 + c01 + c11) / 8f + mid / 2f;
+    }
+
+    /** Exact absolute y of the snow surface at a point (matches the rendered mesh), or NaN. */
+    public static float heightAtPoint(double x, double z) {
+        if (!built) return Float.NaN;
+        int bx = (int) Math.floor(x), bz = (int) Math.floor(z);
+        int i = bx - centerX + R, j = bz - centerZ + R;
+        if (i < 0 || j < 0 || i >= N || j >= N) return Float.NaN;
+        int k = idx(i, j);
+        if (base[k] == Integer.MIN_VALUE) return Float.NaN;
+        float[] h = new float[9];
+        fillHeights(i, j, h);
+        float fx = (float) (x - bx) * 2f, fz = (float) (z - bz) * 2f;
+        int sx = Math.min(1, (int) fx), sz = Math.min(1, (int) fz);
+        float u = fx - sx, v = fz - sz;
+        int a = sz * 3 + sx;
+        float top = h[a] + (h[a + 1] - h[a]) * u;
+        float bot = h[a + 3] + (h[a + 4] - h[a + 3]) * u;
+        return base[k] / 2f + top + (bot - top) * v;
+    }
+
+    /** Ground level (absolute y, half-block precision) of a column with snow, or NaN. */
+    public static float groundAt(int x, int z) {
+        if (!built) return Float.NaN;
+        int i = x - centerX + R, j = z - centerZ + R;
+        if (i < 0 || j < 0 || i >= N || j >= N) return Float.NaN;
+        int b = base[idx(i, j)];
+        return b == Integer.MIN_VALUE ? Float.NaN : b / 2f;
+    }
+
+    /** Kind of the snowy column: 0 ground, 1 roof, 2 leaves, -1 none. */
+    public static int kindAt(int x, int z) {
+        if (!built) return -1;
+        int i = x - centerX + R, j = z - centerZ + R;
+        if (i < 0 || j < 0 || i >= N || j >= N) return -1;
+        int k = idx(i, j);
+        return base[k] == Integer.MIN_VALUE ? -1 : kind[k];
+    }
+
+    public static int lightAt(int x, int z) {
+        int i = x - centerX + R, j = z - centerZ + R;
+        if (i < 0 || j < 0 || i >= N || j >= N) return 0xF000F0;
+        return light[idx(i, j)];
+    }
+
+    public static boolean isBuilt() {
+        return built;
     }
 
     /** Height of the snow at the corner (i + dx/2, j + dz/2) of column (i, j). */

@@ -14,7 +14,8 @@ public final class Garland {
     public static Text text(int seed) {
         long ms = System.currentTimeMillis();
         int period = NyConfig.INSTANCE.garlandSpeed == 1 ? 180 : 420;
-        long step = ms / period;
+        long beat = ru.onedex.newyear.music.MusicFx.garlandStep();
+        long step = beat >= 0 ? beat : ms / period;
         MutableText t = Text.empty();
         for (int i = 0; i < BULBS; i++) {
             if (i > 0) t.append(Text.literal("~").withColor(0xFF2E7D32));

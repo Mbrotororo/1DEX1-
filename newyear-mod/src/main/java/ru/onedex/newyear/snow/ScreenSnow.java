@@ -69,11 +69,19 @@ public final class ScreenSnow {
 
     private static final class Snowman {
         float x, r0, r1, r2, dir, age, speed;
+        int style;
         Drift on;
         float y; // bottom
         boolean falling;
         float vy;
     }
+
+    private static final class Deer {
+        float x, dir, t, y;
+    }
+
+    private static Deer deer;
+    private static float deerTimer = Boolean.getBoolean("dexnewyear.dev") ? 3 : 20;
 
     private static final class Puff {
         float x, y, vx, vy, life, max, size;
@@ -166,6 +174,7 @@ public final class ScreenSnow {
         stepBalls(dt, (float) mx, (float) my);
         stepSnowmen(dt);
         stepPuffs(dt);
+        stepDeer(dt, c);
 
         // ---- drifts (melt when their element is gone; ground piles melt slowly)
         for (Iterator<Drift> it = drifts.values().iterator(); it.hasNext(); ) {
@@ -193,6 +202,7 @@ public final class ScreenSnow {
         frame.clear();
 
         for (Snowman s : snowmen) drawSnowman(s);
+        if (deer != null) drawDeer(deer);
         for (Ball b : balls) drawBall(b);
         for (Puff p : puffs) {
             float a = Math.max(0, 1 - p.life / p.max);
@@ -210,14 +220,32 @@ public final class ScreenSnow {
 
     // ------------------------------------------------------------------ flakes
 
+    private static long lastBeats;
+    private static float gust;
+
     private static void stepFlakes(float dt, NyConfig c) {
-        int target = Math.min(260, Math.round(c.screenSnowAmount * screenW * screenH / 900f));
+        int target = Math.min(360, Math.round(c.screenSnowAmount * screenW * screenH / 900f * ru.onedex.newyear.music.MusicFx.snowAmount()));
+        float speed = ru.onedex.newyear.music.MusicFx.snowSpeed();
+        long b = ru.onedex.newyear.music.MusicPlayer.beats();
+        if (b != lastBeats) {
+            lastBeats = b;
+            if (ru.onedex.newyear.music.MusicPlayer.isPlaying() && c.fxBeatSnow) {
+                gust = (RNG.nextBoolean() ? 1 : -1) * (40 + RNG.nextFloat() * 50);
+                for (int i = 0; i < 25; i++) {
+                    Flake f = spawn(false);
+                    f.y = -4 - RNG.nextFloat() * 20;
+                    flakes.add(f);
+                }
+            }
+        }
+        gust *= (float) Math.exp(-dt * 2.5f);
         while (flakes.size() < target) flakes.add(spawn(true));
-        while (flakes.size() > target) flakes.remove(flakes.size() - 1);
+        while (flakes.size() > target + 40) flakes.remove(flakes.size() - 1);
         for (Flake f : flakes) {
             float py = f.y;
-            f.y += f.vy * dt;
-            f.x += (float) Math.sin(time * f.swayFreq + f.phase) * f.swayAmp * dt + 2.5f * dt;
+            f.y += f.vy * speed * dt;
+            f.x += (float) Math.sin(time * f.swayFreq + f.phase) * f.swayAmp * dt + (2.5f + gust) * dt;
+            if (f.x < -6) f.x += screenW + 8;
             if (f.x > screenW + 4) f.x -= screenW + 8;
             boolean landed = false;
             if (c.snowDrifts) {
@@ -492,6 +520,37 @@ public final class ScreenSnow {
                 b.x = screenW - b.r;
                 b.vx = -b.vx * 0.4f;
             }
+            // snowball fight: a fast ball knocks a snowman down or bursts another ball
+            float sp = (float) Math.sqrt(b.vx * b.vx + b.vy * b.vy);
+            if (sp > 120) {
+                boolean hit = false;
+                for (Iterator<Snowman> si = snowmen.iterator(); si.hasNext(); ) {
+                    Snowman sm = si.next();
+                    float top = sm.y - (sm.r0 + sm.r1 + sm.r2) * 1.9f;
+                    if (Math.abs(b.x - sm.x) < sm.r0 + b.r && b.y > top - b.r && b.y < sm.y + b.r) {
+                        crumble(sm);
+                        si.remove();
+                        hit = true;
+                        break;
+                    }
+                }
+                if (!hit) {
+                    for (Ball o : balls) {
+                        if (o == b || o.held) continue;
+                        if (dist2(o.x, o.y, b.x, b.y) < (o.r + b.r) * (o.r + b.r) && Math.abs(b.vx) > 120) {
+                            smash(o);
+                            o.r = -1; // removed below
+                            hit = true;
+                            break;
+                        }
+                    }
+                }
+                if (hit) {
+                    smash(b);
+                    it.remove();
+                    continue;
+                }
+            }
             // land on another ball
             Ball under = null;
             for (Ball o : balls) {
@@ -528,6 +587,7 @@ public final class ScreenSnow {
             }
             if (b.y > screenH + 40) it.remove();
         }
+        balls.removeIf(o -> o.r < 0);
         // three balls stacked -> snowman
         for (Ball top : new ArrayList<>(balls)) {
             Ball mid = top.restOn;
@@ -546,6 +606,7 @@ public final class ScreenSnow {
             s.y = surfaceY(s.on, s.x) + s.r0 * 0.15f;
             s.dir = RNG.nextBoolean() ? 1 : -1;
             s.speed = 9 + RNG.nextFloat() * 6;
+            s.style = RNG.nextInt(5);
             snowmen.add(s);
             balls.remove(top);
             balls.remove(mid);
@@ -637,6 +698,79 @@ public final class ScreenSnow {
         deposit(d, s.x, total * 1.8f, Math.max(6, Math.round(s.r0 * 2.0f)), d.ground ? PILE_MAX : Math.max(FLAKE_MAX, s.r0 * 2.6f));
     }
 
+    // ------------------------------------------------------------------ Rudolph
+
+    private static void stepDeer(float dt, NyConfig c) {
+        if (!c.rudolph) {
+            deer = null;
+            return;
+        }
+        if (deer == null) {
+            deerTimer -= dt;
+            if (deerTimer <= 0) {
+                deer = new Deer();
+                deer.dir = RNG.nextBoolean() ? 1 : -1;
+                deer.x = deer.dir > 0 ? -30 : screenW + 30;
+                deerTimer = Boolean.getBoolean("dexnewyear.dev") ? 4 : 60 + RNG.nextFloat() * 90;
+            }
+            return;
+        }
+        deer.t += dt;
+        deer.x += deer.dir * 62 * dt;
+        Drift g = drifts.get("ground");
+        float ground = g != null ? surfaceY(g, Math.max(0, Math.min(screenW - 1, deer.x))) : screenH;
+        deer.y = ground;
+        // kicks up snow
+        if (RNG.nextFloat() < dt * 14) {
+            Puff p = new Puff();
+            p.x = deer.x - deer.dir * 6;
+            p.y = deer.y - 1;
+            p.vx = -deer.dir * (20 + RNG.nextFloat() * 30);
+            p.vy = -30 - RNG.nextFloat() * 40;
+            p.size = 0.5f + RNG.nextFloat() * 0.7f;
+            p.max = 0.6f + RNG.nextFloat() * 0.5f;
+            puffs.add(p);
+        }
+        if (deer.x < -40 || deer.x > screenW + 40) deer = null;
+    }
+
+    private static void drawDeer(Deer d) {
+        float s = 1.25f;
+        float x = d.x, f = d.dir;
+        float bob = (float) Math.abs(Math.sin(d.t * 14)) * 1.2f * s;
+        float y = d.y - 9 * s - bob;
+        int body = 0xFF8B5A2B, dark = 0xFF5E3A1A, light = 0xFFC9A27A;
+        // legs (gallop)
+        float ph = d.t * 14;
+        for (int i = 0; i < 4; i++) {
+            float lx = x + f * ((i < 2 ? 5.5f : -5.5f) + (i % 2) * 1.6f) * s;
+            float sw = (float) Math.sin(ph + i * 1.6f) * 2.6f * s;
+            R2D.line(lx, y + 3 * s, lx + sw, d.y - bob * 0.3f, 1.1f * s, dark);
+        }
+        // body
+        R2D.circle(x - f * 4 * s, y, 4.2f * s, body);
+        R2D.circle(x + f * 2 * s, y - 0.3f * s, 4.6f * s, body);
+        R2D.circle(x - f * 1 * s, y + 1.6f * s, 3.4f * s, light);
+        R2D.circle(x - f * 8 * s, y - 2.2f * s, 1.4f * s, light); // tail
+        // neck + head
+        R2D.line(x + f * 5 * s, y - 2 * s, x + f * 8 * s, y - 7 * s, 2.6f * s, body);
+        R2D.circle(x + f * 9 * s, y - 8.2f * s, 2.6f * s, body);
+        R2D.circle(x + f * 11.6f * s, y - 7.4f * s, 1.8f * s, body);
+        R2D.circle(x + f * 9.4f * s, y - 9.2f * s, 0.55f * s, 0xFF1E1E24);
+        // antlers
+        R2D.line(x + f * 8.2f * s, y - 10.2f * s, x + f * 7 * s, y - 14.5f * s, 0.8f * s, light);
+        R2D.line(x + f * 7.6f * s, y - 12.4f * s, x + f * 5.6f * s, y - 13.6f * s, 0.7f * s, light);
+        R2D.line(x + f * 9.6f * s, y - 10.2f * s, x + f * 10.6f * s, y - 14.6f * s, 0.8f * s, light);
+        R2D.line(x + f * 10.2f * s, y - 12.6f * s, x + f * 12.2f * s, y - 13.4f * s, 0.7f * s, light);
+        // the famous red nose
+        float glow = 0.55f + 0.45f * (float) Math.sin(d.t * 8);
+        R2D.circle(x + f * 13.3f * s, y - 7.4f * s, 3.2f * s, R2D.withAlpha(0xFFFF3B30, 0.25f * glow));
+        R2D.circle(x + f * 13.3f * s, y - 7.4f * s, 1.25f * s, 0xFFFF2A20);
+        // red collar with a golden bell
+        R2D.line(x + f * 5.6f * s, y - 3.6f * s, x + f * 7.2f * s, y - 1.6f * s, 1.1f * s, 0xFFD7263D);
+        R2D.circle(x + f * 6.8f * s, y - 1.2f * s, 0.8f * s, 0xFFE8C547);
+    }
+
     // ------------------------------------------------------------------ drawing
 
     private static void drawBall(Ball b) {
@@ -678,10 +812,54 @@ public final class ScreenSnow {
         R2D.circle(s.x + ex - s.r2 * 0.25f, c2 - s.r2 * 0.18f, Math.max(0.4f, s.r2 * 0.12f), 0xFF1E1E24);
         R2D.circle(s.x + ex + s.r2 * 0.25f, c2 - s.r2 * 0.18f, Math.max(0.4f, s.r2 * 0.12f), 0xFF1E1E24);
         R2D.line(s.x + ex, c2 + s.r2 * 0.1f, s.x + ex + s.dir * s.r2 * 0.9f, c2 + s.r2 * 0.18f, Math.max(0.6f, s.r2 * 0.22f), 0xFFF28C28);
-        // hat
-        R2D.roundRect(s.x - s.r2 * 0.9f, c2 - s.r2 * 0.95f, s.r2 * 1.8f, Math.max(0.6f, s.r2 * 0.22f), 0.3f, 0xFF24242C);
-        R2D.roundRect(s.x - s.r2 * 0.55f, c2 - s.r2 * 1.75f, s.r2 * 1.1f, s.r2 * 0.85f, 0.3f, 0xFF24242C);
-        R2D.rect(s.x - s.r2 * 0.55f, c2 - s.r2 * 1.12f, s.r2 * 1.1f, Math.max(0.4f, s.r2 * 0.14f), 0xFFD7263D);
+        switch (s.style) {
+            case 1 -> { // metal bucket
+                R2D.roundRect(s.x - s.r2 * 0.8f, c2 - s.r2 * 1.75f, s.r2 * 1.6f, s.r2 * 0.95f, 0.4f, 0xFF8C96A3);
+                R2D.rect(s.x - s.r2 * 0.8f, c2 - s.r2 * 0.95f, s.r2 * 1.6f, Math.max(0.4f, s.r2 * 0.14f), 0xFF6B7480);
+                R2D.rect(s.x - s.r2 * 0.6f, c2 - s.r2 * 1.65f, s.r2 * 0.25f, s.r2 * 0.7f, 0x55FFFFFF);
+            }
+            case 2 -> { // Santa hat
+                R2D.roundRect(s.x - s.r2 * 0.95f, c2 - s.r2 * 1.0f, s.r2 * 1.9f, s.r2 * 0.4f, s.r2 * 0.2f, 0xFFF4F6FA);
+                for (int i = 0; i < 6; i++) {
+                    float t = i / 6f;
+                    R2D.circle(s.x - s.dir * s.r2 * 0.6f * t, c2 - s.r2 * (1.05f + 0.9f * t), s.r2 * (0.75f - 0.6f * t), 0xFFD7263D);
+                }
+                R2D.circle(s.x - s.dir * s.r2 * 0.75f, c2 - s.r2 * 2.0f, s.r2 * 0.28f, 0xFFF4F6FA);
+            }
+            case 3 -> { // earmuffs + broom
+                R2D.line(s.x - s.r2 * 0.9f, c2 - s.r2 * 0.2f, s.x, c2 - s.r2 * 1.05f, Math.max(0.5f, s.r2 * 0.14f), 0xFF8E44AD);
+                R2D.line(s.x, c2 - s.r2 * 1.05f, s.x + s.r2 * 0.9f, c2 - s.r2 * 0.2f, Math.max(0.5f, s.r2 * 0.14f), 0xFF8E44AD);
+                R2D.circle(s.x - s.r2 * 0.92f, c2 - s.r2 * 0.1f, s.r2 * 0.3f, 0xFFE056A0);
+                R2D.circle(s.x + s.r2 * 0.92f, c2 - s.r2 * 0.1f, s.r2 * 0.3f, 0xFFE056A0);
+                float bx = s.x - s.dir * s.r1 * 2.0f;
+                R2D.line(bx, c1 - s.r1 * 1.6f, bx, c0 + s.r0 * 0.8f, 0.6f, 0xFF7A5230);
+                for (int i = -2; i <= 2; i++) R2D.line(bx, c0 + s.r0 * 0.5f, bx + i * 0.6f, c0 + s.r0 * 1.1f, 0.5f, 0xFFC9A35A);
+            }
+            case 4 -> { // top hat + a tiny Christmas tree next to it
+                R2D.roundRect(s.x - s.r2 * 0.9f, c2 - s.r2 * 0.95f, s.r2 * 1.8f, Math.max(0.6f, s.r2 * 0.22f), 0.3f, 0xFF24242C);
+                R2D.roundRect(s.x - s.r2 * 0.55f, c2 - s.r2 * 1.75f, s.r2 * 1.1f, s.r2 * 0.85f, 0.3f, 0xFF24242C);
+                float tx = s.x - s.dir * (s.r0 + 4.5f), ty = y0;
+                for (int i = 0; i < 3; i++) {
+                    float w = 3.2f - i * 0.9f, y = ty - 1.5f - i * 2.2f;
+                    for (int k = 0; k < 4; k++) R2D.line(tx - w + k * 0.2f, y + k * 0.1f, tx + w - k * 0.2f, y + k * 0.1f, 0.9f, 0xFF1F7A3A);
+                    R2D.line(tx - w * 0.9f, y - 0.1f, tx, y - 2.4f, 0.9f, 0xFF1F7A3A);
+                    R2D.line(tx + w * 0.9f, y - 0.1f, tx, y - 2.4f, 0.9f, 0xFF1F7A3A);
+                }
+                R2D.rect(tx - 0.5f, ty - 1.5f, 1f, 1.5f, 0xFF6B4423);
+                long tt = System.currentTimeMillis() / 300;
+                for (int i = 0; i < 5; i++) {
+                    float ox = (i % 2 == 0 ? -1 : 1) * (0.6f + (i % 3) * 0.6f), oy = -2.2f - i * 1.1f;
+                    int col = ru.onedex.newyear.render.Garland.COLORS[(int) ((i + tt) % ru.onedex.newyear.render.Garland.COLORS.length)];
+                    R2D.circle(tx + ox, ty + oy, 0.45f, col);
+                }
+                R2D.circle(tx, ty - 8.6f, 0.7f, 0xFFFFD34D);
+            }
+            default -> { // classic top hat
+                R2D.roundRect(s.x - s.r2 * 0.9f, c2 - s.r2 * 0.95f, s.r2 * 1.8f, Math.max(0.6f, s.r2 * 0.22f), 0.3f, 0xFF24242C);
+                R2D.roundRect(s.x - s.r2 * 0.55f, c2 - s.r2 * 1.75f, s.r2 * 1.1f, s.r2 * 0.85f, 0.3f, 0xFF24242C);
+                R2D.rect(s.x - s.r2 * 0.55f, c2 - s.r2 * 1.12f, s.r2 * 1.1f, Math.max(0.4f, s.r2 * 0.14f), 0xFFD7263D);
+            }
+        }
         R2D.alpha = a;
     }
 

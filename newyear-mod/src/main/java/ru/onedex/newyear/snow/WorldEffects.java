@@ -36,7 +36,11 @@ public final class WorldEffects {
     private static void snow(MinecraftClient mc, ClientWorld world, NyConfig c) {
         if (mc.player.isSubmergedInWater()) return;
         int s = c.snowStrength;
-        int perTick = Math.min(40, (int) Math.round(2 + Math.pow(s - 1, 1.55) * 1.8));
+        int perTick = Math.min(40, (int) Math.round((2 + Math.pow(s - 1, 1.55) * 1.8) * ru.onedex.newyear.music.MusicFx.snowAmount()));
+        if (ru.onedex.newyear.music.MusicFx.snowBeat()) {
+            perTick = Math.min(90, perTick * 3 + 8);
+            windAngle += (RNG.nextDouble() - 0.5) * 0.8;
+        }
         windAngle += (RNG.nextDouble() - 0.5) * 0.01;
         double windSpeed = c.wind ? 0.006 + s * s * 0.0009 : 0;
         double wx = Math.cos(windAngle) * windSpeed, wz = Math.sin(windAngle) * windSpeed;
@@ -46,7 +50,7 @@ public final class WorldEffects {
             double r = 1.5 + Math.sqrt(RNG.nextDouble()) * radius;
             double a = RNG.nextDouble() * Math.PI * 2;
             double height = -3 + RNG.nextDouble() * 15;
-            double fall = 0.035 + RNG.nextDouble() * 0.03 + s * 0.002;
+            double fall = (0.035 + RNG.nextDouble() * 0.03 + s * 0.002) * ru.onedex.newyear.music.MusicFx.snowSpeed();
             // start upwind so the flakes drift into view
             double travel = (height + 4) / fall;
             double x = cam.x + Math.cos(a) * r - wx * travel * 0.5;

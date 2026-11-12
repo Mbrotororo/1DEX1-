@@ -6,7 +6,9 @@ version = project.mod_version
 group = project.maven_group
 base { archivesName = project.archives_base_name }
 
-repositories {}
+repositories {
+    mavenCentral()
+}
 
 def apiModules = [
     'fabric-api-base',
@@ -19,6 +21,10 @@ def apiModules = [
 ]
 
 dependencies {
+    // MP3 decoding for songs the player adds to the 1dex1-music folder
+    implementation "javazoom:jlayer:1.0.1"
+    include "javazoom:jlayer:1.0.1"
+
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
@@ -27,6 +33,11 @@ dependencies {
         modImplementation dep
         include dep
     }
+}
+
+// copyrighted songs are kept outside git (music-local/) and only built into local jars
+if (file('music-local').exists() && !project.hasProperty('noSongs')) {
+    sourceSets.main.resources.srcDir 'music-local'
 }
 
 processResources {

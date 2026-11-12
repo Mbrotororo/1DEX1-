@@ -45,16 +45,30 @@ public class NyMenuScreen extends Screen {
         COLUMNS.add(new Column("Снег", List.of(
                 new Module("snowfall", "Снегопад", () -> c().snowfall, () -> c().snowfall = !c().snowfall, NyMenuScreen::pageSnowfall),
                 new Module("cover", "Сугробы", () -> c().snowCover, () -> c().snowCover = !c().snowCover, NyMenuScreen::pageCover),
+                new Module("prints", "Следы на снегу", () -> c().footprints, () -> c().footprints = !c().footprints, (m, th, x, y, w, mx, my) -> m.notes(th, x, y, "Следы игроков в сугробах,", "их постепенно заметает.")),
+                new Module("psnow", "Снег на игроках", () -> c().playerSnow, () -> c().playerSnow = !c().playerSnow, (m, th, x, y, w, mx, my) -> m.notes(th, x, y, "Под снегопадом игроков", "засыпает, бег стряхивает.")),
                 new Module("screen", "Снег на экране", () -> c().screenSnow, () -> c().screenSnow = !c().screenSnow, NyMenuScreen::pageScreen),
-                new Module("play", "Снежки и снеговик", () -> c().snowPlay, () -> c().snowPlay = !c().snowPlay, NyMenuScreen::pagePlay))));
-        COLUMNS.add(new Column("Атмосфера", List.of(
+                new Module("play", "Снежки и снеговик", () -> c().snowPlay, () -> c().snowPlay = !c().snowPlay, NyMenuScreen::pagePlay),
+                new Module("rudolph", "Рудольф", () -> c().rudolph, () -> c().rudolph = !c().rudolph, (m, th, x, y, w, mx, my) -> m.notes(th, x, y, "Оленёнок иногда пробегает", "внизу экрана.")))));
+        COLUMNS.add(new Column("Зима", List.of(
                 new Module("hats", "Шапки", () -> c().hats, () -> c().hats = !c().hats, NyMenuScreen::pageHats),
                 new Module("garlands", "Гирлянды", () -> c().garlands, () -> c().garlands = !c().garlands, NyMenuScreen::pageGarlands),
+                new Module("decor", "Украшения на ёлках", () -> c().treeDecor, () -> c().treeDecor = !c().treeDecor, (m, th, x, y, w, mx, my) -> m.notes(th, x, y, "Шарики и огоньки", "на деревьях вокруг.")),
+                new Module("icicles", "Сосульки", () -> c().icicles, () -> c().icicles = !c().icicles, (m, th, x, y, w, mx, my) -> m.notes(th, x, y, "Свисают с краёв крыш,", "иногда с них капает.")),
+                new Module("ice", "Лёд на воде", () -> c().iceOnWater, () -> c().iceOnWater = !c().iceOnWater, (m, th, x, y, w, mx, my) -> m.notes(th, x, y, "Тонкий лёд у берегов.")),
                 new Module("filter", "Зимний фильтр", () -> c().winterFilter, () -> c().winterFilter = !c().winterFilter, NyMenuScreen::pageFilter),
                 new Module("breath", "Пар изо рта", () -> c().breath, () -> c().breath = !c().breath, NyMenuScreen::pageBreath),
                 new Module("stars", "Звёздное небо", () -> c().starrySky, () -> c().starrySky = !c().starrySky, NyMenuScreen::pageStars))));
+        COLUMNS.add(new Column("Музыка", List.of(
+                new Module("music", "Музыка", () -> c().music, () -> c().music = !c().music, NyMenuScreen::pageMusic),
+                new Module("songs", "Песни", null, null, NyMenuScreen::pageSongs),
+                new Module("fx_beat", "Снег под бит", () -> c().fxBeatSnow, () -> c().fxBeatSnow = !c().fxBeatSnow, (m, th, x, y, w, mx, my) -> m.notes(th, x, y, "На каждый бит — порыв", "и волна снежинок.")),
+                new Module("fx_speed", "Ускорение снега", () -> c().fxSpeedSnow, () -> c().fxSpeedSnow = !c().fxSpeedSnow, (m, th, x, y, w, mx, my) -> m.notes(th, x, y, "Чем громче песня,", "тем быстрее и гуще снег.")),
+                new Module("fx_gar", "Гирлянды под бит", () -> c().fxGarlands, () -> c().fxGarlands = !c().fxGarlands, (m, th, x, y, w, mx, my) -> m.notes(th, x, y, "Огоньки мигают в ритм.")),
+                new Module("fx_pulse", "Пульс экрана", () -> c().fxPulse, () -> c().fxPulse = !c().fxPulse, (m, th, x, y, w, mx, my) -> m.notes(th, x, y, "Края экрана светятся", "цветом меню на бит.")))));
         COLUMNS.add(new Column("Визуал", List.of(
-                new Module("menu", "Меню", null, null, NyMenuScreen::pageVisual))));
+                new Module("menu", "Меню", null, null, NyMenuScreen::pageVisual),
+                new Module("title", "Новогодний фон", () -> c().titleBackground, () -> c().titleBackground = !c().titleBackground, (m, th, x, y, w, mx, my) -> m.notes(th, x, y, "Картинка в главном меню", "поверх любого ресурспака.")))));
     }
 
     private static NyConfig c() {
@@ -70,8 +84,8 @@ public class NyMenuScreen extends Screen {
     private final Map<String, Float> anims = new HashMap<>();
     private final List<Hot> hots = new ArrayList<>();
     private Hot dragging;
-    private final float[] scroll = new float[3], scrollTarget = new float[3], maxScroll = new float[3];
-    private final float[] colX = new float[3], colTop = new float[3], colH = new float[3];
+    private final float[] scroll = new float[8], scrollTarget = new float[8], maxScroll = new float[8];
+    private final float[] colX = new float[8], colTop = new float[8], colH = new float[8];
     private final Map<String, Float> pageH = new HashMap<>();
 
     private float fit = 1;
@@ -89,8 +103,15 @@ public class NyMenuScreen extends Screen {
         }
     }
 
+    private final Screen parent;
+
     public NyMenuScreen() {
+        this(null);
+    }
+
+    public NyMenuScreen(Screen parent) {
         super(Text.literal("1DEX1 New Year"));
+        this.parent = parent;
         GlassMask.ensure();
     }
 
@@ -114,7 +135,7 @@ public class NyMenuScreen extends Screen {
         if (closedForReal) return;
         closedForReal = true;
         if (client != null) client.send(() -> {
-            if (client.currentScreen == this) client.setScreen(null);
+            if (client.currentScreen == this) client.setScreen(parent);
         });
     }
 
@@ -240,13 +261,18 @@ public class NyMenuScreen extends Screen {
     public void renderBackground(DrawContext context, int mouseX, int mouseY, float deltaTicks) {
         openProgress = computeOpen();
         Theme th = Theme.current();
+        if (client != null && client.world == null) this.renderPanoramaBackground(context, deltaTicks);
         if (th.blur()) context.applyBlur();
         R2D.begin(context);
         R2D.rect(0, 0, width, height, R2D.withAlpha(th.overlay(), openProgress));
     }
 
+    private double lastMx, lastMy;
+
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float deltaTicks) {
+        lastMx = mouseX;
+        lastMy = mouseY;
         long now = System.nanoTime();
         dt = Math.min(0.1f, (now - lastFrame) / 1e9f);
         lastFrame = now;
@@ -299,6 +325,7 @@ public class NyMenuScreen extends Screen {
             if (e > 0.9f) ScreenSnow.surface("ny_col" + i, sx(colX[i] + 5), sy(colTop[i]), COL_W * fit * curScale - 10 * fit);
         }
         GlassMask.commit(width, height);
+        ru.onedex.newyear.music.MusicFx.renderPulse(context);
     }
 
     private void drawColumn(Theme th, int ci, float x, float y, float maxH, int mx, int my) {
@@ -395,7 +422,8 @@ public class NyMenuScreen extends Screen {
         int bulbs = 7;
         float left = x + 14, right = x + w - 14;
         float step = (right - left) / (bulbs - 1);
-        long t = System.currentTimeMillis() / (c().garlandSpeed == 1 ? 180 : 420);
+        long beat = ru.onedex.newyear.music.MusicFx.garlandStep();
+        long t = beat >= 0 ? beat : System.currentTimeMillis() / (c().garlandSpeed == 1 ? 180 : 420);
         for (int i = 0; i < bulbs - 1; i++) {
             float x0 = left + i * step;
             for (int k = 1; k < 8; k++) {
@@ -430,6 +458,7 @@ public class NyMenuScreen extends Screen {
         NyConfig c = c();
         float y0 = y;
         y = m.segmented(th, "c_size", "Размер", new String[]{"Малые", "Средние", "Огромные"}, c.driftSize, i -> c.driftSize = i, x, y, w);
+        y = m.toggleRow(th, "c_roof", "Крыши и деревья", c.snowOnRoofs, () -> c.snowOnRoofs = !c.snowOnRoofs, x, y, w);
         y = m.toggleRow(th, "c_step", "Звук шагов", c.snowSteps, () -> c.snowSteps = !c.snowSteps, x, y, w);
         y = m.slider(th, "c_vol", "Громкость", Math.round(c.stepVolume * 100) + "%", x, y, w, c.stepVolume, v -> c.stepVolume = (float) v, mx, my);
         return y - y0 + 4;
@@ -502,6 +531,125 @@ public class NyMenuScreen extends Screen {
         y = m.toggleRow(th, "v_gar", "Гирлянда", c.menuGarland, () -> c.menuGarland = !c.menuGarland, x, y, w);
         y = m.colorPicker(th, x, y, w);
         return y - y0 + 4;
+    }
+
+    private float notes(Theme th, float x, float y, String... lines) {
+        float y0 = y;
+        for (String l : lines) y = note(th, l, x, y);
+        return y - y0 + 4;
+    }
+
+    private static float pageMusic(NyMenuScreen m, Theme th, float x, float y, float w, int mx, int my) {
+        NyConfig c = c();
+        float y0 = y;
+        ru.onedex.newyear.music.MusicPlayer.Track t = ru.onedex.newyear.music.MusicPlayer.currentTrack();
+        if (t == null && !ru.onedex.newyear.music.MusicPlayer.tracks().isEmpty()) t = ru.onedex.newyear.music.MusicPlayer.tracks().get(Math.min(c.lastSong, ru.onedex.newyear.music.MusicPlayer.tracks().size() - 1));
+        if (t == null) {
+            return m.notes(th, x, y, "Песен нет. Положи .ogg или", ".mp3 в папку 1dex1-music.");
+        }
+        R2D.textMid(R2D.fit(t.title(), Font.S8, w), Font.S8, x, y + 6, th.text());
+        R2D.textMid(R2D.fit(t.artist(), Font.M6, w), Font.M6, x, y + 15, th.sub());
+        // progress
+        float py = y + 24;
+        float prog = ru.onedex.newyear.music.MusicPlayer.progress();
+        R2D.roundRect(x, py, w, 3, 1.5f, th.control());
+        R2D.roundRect(x, py, Math.max(3, w * prog), 3, 1.5f, c.accentColor());
+        int pos = ru.onedex.newyear.music.MusicPlayer.positionSeconds(), len = ru.onedex.newyear.music.MusicPlayer.lengthSeconds();
+        R2D.textMid(ru.onedex.newyear.music.MusicPlayer.isPlaying() || ru.onedex.newyear.music.MusicPlayer.isPaused() ? time(pos) : "0:00", Font.M6, x, py + 9, th.sub());
+        if (len > 0) R2D.textMidRight(time(len), Font.M6, x + w, py + 9, th.sub());
+        // live equalizer bars
+        float e = ru.onedex.newyear.music.MusicPlayer.energy(), pl = ru.onedex.newyear.music.MusicPlayer.pulse();
+        for (int i = 0; i < 5; i++) {
+            float bh = 1.5f + (e * (0.6f + 0.4f * (float) Math.sin(i * 1.7 + System.nanoTime() / 1.6e8)) + pl * 0.3f) * 7f;
+            R2D.roundRect(x + w / 2f - 9 + i * 4, py + 12 - bh, 2.5f, bh, 1f, R2D.withAlpha(c.accentColor(), 0.85f));
+        }
+        y = py + 17;
+        // controls
+        float bw = (w - 6) / 3f;
+        boolean playing = ru.onedex.newyear.music.MusicPlayer.isPlaying();
+        m.button(th, "mu_prev", "Назад", x, y, bw, () -> {
+            c.music = true;
+            ru.onedex.newyear.music.MusicPlayer.previous();
+        });
+        m.button(th, "mu_play", playing ? "Пауза" : "Играть", x + bw + 3, y, bw, () -> {
+            c.music = true;
+            ru.onedex.newyear.music.MusicPlayer.togglePause();
+            NyConfig.save();
+        });
+        m.button(th, "mu_next", "Далее", x + (bw + 3) * 2, y, bw, () -> {
+            c.music = true;
+            ru.onedex.newyear.music.MusicPlayer.next();
+        });
+        y += 20;
+        y = m.slider(th, "mu_vol", "Громкость", Math.round(c.musicVolume * 100) + "%", x, y, w, c.musicVolume, v -> c.musicVolume = (float) v, mx, my);
+        y = m.segmented(th, "mu_order", "Порядок", new String[]{"Подряд", "Повтор", "Случайно"}, c.musicOrder, i -> c.musicOrder = i, x, y, w);
+        return y - y0 + 4;
+    }
+
+    private static float pageSongs(NyMenuScreen m, Theme th, float x, float y, float w, int mx, int my) {
+        float y0 = y;
+        List<ru.onedex.newyear.music.MusicPlayer.Track> list = ru.onedex.newyear.music.MusicPlayer.tracks();
+        int cur = ru.onedex.newyear.music.MusicPlayer.currentIndex();
+        boolean playing = ru.onedex.newyear.music.MusicPlayer.isPlaying();
+        int accent = c().accentColor();
+        for (int i = 0; i < list.size(); i++) {
+            ru.onedex.newyear.music.MusicPlayer.Track t = list.get(i);
+            boolean now = i == cur && (playing || ru.onedex.newyear.music.MusicPlayer.isPaused());
+            float rh = 19;
+            boolean hov = m.hovered(x - 3, y, w + 6, rh, mx, my);
+            float hv = m.anim("song_hv" + i, hov ? 1 : 0, 18);
+            if (now) R2D.roundRect(x - 3, y, w + 6, rh, 5, R2D.withAlpha(accent, 0.22f));
+            if (hv > 0.01f) R2D.roundRect(x - 3, y, w + 6, rh, 5, R2D.withAlpha(th.hover(), hv));
+            float tx = x + 2;
+            if (now) {
+                float e = playing ? ru.onedex.newyear.music.MusicPlayer.energy() : 0;
+                for (int b = 0; b < 3; b++) {
+                    float bh = 2 + e * 6 * (0.5f + 0.5f * (float) Math.abs(Math.sin(b * 2.1 + System.nanoTime() / 1.4e8)));
+                    R2D.rect(tx + b * 2.2f, y + 13 - bh, 1.5f, bh, accent);
+                }
+                tx += 9;
+            }
+            R2D.textMid(R2D.fit(t.title(), Font.M7, w - (tx - x) - 2), Font.M7, tx, y + 6, now ? th.text() : R2D.lerpColor(th.sub(), th.text(), 0.6f));
+            R2D.textMid(R2D.fit(t.artist().isEmpty() ? "свой трек" : t.artist(), Font.M6, w - (tx - x) - 2), Font.M6, tx, y + 14, th.sub());
+            final int idx = i;
+            m.hot(x - 3, y, w + 6, rh, b -> {
+                if (b == 0) {
+                    c().music = true;
+                    ru.onedex.newyear.music.MusicPlayer.play(idx);
+                    NyConfig.save();
+                }
+            }, null);
+            y += rh + 1;
+        }
+        y += 3;
+        y = m.note(th, "Свои песни (.ogg / .mp3):", x, y);
+        y = m.note(th, "папка .minecraft/1dex1-music", x, y);
+        float bw = (w - 3) / 2f;
+        m.button(th, "mu_open", "Открыть", x, y + 2, bw, () -> {
+            try {
+                java.nio.file.Files.createDirectories(ru.onedex.newyear.music.MusicPlayer.folder());
+                net.minecraft.util.Util.getOperatingSystem().open(ru.onedex.newyear.music.MusicPlayer.folder());
+            } catch (Exception ignored) {
+            }
+        });
+        m.button(th, "mu_reload", "Обновить", x + bw + 3, y + 2, bw, ru.onedex.newyear.music.MusicPlayer::reload);
+        y += 22;
+        return y - y0 + 2;
+    }
+
+    private static String time(int s) {
+        return (s / 60) + ":" + String.format("%02d", s % 60);
+    }
+
+    private void button(Theme th, String id, String label, float x, float y, float w, Runnable action) {
+        float h = 15;
+        boolean hov = hovered(x, y, w, h, (int) lastMx, (int) lastMy);
+        float hv = anim(id, hov ? 1 : 0, 18);
+        R2D.roundRect(x, y, w, h, 5, R2D.lerpColor(th.control(), R2D.withAlpha(th.text(), 0.25f), hv * 0.6f));
+        R2D.textMidCentered(R2D.fit(label, Font.M6, w - 4), Font.M6, x + w / 2f, y + h / 2f, th.text());
+        hot(x, y, w, h, b -> {
+            if (b == 0) action.run();
+        }, null);
     }
 
     // ------------------------------------------------------------------ widgets

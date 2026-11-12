@@ -2,3 +2,6 @@ run/
 run-server/
 build/
 .gradle/
+
+# copyrighted songs: built into the local jar only, never committed
+music-local/
