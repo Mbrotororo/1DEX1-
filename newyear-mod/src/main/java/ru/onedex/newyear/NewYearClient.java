@@ -94,14 +94,10 @@ public class NewYearClient implements ClientModInitializer {
             SnowSurfaces.hud(mc, ctx.getScaledWindowWidth(), ctx.getScaledWindowHeight());
             ScreenSnow.render(ctx, false);
         });
-        HudElementRegistry.addLast(Identifier.of(MOD_ID, "music_pulse"), (ctx, counter) -> {
-            if (MinecraftClient.getInstance().currentScreen == null) ru.onedex.newyear.music.MusicFx.renderPulse(ctx);
-        });
 
         // every menu: snow on top, drifts on its buttons / windows
         ScreenEvents.AFTER_INIT.register((client, screen, w, h) -> {
             ScreenEvents.afterRender(screen).register((scr, ctx, mx, my, delta) -> {
-                if (!(scr instanceof NyMenuScreen)) ru.onedex.newyear.music.MusicFx.renderPulse(ctx);
                 if (!NyConfig.INSTANCE.screenSnow) return;
                 SnowSurfaces.screen(MinecraftClient.getInstance(), scr);
                 ScreenSnow.render(ctx, true);

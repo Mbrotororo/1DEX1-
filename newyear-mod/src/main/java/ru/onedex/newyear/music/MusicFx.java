@@ -1,8 +1,6 @@
 package ru.onedex.newyear.music;
 
-import net.minecraft.client.gui.DrawContext;
 import ru.onedex.newyear.config.NyConfig;
-import ru.onedex.newyear.gui.R2D;
 
 /** Music-driven effects shared by the snow, the garlands and the screen. */
 public final class MusicFx {
@@ -39,17 +37,4 @@ public final class MusicFx {
         return active() && NyConfig.INSTANCE.fxGarlands ? MusicPlayer.beats() : -1;
     }
 
-    /** Soft colored glow on the screen edges that pulses on beats. */
-    public static void renderPulse(DrawContext ctx) {
-        if (!active() || !NyConfig.INSTANCE.fxPulse) return;
-        float p = MusicPlayer.pulse() * 0.7f + MusicPlayer.energy() * 0.15f;
-        if (p < 0.02f) return;
-        R2D.begin(ctx);
-        int w = ctx.getScaledWindowWidth(), h = ctx.getScaledWindowHeight();
-        int c = NyConfig.INSTANCE.accentColor();
-        float a = Math.min(0.35f, p * 0.32f);
-        float edge = Math.max(18, Math.min(w, h) * 0.12f);
-        R2D.gradientV(0, 0, w, edge, R2D.withAlpha(c, a), c & 0x00FFFFFF);
-        R2D.gradientV(0, h - edge, w, edge, c & 0x00FFFFFF, R2D.withAlpha(c, a));
-    }
 }

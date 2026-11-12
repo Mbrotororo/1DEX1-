@@ -45,30 +45,29 @@ public class NyMenuScreen extends Screen {
         COLUMNS.add(new Column("Снег", List.of(
                 new Module("snowfall", "Снегопад", () -> c().snowfall, () -> c().snowfall = !c().snowfall, NyMenuScreen::pageSnowfall),
                 new Module("cover", "Сугробы", () -> c().snowCover, () -> c().snowCover = !c().snowCover, NyMenuScreen::pageCover),
-                new Module("prints", "Следы на снегу", () -> c().footprints, () -> c().footprints = !c().footprints, (m, th, x, y, w, mx, my) -> m.notes(th, x, y, "Следы игроков в сугробах,", "их постепенно заметает.")),
-                new Module("psnow", "Снег на игроках", () -> c().playerSnow, () -> c().playerSnow = !c().playerSnow, (m, th, x, y, w, mx, my) -> m.notes(th, x, y, "Под снегопадом игроков", "засыпает, бег стряхивает.")),
+                new Module("prints", "Следы на снегу", () -> c().footprints, () -> c().footprints = !c().footprints, null),
+                new Module("psnow", "Снег на игроках", () -> c().playerSnow, () -> c().playerSnow = !c().playerSnow, null),
                 new Module("screen", "Снег на экране", () -> c().screenSnow, () -> c().screenSnow = !c().screenSnow, NyMenuScreen::pageScreen),
-                new Module("play", "Снежки и снеговик", () -> c().snowPlay, () -> c().snowPlay = !c().snowPlay, NyMenuScreen::pagePlay),
-                new Module("rudolph", "Рудольф", () -> c().rudolph, () -> c().rudolph = !c().rudolph, (m, th, x, y, w, mx, my) -> m.notes(th, x, y, "Оленёнок иногда пробегает", "внизу экрана.")))));
+                new Module("play", "Снежки и снеговик", () -> c().snowPlay, () -> c().snowPlay = !c().snowPlay, null),
+                new Module("rudolph", "Рудольф", () -> c().rudolph, () -> c().rudolph = !c().rudolph, null))));
         COLUMNS.add(new Column("Зима", List.of(
                 new Module("hats", "Шапки", () -> c().hats, () -> c().hats = !c().hats, NyMenuScreen::pageHats),
                 new Module("garlands", "Гирлянды", () -> c().garlands, () -> c().garlands = !c().garlands, NyMenuScreen::pageGarlands),
-                new Module("decor", "Украшения на ёлках", () -> c().treeDecor, () -> c().treeDecor = !c().treeDecor, (m, th, x, y, w, mx, my) -> m.notes(th, x, y, "Шарики и огоньки", "на деревьях вокруг.")),
-                new Module("icicles", "Сосульки", () -> c().icicles, () -> c().icicles = !c().icicles, (m, th, x, y, w, mx, my) -> m.notes(th, x, y, "Свисают с краёв крыш,", "иногда с них капает.")),
-                new Module("ice", "Лёд на воде", () -> c().iceOnWater, () -> c().iceOnWater = !c().iceOnWater, (m, th, x, y, w, mx, my) -> m.notes(th, x, y, "Тонкий лёд у берегов.")),
+                new Module("decor", "Украшения на ёлках", () -> c().treeDecor, () -> c().treeDecor = !c().treeDecor, null),
+                new Module("icicles", "Сосульки", () -> c().icicles, () -> c().icicles = !c().icicles, null),
+                new Module("ice", "Лёд на воде", () -> c().iceOnWater, () -> c().iceOnWater = !c().iceOnWater, null),
                 new Module("filter", "Зимний фильтр", () -> c().winterFilter, () -> c().winterFilter = !c().winterFilter, NyMenuScreen::pageFilter),
-                new Module("breath", "Пар изо рта", () -> c().breath, () -> c().breath = !c().breath, NyMenuScreen::pageBreath),
+                new Module("breath", "Пар изо рта", () -> c().breath, () -> c().breath = !c().breath, null),
                 new Module("stars", "Звёздное небо", () -> c().starrySky, () -> c().starrySky = !c().starrySky, NyMenuScreen::pageStars))));
         COLUMNS.add(new Column("Музыка", List.of(
                 new Module("music", "Музыка", () -> c().music, () -> c().music = !c().music, NyMenuScreen::pageMusic),
                 new Module("songs", "Песни", null, null, NyMenuScreen::pageSongs),
-                new Module("fx_beat", "Снег под бит", () -> c().fxBeatSnow, () -> c().fxBeatSnow = !c().fxBeatSnow, (m, th, x, y, w, mx, my) -> m.notes(th, x, y, "На каждый бит — порыв", "и волна снежинок.")),
-                new Module("fx_speed", "Ускорение снега", () -> c().fxSpeedSnow, () -> c().fxSpeedSnow = !c().fxSpeedSnow, (m, th, x, y, w, mx, my) -> m.notes(th, x, y, "Чем громче песня,", "тем быстрее и гуще снег.")),
-                new Module("fx_gar", "Гирлянды под бит", () -> c().fxGarlands, () -> c().fxGarlands = !c().fxGarlands, (m, th, x, y, w, mx, my) -> m.notes(th, x, y, "Огоньки мигают в ритм.")),
-                new Module("fx_pulse", "Пульс экрана", () -> c().fxPulse, () -> c().fxPulse = !c().fxPulse, (m, th, x, y, w, mx, my) -> m.notes(th, x, y, "Края экрана светятся", "цветом меню на бит.")))));
+                new Module("fx_beat", "Снег под бит", () -> c().fxBeatSnow, () -> c().fxBeatSnow = !c().fxBeatSnow, null),
+                new Module("fx_speed", "Ускорение снега", () -> c().fxSpeedSnow, () -> c().fxSpeedSnow = !c().fxSpeedSnow, null),
+                new Module("fx_gar", "Гирлянды под бит", () -> c().fxGarlands, () -> c().fxGarlands = !c().fxGarlands, null))));
         COLUMNS.add(new Column("Визуал", List.of(
                 new Module("menu", "Меню", null, null, NyMenuScreen::pageVisual),
-                new Module("title", "Новогодний фон", () -> c().titleBackground, () -> c().titleBackground = !c().titleBackground, (m, th, x, y, w, mx, my) -> m.notes(th, x, y, "Картинка в главном меню", "поверх любого ресурспака.")))));
+                new Module("title", "Новогодний фон", () -> c().titleBackground, () -> c().titleBackground = !c().titleBackground, null))));
     }
 
     private static NyConfig c() {
@@ -325,7 +324,6 @@ public class NyMenuScreen extends Screen {
             if (e > 0.9f) ScreenSnow.surface("ny_col" + i, sx(colX[i] + 5), sy(colTop[i]), COL_W * fit * curScale - 10 * fit);
         }
         GlassMask.commit(width, height);
-        ru.onedex.newyear.music.MusicFx.renderPulse(context);
     }
 
     private void drawColumn(Theme th, int ci, float x, float y, float maxH, int mx, int my) {
@@ -394,12 +392,12 @@ public class NyMenuScreen extends Screen {
             if (b == 0 && toggleable) {
                 m.toggle.run();
                 NyConfig.save();
-            } else if (b == 1 || (b == 0 && !toggleable)) {
+            } else if (m.page != null && (b == 1 || (b == 0 && !toggleable))) {
                 openId = m.id.equals(openId) ? null : m.id;
             }
         }, null);
         y += ROW_H + 2;
-        if (open > 0.005f) {
+        if (open > 0.005f && m.page != null) {
             float ph = pageH.getOrDefault(m.id, 60f);
             float shown = ph * open;
             float a = R2D.alpha;
@@ -474,17 +472,6 @@ public class NyMenuScreen extends Screen {
         return y - y0 + 4;
     }
 
-    private static float pagePlay(NyMenuScreen m, Theme th, float x, float y, float w, int mx, int my) {
-        float y0 = y;
-        y = m.note(th, "Кликни по снегу — снежок.", x, y);
-        y = m.note(th, "Тащи по снегу — он растёт.", x, y);
-        y = m.note(th, "3 снежка друг на друга —", x, y);
-        y = m.note(th, "снеговик на 20 секунд.", x, y);
-        y = m.note(th, "Резко проведи мышкой —", x, y);
-        y = m.note(th, "снег разлетится.", x, y);
-        return y - y0 + 4;
-    }
-
     private static float pageHats(NyMenuScreen m, Theme th, float x, float y, float w, int mx, int my) {
         NyConfig c = c();
         float y0 = y;
@@ -506,13 +493,6 @@ public class NyMenuScreen extends Screen {
         y = m.toggleRow(th, "w_grass", "Снежная трава", c.snowyGrass, () -> c.snowyGrass = !c.snowyGrass, x, y, w);
         y = m.toggleRow(th, "w_frost", "Иней по краям", c.frostEdges, () -> c.frostEdges = !c.frostEdges, x, y, w);
         y = m.slider(th, "w_tint", "Холод", Math.round(c.coldTint * 100) + "%", x, y, w, c.coldTint, v -> c.coldTint = (float) v, mx, my);
-        return y - y0 + 4;
-    }
-
-    private static float pageBreath(NyMenuScreen m, Theme th, float x, float y, float w, int mx, int my) {
-        float y0 = y;
-        y = m.note(th, "Пар у игроков рядом.", x, y);
-        y = m.note(th, "Когда бегут — чаще.", x, y);
         return y - y0 + 4;
     }
 
@@ -545,7 +525,7 @@ public class NyMenuScreen extends Screen {
         ru.onedex.newyear.music.MusicPlayer.Track t = ru.onedex.newyear.music.MusicPlayer.currentTrack();
         if (t == null && !ru.onedex.newyear.music.MusicPlayer.tracks().isEmpty()) t = ru.onedex.newyear.music.MusicPlayer.tracks().get(Math.min(c.lastSong, ru.onedex.newyear.music.MusicPlayer.tracks().size() - 1));
         if (t == null) {
-            return m.notes(th, x, y, "Песен нет. Положи .ogg или", ".mp3 в папку 1dex1-music.");
+            return 4;
         }
         R2D.textMid(R2D.fit(t.title(), Font.S8, w), Font.S8, x, y + 6, th.text());
         R2D.textMid(R2D.fit(t.artist(), Font.M6, w), Font.M6, x, y + 15, th.sub());
@@ -622,10 +602,8 @@ public class NyMenuScreen extends Screen {
             y += rh + 1;
         }
         y += 3;
-        y = m.note(th, "Свои песни (.ogg / .mp3):", x, y);
-        y = m.note(th, "папка .minecraft/1dex1-music", x, y);
         float bw = (w - 3) / 2f;
-        m.button(th, "mu_open", "Открыть", x, y + 2, bw, () -> {
+        m.button(th, "mu_open", "Папка", x, y + 2, bw, () -> {
             try {
                 java.nio.file.Files.createDirectories(ru.onedex.newyear.music.MusicPlayer.folder());
                 net.minecraft.util.Util.getOperatingSystem().open(ru.onedex.newyear.music.MusicPlayer.folder());

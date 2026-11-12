@@ -50,7 +50,6 @@ public class NyConfig {
     public boolean fxBeatSnow = true;
     public boolean fxSpeedSnow = true;
     public boolean fxGarlands = true;
-    public boolean fxPulse = true;
 
     // ---------- Снег на экране ----------
     public boolean screenSnow = true;

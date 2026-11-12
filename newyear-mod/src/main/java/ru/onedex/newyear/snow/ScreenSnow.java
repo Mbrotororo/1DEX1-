@@ -45,6 +45,7 @@ public final class ScreenSnow {
         long lastSeen;
         float alpha;
         int version, uploaded = -1;
+        float meltAcc;
         long lastUpload;
         boolean ground;
 
@@ -62,6 +63,8 @@ public final class ScreenSnow {
     private static final class Ball {
         float x, y, r, vx, vy;
         boolean held;
+        /** Released with a quick flick: it bursts on impact instead of settling. */
+        boolean thrown;
         Ball restOn;          // resting on another ball
         Drift restDrift;      // resting on a drift / the ground
         float spin;
@@ -90,6 +93,8 @@ public final class ScreenSnow {
     private static final List<Flake> flakes = new ArrayList<>();
     private static final Map<String, Drift> drifts = new HashMap<>();
     private static final List<Drift> frame = new ArrayList<>();
+    /** Surfaces that were on screen in the last rendered frame (used by mouse events between frames). */
+    private static final List<Drift> visible = new ArrayList<>();
     private static final List<Ball> balls = new ArrayList<>();
     private static final List<Snowman> snowmen = new ArrayList<>();
     private static final List<Puff> puffs = new ArrayList<>();
@@ -187,18 +192,25 @@ public final class ScreenSnow {
                 continue;
             }
             if (!seen || d.ground) {
-                float melt = d.ground ? dt * 0.08f : dt * 1.5f;
-                boolean changed = false;
-                for (int i = 0; i < d.h.length; i++) {
-                    if (d.h[i] > 0) {
-                        d.h[i] = Math.max(0, d.h[i] - melt);
-                        changed = true;
+                // melt in small steps so the drift image is not rebuilt every frame
+                d.meltAcc += d.ground ? dt * 0.08f : dt * 1.5f;
+                if (d.meltAcc >= (d.ground ? 0.12f : 0.05f)) {
+                    float melt = d.meltAcc;
+                    d.meltAcc = 0;
+                    boolean changed = false;
+                    for (int i = 0; i < d.h.length; i++) {
+                        if (d.h[i] > 0) {
+                            d.h[i] = Math.max(0, d.h[i] - melt);
+                            changed = true;
+                        }
                     }
+                    if (changed) d.version++;
                 }
-                if (changed) d.version++;
             }
             if (d.maxHeight() > 0.05f) drawDrift(d);
         }
+        visible.clear();
+        visible.addAll(frame);
         frame.clear();
 
         for (Snowman s : snowmen) drawSnowman(s);
@@ -384,6 +396,7 @@ public final class ScreenSnow {
 
     /** @return true if the click was used by the snow */
     public static boolean onClick(double mx, double my, int button) {
+        if (ru.onedex.newyear.NewYearClient.DEV) ru.onedex.newyear.NewYearClient.LOGGER.info(String.format("[dev] click %.1f,%.1f interactive=%s", mx, my, interactive));
         if (!interactive || button != 0) return false;
         float x = (float) mx, y = (float) my;
         for (int i = balls.size() - 1; i >= 0; i--) {
@@ -427,12 +440,58 @@ public final class ScreenSnow {
         return held != null;
     }
 
+    /** Mouse speed (GUI units per second) above which a released ball counts as thrown. */
+    private static final float THROW_SPEED = 170;
+
     public static boolean onRelease() {
         if (held == null) return false;
-        held.held = false;
-        held.vx = Math.max(-400, Math.min(400, mouseVx * 0.9f));
-        held.vy = Math.max(-400, Math.min(400, mouseVy * 0.9f));
+        Ball b = held;
+        b.held = false;
         held = null;
+        float speed = (float) Math.sqrt(mouseVx * mouseVx + mouseVy * mouseVy);
+        if (ru.onedex.newyear.NewYearClient.DEV) ru.onedex.newyear.NewYearClient.LOGGER.info(String.format("[dev] release at %.1f,%.1f r=%.1f speed=%.0f", b.x, b.y, b.r, speed));
+        if (speed > THROW_SPEED) {
+            // thrown: flies and bursts on whatever it hits
+            b.thrown = true;
+            b.vx = Math.max(-500, Math.min(500, mouseVx * 1.1f));
+            b.vy = Math.max(-500, Math.min(500, mouseVy * 1.1f));
+            return true;
+        }
+        // placed gently: settle right where it was put
+        b.thrown = false;
+        b.vx = b.vy = 0;
+        Ball under = null;
+        for (Ball o : balls) {
+            if (o == b || o.held || o.restOn == b) continue;
+            if (Math.abs(o.x - b.x) < (o.r + b.r) * 0.9f && b.y <= o.y + o.r * 0.3f && b.y >= o.y - o.r - b.r * 2.2f) {
+                if (under == null || o.y < under.y) under = o;
+            }
+        }
+        if (under != null) {
+            b.restOn = under;
+            b.y = under.y - under.r - b.r * 0.82f;
+            return true;
+        }
+        Drift best = null;
+        float bestDist = Float.MAX_VALUE;
+        for (Drift d : drifts.values()) {
+            if (!(visible.contains(d) || d.ground) || d.alpha < 0.5f || b.x < d.x || b.x >= d.x + d.w) continue;
+            float sfc = surfaceY(d, b.x);
+            float bottom = b.y + b.r * 0.85f;
+            // the ball overlaps the snow (cursor on the snow) or is held just above it
+            if (bottom >= sfc - b.r * 2.5f - 3 && b.y - b.r <= sfc + 2) {
+                float dist = Math.abs(bottom - sfc);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    best = d;
+                }
+            }
+        }
+        if (ru.onedex.newyear.NewYearClient.DEV) ru.onedex.newyear.NewYearClient.LOGGER.info("[dev] placed on " + (best == null ? "nothing" : best.key + " top=" + best.top));
+        if (best != null) {
+            b.restDrift = best;
+            b.y = surfaceY(best, b.x) - b.r * 0.85f;
+        }
         return true;
     }
 
@@ -512,12 +571,14 @@ public final class ScreenSnow {
             b.x += b.vx * dt;
             b.y += b.vy * dt;
             b.spin += b.vx * dt / Math.max(1, b.r);
-            if (b.x < b.r) {
-                b.x = b.r;
-                b.vx = -b.vx * 0.4f;
-            }
-            if (b.x > screenW - b.r) {
-                b.x = screenW - b.r;
+            if (b.x < b.r || b.x > screenW - b.r) {
+                if (b.thrown) {
+                    b.x = Math.max(b.r, Math.min(screenW - b.r, b.x));
+                    smash(b);
+                    it.remove();
+                    continue;
+                }
+                b.x = Math.max(b.r, Math.min(screenW - b.r, b.x));
                 b.vx = -b.vx * 0.4f;
             }
             // snowball fight: a fast ball knocks a snowman down or bursts another ball
@@ -561,7 +622,7 @@ public final class ScreenSnow {
                 }
             }
             if (under != null) {
-                if (Math.abs(b.vy) > 330) {
+                if (b.thrown) {
                     smash(b);
                     it.remove();
                     continue;
@@ -575,7 +636,7 @@ public final class ScreenSnow {
             if (d != null) {
                 float s = surfaceY(d, b.x);
                 if (b.y + b.r * 0.85f >= s) {
-                    if (Math.abs(b.vy) > 380 || Math.abs(b.vx) > 380) {
+                    if (b.thrown) {
                         smash(b);
                         it.remove();
                         continue;
@@ -721,9 +782,9 @@ public final class ScreenSnow {
         float ground = g != null ? surfaceY(g, Math.max(0, Math.min(screenW - 1, deer.x))) : screenH;
         deer.y = ground;
         // kicks up snow
-        if (RNG.nextFloat() < dt * 14) {
+        if (RNG.nextFloat() < dt * 18) {
             Puff p = new Puff();
-            p.x = deer.x - deer.dir * 6;
+            p.x = deer.x - deer.dir * 10;
             p.y = deer.y - 1;
             p.vx = -deer.dir * (20 + RNG.nextFloat() * 30);
             p.vy = -30 - RNG.nextFloat() * 40;
@@ -734,41 +795,18 @@ public final class ScreenSnow {
         if (deer.x < -40 || deer.x > screenW + 40) deer = null;
     }
 
+    private static final net.minecraft.util.Identifier DEER = net.minecraft.util.Identifier.of("dexnewyear", "textures/gui/rudolph.png");
+    private static final int DEER_W = 168, DEER_H = 152;
+
     private static void drawDeer(Deer d) {
-        float s = 1.25f;
-        float x = d.x, f = d.dir;
-        float bob = (float) Math.abs(Math.sin(d.t * 14)) * 1.2f * s;
-        float y = d.y - 9 * s - bob;
-        int body = 0xFF8B5A2B, dark = 0xFF5E3A1A, light = 0xFFC9A27A;
-        // legs (gallop)
-        float ph = d.t * 14;
-        for (int i = 0; i < 4; i++) {
-            float lx = x + f * ((i < 2 ? 5.5f : -5.5f) + (i % 2) * 1.6f) * s;
-            float sw = (float) Math.sin(ph + i * 1.6f) * 2.6f * s;
-            R2D.line(lx, y + 3 * s, lx + sw, d.y - bob * 0.3f, 1.1f * s, dark);
-        }
-        // body
-        R2D.circle(x - f * 4 * s, y, 4.2f * s, body);
-        R2D.circle(x + f * 2 * s, y - 0.3f * s, 4.6f * s, body);
-        R2D.circle(x - f * 1 * s, y + 1.6f * s, 3.4f * s, light);
-        R2D.circle(x - f * 8 * s, y - 2.2f * s, 1.4f * s, light); // tail
-        // neck + head
-        R2D.line(x + f * 5 * s, y - 2 * s, x + f * 8 * s, y - 7 * s, 2.6f * s, body);
-        R2D.circle(x + f * 9 * s, y - 8.2f * s, 2.6f * s, body);
-        R2D.circle(x + f * 11.6f * s, y - 7.4f * s, 1.8f * s, body);
-        R2D.circle(x + f * 9.4f * s, y - 9.2f * s, 0.55f * s, 0xFF1E1E24);
-        // antlers
-        R2D.line(x + f * 8.2f * s, y - 10.2f * s, x + f * 7 * s, y - 14.5f * s, 0.8f * s, light);
-        R2D.line(x + f * 7.6f * s, y - 12.4f * s, x + f * 5.6f * s, y - 13.6f * s, 0.7f * s, light);
-        R2D.line(x + f * 9.6f * s, y - 10.2f * s, x + f * 10.6f * s, y - 14.6f * s, 0.8f * s, light);
-        R2D.line(x + f * 10.2f * s, y - 12.6f * s, x + f * 12.2f * s, y - 13.4f * s, 0.7f * s, light);
-        // the famous red nose
-        float glow = 0.55f + 0.45f * (float) Math.sin(d.t * 8);
-        R2D.circle(x + f * 13.3f * s, y - 7.4f * s, 3.2f * s, R2D.withAlpha(0xFFFF3B30, 0.25f * glow));
-        R2D.circle(x + f * 13.3f * s, y - 7.4f * s, 1.25f * s, 0xFFFF2A20);
-        // red collar with a golden bell
-        R2D.line(x + f * 5.6f * s, y - 3.6f * s, x + f * 7.2f * s, y - 1.6f * s, 1.1f * s, 0xFFD7263D);
-        R2D.circle(x + f * 6.8f * s, y - 1.2f * s, 0.8f * s, 0xFFE8C547);
+        float h = 38, w = h * DEER_W / DEER_H;
+        int frame = (int) (d.t * 11) % 4;
+        float bob = (float) Math.abs(Math.sin(d.t * 11 * Math.PI / 2)) * 0.8f;
+        // hooves are at ~90% of the frame height
+        float top = d.y - h * 0.9f - bob + 1.2f;
+        // soft shadow on the snow
+        for (int i = 0; i < 3; i++) R2D.circle(d.x - d.dir * w * (0.12f - i * 0.1f), d.y - 0.3f, w * 0.14f, 0x18203040);
+        R2D.sprite(DEER, d.x - w / 2f, top, w, h, frame * DEER_W, 0, DEER_W, DEER_H, d.dir < 0, 0xFFFFFFFF);
     }
 
     // ------------------------------------------------------------------ drawing
@@ -872,7 +910,7 @@ public final class ScreenSnow {
         float a = R2D.alpha;
         R2D.alpha = a * d.alpha;
         long now = System.nanoTime();
-        if (d.uploaded != d.version && now - d.lastUpload > 90_000_000L) {
+        if (d.uploaded != d.version && now - d.lastUpload > 140_000_000L) {
             d.uploaded = d.version;
             d.lastUpload = now;
         }

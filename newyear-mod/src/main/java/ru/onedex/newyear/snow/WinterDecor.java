@@ -109,8 +109,8 @@ public final class WinterDecor {
             for (int z = cz - r; z <= cz + r; z++) {
                 int kind = SnowCover.kindAt(x, z);
                 if (kind != 1 && kind != 0) continue;
-                float ground = SnowCover.groundAt(x, z);
-                int gy = (int) Math.ceil(ground) - 1; // the block that carries the snow
+                int gy = SnowCover.supportAt(x, z); // the block that carries the snow
+                if (gy == Integer.MIN_VALUE) continue;
                 p.set(x, gy, z);
                 BlockState g = w.getBlockState(p);
                 if (g.isAir()) continue;

@@ -9,7 +9,6 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.NativeImageBackedTexture;
 import net.minecraft.util.Identifier;
-import ru.onedex.newyear.music.MusicPlayer;
 
 import java.io.InputStream;
 
@@ -48,7 +47,7 @@ public final class TitleBackground {
         if (!ensure()) return false;
         // cover the screen, keep aspect ratio; a very slow drift makes it feel alive
         float t = (System.nanoTime() - start) / 1e9f;
-        float zoom = 1.04f + 0.02f * (float) Math.sin(t * 0.07f) + MusicPlayer.pulse() * 0.006f;
+        float zoom = 1.04f + 0.02f * (float) Math.sin(t * 0.07f);
         float scale = Math.max(width / (float) w, height / (float) h) * zoom;
         float dw = w * scale, dh = h * scale;
         float x = (width - dw) / 2f + (float) Math.sin(t * 0.05f) * width * 0.01f;
@@ -59,7 +58,7 @@ public final class TitleBackground {
         ctx.drawTexture(RenderPipelines.GUI_TEXTURED, ID, 0, 0, 0, 0, w, h, w, h, w, h, 0xFFFFFFFF);
         ctx.getMatrices().popMatrix();
         // warm glow from the fireplace that breathes a little
-        float glow = 0.06f + 0.03f * (float) Math.sin(t * 2.3f) * (float) Math.sin(t * 1.7f) + MusicPlayer.pulse() * 0.05f;
+        float glow = 0.06f + 0.03f * (float) Math.sin(t * 2.3f) * (float) Math.sin(t * 1.7f);
         R2D.begin(ctx);
         R2D.gradientV(0, height * 0.45f, width, height * 0.55f, 0x00FF8A2A, R2D.withAlpha(0xFFFF8A2A, glow));
         return true;

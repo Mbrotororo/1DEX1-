@@ -1,14 +1,10 @@
 package ru.onedex.newyear.gui;
 
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.NativeImageBackedTexture;
-import net.minecraft.text.Style;
-import net.minecraft.text.StyleSpriteSource;
-import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 
 import java.util.HashMap;
@@ -44,15 +40,6 @@ public final class R2D {
         Font(char weight, float size) {
             this.weight = weight;
             this.size = size;
-        }
-    }
-
-    private static final Identifier[][] FONT_IDS = new Identifier[3][73];
-
-    static {
-        char[] w = {'m', 's', 'b'};
-        for (int i = 0; i < 3; i++) {
-            for (int n = 5; n <= 72; n++) FONT_IDS[i][n] = Identifier.of("dexnewyear", "px_" + w[i] + "_" + n);
         }
     }
 
@@ -391,6 +378,46 @@ public final class R2D {
         popPx();
     }
 
+    private static final Map<Identifier, Identifier> SMOOTH = new HashMap<>();
+    private static final Map<Identifier, int[]> SMOOTH_SIZE = new HashMap<>();
+
+    /**
+     * Draws a region of a texture from the mod resources with smooth (linear) filtering.
+     * {@code flip} mirrors it horizontally. Returns false if the texture could not be loaded.
+     */
+    public static boolean sprite(Identifier resource, float x, float y, float w, float h, int u, int v, int rw, int rh, boolean flip, int color) {
+        Identifier id = SMOOTH.get(resource);
+        if (id == null) {
+            try (var in = MinecraftClient.getInstance().getResourceManager().getResource(resource).orElseThrow().getInputStream()) {
+                NativeImage img = NativeImage.read(in);
+                SMOOTH_SIZE.put(resource, new int[]{img.getWidth(), img.getHeight()});
+                id = Identifier.of("dexnewyear", "dyn/sprite_" + (texCounter++));
+                final String name = "dexnewyear sprite";
+                NativeImageBackedTexture tex = new NativeImageBackedTexture(() -> name, img) {
+                    {
+                        this.sampler = com.mojang.blaze3d.systems.RenderSystem.getSamplerCache().get(
+                                com.mojang.blaze3d.textures.AddressMode.CLAMP_TO_EDGE, com.mojang.blaze3d.textures.AddressMode.CLAMP_TO_EDGE,
+                                com.mojang.blaze3d.textures.FilterMode.LINEAR, com.mojang.blaze3d.textures.FilterMode.LINEAR, false);
+                    }
+                };
+                MinecraftClient.getInstance().getTextureManager().registerTexture(id, tex);
+                SMOOTH.put(resource, id);
+            } catch (Exception e) {
+                return false;
+            }
+        }
+        int[] size = SMOOTH_SIZE.get(resource);
+        int c = mul(color);
+        if ((c >>> 24) == 0) return true;
+        ctx.getMatrices().pushMatrix();
+        ctx.getMatrices().translate(flip ? x + w : x, y);
+        ctx.getMatrices().scale((flip ? -w : w) / rw, h / rh);
+        ctx.drawTexture(RenderPipelines.GUI_TEXTURED, id, 0, 0, u, v, rw, rh, rw, rh, size[0], size[1], c);
+        elements++;
+        ctx.getMatrices().popMatrix();
+        return true;
+    }
+
     /** Player face from the skin (pixel-exact). */
     public static void head(net.minecraft.entity.player.SkinTextures skin, float x, float y, float size) {
         pushPx();
@@ -466,35 +493,61 @@ public final class R2D {
         return clamp01(r - d + 0.5f);
     }
 
-    // ------------------------------------------------------------------ text
+    // ------------------------------------------------------------------ text (smooth glyph atlases)
 
     private static int fontPx(Font f) {
-        return Math.max(5, Math.min(72, Math.round(f.size * k)));
+        return Math.max(5, Math.min(96, Math.round(f.size * k)));
     }
 
-    private static Text text(String s, Font f) {
+    private static GlyphFont.Atlas atlas(Font f) {
         int w = f.weight == 'm' ? 0 : (f.weight == 's' ? 1 : 2);
-        return Text.literal(s).setStyle(Style.EMPTY.withFont(new StyleSpriteSource.Font(FONT_IDS[w][fontPx(f)])));
+        return GlyphFont.get(w, fontPx(f));
     }
 
-    private static TextRenderer tr() {
-        return MinecraftClient.getInstance().textRenderer;
+    private static float advancePx(String s, GlyphFont.Atlas a) {
+        float x = 0;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            GlyphFont.Glyph g = a.glyph(c);
+            if (g == null) continue;
+            x += g.adv();
+            if (i + 1 < s.length()) x += a.kern(c, s.charAt(i + 1));
+        }
+        return x;
     }
 
     /** Text width in units. */
     public static float width(String s, Font f) {
-        return tr().getWidth(text(s, f)) / k;
+        GlyphFont.Atlas a = atlas(f);
+        if (a == null) return MinecraftClient.getInstance().textRenderer.getWidth(s) / (k / guiScale);
+        return advancePx(s, a) / k;
     }
 
     /** Draws text so that the middle of its capital letters sits on {@code cy}. */
     public static void textMid(String s, Font f, float x, float cy, int color) {
         int c = mul(color);
-        if ((c >>> 24) < 4) return;
-        int n = fontPx(f);
-        int yPx = Math.round(cy * k - 7f + 0.364f * n);
+        if ((c >>> 24) < 4 || s.isEmpty()) return;
+        GlyphFont.Atlas a = atlas(f);
         pushPx();
-        ctx.drawText(tr(), text(s, f), p(x), yPx, c, false);
-        elements++;
+        if (a == null) {
+            ctx.drawText(MinecraftClient.getInstance().textRenderer, s, p(x), Math.round(cy * k - 4), c, false);
+            popPx();
+            return;
+        }
+        float pen = Math.round(x * k);
+        int baseline = Math.round(cy * k + a.capHeight / 2f);
+        for (int i = 0; i < s.length(); i++) {
+            char ch = s.charAt(i);
+            GlyphFont.Glyph g = a.glyph(ch);
+            if (g == null) continue;
+            if (g.w() > 0 && g.h() > 0 && ch != ' ') {
+                int gx = Math.round(pen) + g.xoff(), gy = baseline + g.yoff();
+                ctx.drawTexture(RenderPipelines.GUI_TEXTURED, a.id, gx, gy, g.u(), g.v(), g.w(), g.h(), g.w(), g.h(), a.texW, a.texH, c);
+                elements++;
+            }
+            pen += g.adv();
+            if (i + 1 < s.length()) pen += a.kern(ch, s.charAt(i + 1));
+        }
         popPx();
     }
 

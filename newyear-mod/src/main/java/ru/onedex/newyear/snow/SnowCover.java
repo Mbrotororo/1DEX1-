@@ -43,6 +43,14 @@ public final class SnowCover {
     private static final int[] light = new int[N * N];
     /** 0 = natural ground, 1 = roof / built block, 2 = tree leaves */
     private static final byte[] kind = new byte[N * N];
+    /** y of the block that carries the snow */
+    private static final int[] support = new int[N * N];
+    /** Columns whose ground differs by at most this many eighths count as one surface. */
+    private static final int SAME = 2;
+
+    private static boolean same(int a, int b) {
+        return a != Integer.MIN_VALUE && b != Integer.MIN_VALUE && Math.abs(a - b) <= SAME;
+    }
     private static long lastBuild = -1000;
     private static ClientWorld builtFor;
     private static int builtSize = -1;
@@ -95,9 +103,19 @@ public final class SnowCover {
                 if (!ground.getFluidState().isEmpty()) continue;
                 boolean leaves = ground.getBlock() instanceof LeavesBlock;
                 if (leaves && !roofs) continue;
-                int halves;
+                // existing vanilla snow layers: our snow starts on top of them (no z-fighting)
+                int extraLayers = 0;
+                if (ground.isOf(net.minecraft.block.Blocks.SNOW)) {
+                    extraLayers = ground.get(net.minecraft.block.SnowBlock.LAYERS);
+                    top -= 1;
+                    p.set(x, top - 1, z);
+                    ground = world.getBlockState(p);
+                    leaves = ground.getBlock() instanceof LeavesBlock;
+                    if (leaves && !roofs) continue;
+                }
+                int eighths;
                 if (leaves || ground.isSideSolidFullSquare(world, p, Direction.UP)) {
-                    halves = top * 2;
+                    eighths = top * 8;
                 } else {
                     if (!roofs) continue;
                     net.minecraft.util.shape.VoxelShape shape = ground.getCollisionShape(world, p);
@@ -105,13 +123,18 @@ public final class SnowCover {
                     net.minecraft.util.math.Box b = shape.getBoundingBox();
                     if (b.minX > 0.01 || b.maxX < 0.99 || b.minZ > 0.01 || b.maxZ < 0.99) continue; // fences, walls, ...
                     if (b.maxY > 1.01) continue;
-                    halves = (top - 1) * 2 + (int) Math.round(b.maxY * 2);
+                    eighths = (top - 1) * 8 + (int) Math.round(b.maxY * 8);
                 }
                 p.set(x, top, z);
                 BlockState above = world.getBlockState(p);
-                if (!above.isAir() && !above.isReplaceable()) continue;
+                if (above.isOf(net.minecraft.block.Blocks.SNOW) && extraLayers == 0) {
+                    extraLayers = above.get(net.minecraft.block.SnowBlock.LAYERS);
+                } else if (extraLayers == 0 && !above.isAir() && !above.isReplaceable()) {
+                    continue;
+                }
                 if (!above.getFluidState().isEmpty()) continue;
-                base[k] = halves;
+                base[k] = eighths + extraLayers;
+                support[k] = top - 1;
                 kind[k] = (byte) (leaves ? 2 : (natural(ground) ? 0 : 1));
                 light[k] = WorldRenderer.getLightmapCoordinates(world, p);
             }
@@ -136,7 +159,7 @@ public final class SnowCover {
                         int ii = i + di, jj = j + dj;
                         if (ii < 0 || jj < 0 || ii >= N || jj >= N) continue;
                         int nb = base[idx(ii, jj)];
-                        float wall = (nb == Integer.MIN_VALUE ? wallAt(world, x + di, z + dj, (int) Math.floor(base[k] / 2f)) : (nb - base[k]) / 2f);
+                        float wall = (nb == Integer.MIN_VALUE ? wallAt(world, x + di, z + dj, (int) Math.floor(base[k] / 8f)) : (nb - base[k]) / 8f);
                         if (wall <= 0) continue;
                         float dist = (float) Math.sqrt(di * di + dj * dj);
                         if (dist > 3.2f) continue;
@@ -171,8 +194,8 @@ public final class SnowCover {
                 int[][] nb = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
                 for (int[] o : nb) {
                     int kk = idx(i + o[0], j + o[1]);
-                    if (base[kk] == base[k]) {
-                        sum += tmp[kk];
+                    if (same(base[kk], base[k])) {
+                        sum += tmp[kk] + (base[kk] - base[k]) / 8f;
                         w++;
                     }
                 }
@@ -205,7 +228,7 @@ public final class SnowCover {
         if (i < 0 || j < 0 || i >= N || j >= N) return Float.NaN;
         int k = idx(i, j);
         if (base[k] == Integer.MIN_VALUE || depth[k] <= 0) return Float.NaN;
-        return base[k] / 2f + depth[k];
+        return base[k] / 8f + depth[k];
     }
 
     /** Whether the local player is standing in the visual snow. */
@@ -215,7 +238,7 @@ public final class SnowCover {
         int i = p.getBlockX() - centerX + R, j = p.getBlockZ() - centerZ + R;
         if (i < 0 || j < 0 || i >= N || j >= N) return false;
         int k = idx(i, j);
-        return base[k] != Integer.MIN_VALUE && Math.abs(p.getY() - base[k] / 2f) < 0.6;
+        return base[k] != Integer.MIN_VALUE && Math.abs(p.getY() - base[k] / 8f) < 0.6;
     }
 
     /** Plays the snow step sound for the local player (replaces the vanilla step sound on snow). */
@@ -246,7 +269,7 @@ public final class SnowCover {
                 int k = idx(i, j);
                 int b = base[k];
                 if (b == Integer.MIN_VALUE) continue;
-                float y0 = (float) (b / 2.0 - cam.y);
+                float y0 = (float) (b / 8.0 - cam.y);
                 fillHeights(i, j, h);
                 float x0 = ox + i, z0 = oz + j;
                 int lt = light[k];
@@ -307,7 +330,7 @@ public final class SnowCover {
         int a = sz * 3 + sx;
         float top = h[a] + (h[a + 1] - h[a]) * u;
         float bot = h[a + 3] + (h[a + 4] - h[a + 3]) * u;
-        return base[k] / 2f + top + (bot - top) * v;
+        return base[k] / 8f + top + (bot - top) * v;
     }
 
     /** Ground level (absolute y, half-block precision) of a column with snow, or NaN. */
@@ -316,7 +339,16 @@ public final class SnowCover {
         int i = x - centerX + R, j = z - centerZ + R;
         if (i < 0 || j < 0 || i >= N || j >= N) return Float.NaN;
         int b = base[idx(i, j)];
-        return b == Integer.MIN_VALUE ? Float.NaN : b / 2f;
+        return b == Integer.MIN_VALUE ? Float.NaN : b / 8f;
+    }
+
+    /** y of the block that carries the snow at a column, or Integer.MIN_VALUE. */
+    public static int supportAt(int x, int z) {
+        if (!built) return Integer.MIN_VALUE;
+        int i = x - centerX + R, j = z - centerZ + R;
+        if (i < 0 || j < 0 || i >= N || j >= N) return Integer.MIN_VALUE;
+        int k = idx(i, j);
+        return base[k] == Integer.MIN_VALUE ? Integer.MIN_VALUE : support[k];
     }
 
     /** Kind of the snowy column: 0 ground, 1 roof, 2 leaves, -1 none. */
@@ -338,7 +370,7 @@ public final class SnowCover {
         return built;
     }
 
-    /** Height of the snow at the corner (i + dx/2, j + dz/2) of column (i, j). */
+    /** Height (relative to this column's ground) of the snow at the corner (i + dx/2, j + dz/2) of column (i, j). */
     private static float corner(int i, int j, int dx, int dz) {
         int b = base[idx(i, j)];
         float sum = 0;
@@ -353,8 +385,8 @@ public final class SnowCover {
                 }
                 int kk = idx(ii, jj);
                 int nb = base[kk];
-                if (nb == b) {
-                    sum += depth[kk];
+                if (same(nb, b)) {
+                    sum += depth[kk] + (nb - b) / 8f; // absolute surface, relative to our ground
                     n++;
                 } else if (nb == Integer.MIN_VALUE || nb < b) {
                     open = true; // edge of a drop / end of the snow
@@ -363,7 +395,7 @@ public final class SnowCover {
             }
         }
         float avg = sum / Math.max(1, n);
-        return open ? Math.max(0.03f, avg * 0.7f) : avg;
+        return Math.max(0.04f, open ? avg * 0.7f : avg);
     }
 
     private static void side(VertexConsumer vc, MatrixStack.Entry e, Sprite sp, int i, int j, int di, int dj,
@@ -372,7 +404,7 @@ public final class SnowCover {
         int b = base[idx(i, j)];
         if (ii >= 0 && jj >= 0 && ii < N && jj < N) {
             int nb = base[idx(ii, jj)];
-            if (nb == b || (nb != Integer.MIN_VALUE && nb > b)) return; // continues on the same level or against a wall
+            if (same(nb, b) || (nb != Integer.MIN_VALUE && nb > b)) return; // continues on the same level or against a wall
         }
         float u0 = sp.getMinU(), u1 = sp.getMaxU(), v0 = sp.getMinV(), v1 = sp.getMaxV();
         float vh = (v1 - v0);
