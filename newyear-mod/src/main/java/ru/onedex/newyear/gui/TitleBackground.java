@@ -57,9 +57,15 @@ public final class TitleBackground {
         ctx.getMatrices().scale(dw / w, dh / h);
         ctx.drawTexture(RenderPipelines.GUI_TEXTURED, ID, 0, 0, 0, 0, w, h, w, h, w, h, 0xFFFFFFFF);
         ctx.getMatrices().popMatrix();
+        R2D.begin(ctx);
+        // Christmas tree and presents (coordinates of the 1600x900 picture)
+        if (TitleGifts.enabled()) {
+            float s = dw / 1600f;
+            TitleGifts.setTransform(x, y, s);
+            TitleGifts.render(ctx, width, height);
+        }
         // warm glow from the fireplace that breathes a little
         float glow = 0.06f + 0.03f * (float) Math.sin(t * 2.3f) * (float) Math.sin(t * 1.7f);
-        R2D.begin(ctx);
         R2D.gradientV(0, height * 0.45f, width, height * 0.55f, 0x00FF8A2A, R2D.withAlpha(0xFFFF8A2A, glow));
         return true;
     }

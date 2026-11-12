@@ -1,5 +1,8 @@
 package ru.onedex.newyear.gui;
 
+import com.mojang.blaze3d.textures.FilterMode;
+import com.mojang.blaze3d.textures.AddressMode;
+import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.gui.DrawContext;
@@ -454,7 +457,16 @@ public final class R2D {
             if (id != null) MinecraftClient.getInstance().getTextureManager().destroyTexture(id);
             NativeImage img = new NativeImage(W, H, false);
             final String name = "dexnewyear " + key;
-            tex = new NativeImageBackedTexture(() -> name, img);
+            if (down > 1) {
+                // stretched overlays are sampled smoothly so they do not look pixelated
+                tex = new NativeImageBackedTexture(() -> name, img) {
+                    {
+                        this.sampler = RenderSystem.getSamplerCache().get(AddressMode.CLAMP_TO_EDGE, AddressMode.CLAMP_TO_EDGE, FilterMode.LINEAR, FilterMode.LINEAR, false);
+                    }
+                };
+            } else {
+                tex = new NativeImageBackedTexture(() -> name, img);
+            }
             id = Identifier.of("dexnewyear", "dyn/img_" + (texCounter++));
             MinecraftClient.getInstance().getTextureManager().registerTexture(id, tex);
             DYN.put(key, tex);

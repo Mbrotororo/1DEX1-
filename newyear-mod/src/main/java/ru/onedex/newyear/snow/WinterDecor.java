@@ -91,6 +91,7 @@ public final class WinterDecor {
         icicles = new ArrayList<>();
         ice = new ArrayList<>();
         ornaments = new ArrayList<>();
+        HouseLights.clear();
     }
 
     public static void rebuild(ClientWorld w, NyConfig c) {
@@ -105,6 +106,8 @@ public final class WinterDecor {
         icicles = c.icicles ? buildIcicles(w, cx, cz) : new ArrayList<>();
         ice = c.iceOnWater ? buildIce(w, cx, cz) : new ArrayList<>();
         ornaments = c.treeDecor ? buildOrnaments(w, cx, cy, cz) : new ArrayList<>();
+        if (c.houseLights) HouseLights.rebuild(w, cx, cy, cz);
+        else HouseLights.clear();
     }
 
     private static List<Icicle> buildIcicles(ClientWorld w, int cx, int cz) {
@@ -333,6 +336,8 @@ public final class WinterDecor {
                 quad(vc, e, ax, y, az, bx, y, bz, ccx, y, ccz, dx, y, dz, 1, 1, 0, 0, col, light, 0, 1, 0, true);
             }
         }
+
+        if (c.houseLights) HouseLights.render(ctx);
 
         if (c.treeDecor && !ornaments.isEmpty()) {
             VertexConsumer vc = ctx.consumers().getBuffer(RenderLayers.entityCutoutNoCull(DECOR));

@@ -61,6 +61,8 @@ public class NewYearClient implements ClientModInitializer {
                 ru.onedex.newyear.snow.WinterDecor.tick(client);
                 ru.onedex.newyear.render.PlayerSnow.tick(client);
                 WinterFilter.tick(client);
+                FrostGlass.tick(client);
+                ru.onedex.newyear.render.SantaFlight.tick(client);
             } catch (Throwable t) {
                 LOGGER.error("New Year tick failed", t);
             }
@@ -71,6 +73,7 @@ public class NewYearClient implements ClientModInitializer {
             try {
                 ru.onedex.newyear.snow.SnowCover.render(ctx);
                 ru.onedex.newyear.snow.WinterDecor.render(ctx);
+                ru.onedex.newyear.render.SantaFlight.render(ctx);
             } catch (Throwable t) {
                 LOGGER.error("Snow cover render failed", t);
             }
@@ -87,6 +90,8 @@ public class NewYearClient implements ClientModInitializer {
 
         // winter filter under the HUD, screen snow on top of it
         HudElementRegistry.attachElementBefore(VanillaHudElements.MISC_OVERLAYS, Identifier.of(MOD_ID, "winter_filter"), WinterFilter::renderOverlay);
+        // frost growing on the screen "glass"
+        HudElementRegistry.attachElementBefore(VanillaHudElements.MISC_OVERLAYS, Identifier.of(MOD_ID, "frost_glass"), FrostGlass::render);
 
         // every menu: snow on top, drifts on its buttons / windows
         ScreenEvents.AFTER_INIT.register((client, screen, w, h) -> {
@@ -103,7 +108,8 @@ public class NewYearClient implements ClientModInitializer {
                 });
             }
             // snowballs / snowman / scattering with the mouse
-            ScreenMouseEvents.allowMouseClick(screen).register((s, click) -> client.world != null || !ScreenSnow.onClick(click.x(), click.y(), click.button()));
+            ScreenMouseEvents.allowMouseClick(screen).register((s, click) -> client.world != null
+                    || !(ru.onedex.newyear.gui.TitleGifts.onClick(click.x(), click.y(), click.button()) || ScreenSnow.onClick(click.x(), click.y(), click.button())));
             ScreenMouseEvents.allowMouseDrag(screen).register((s, click, dx, dy) -> !ScreenSnow.onDrag());
             ScreenMouseEvents.allowMouseRelease(screen).register((s, click) -> !ScreenSnow.onRelease());
         });

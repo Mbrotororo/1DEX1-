@@ -5,5 +5,14 @@
       "dexnewyear:snow_step1",
       "dexnewyear:snow_step2"
     ]
+  },
+  "santa_bells": {
+    "subtitle": "subtitles.dexnewyear.santa_bells",
+    "sounds": [
+      {
+        "name": "dexnewyear:santa_bells",
+        "attenuation_distance": 120
+      }
+    ]
   }
 }

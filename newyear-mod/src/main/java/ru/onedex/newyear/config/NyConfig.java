@@ -42,6 +42,22 @@ public class NyConfig {
     public boolean playerSnow = false;
     public boolean treeDecor = false;
 
+    // ---------- Гирлянды на домах ----------
+    public boolean houseLights = false;
+    /** 0 = мигают, 1 = бегущие огни, 2 = переливы */
+    public int lightsMode = 0;
+    /** 0 = разноцветные, 1 = тёплые, 2 = холодные */
+    public int lightsColors = 0;
+
+    // ---------- Иней на экране ----------
+    public boolean frostGlass = false;
+
+    // ---------- Санта на санях ----------
+    public boolean santa = false;
+    public boolean santaBells = true;
+    /** 0 = редко, 1 = часто */
+    public int santaFrequency = 0;
+
     // ---------- Музыка ----------
     public boolean music = false;
     public float musicVolume = 0.7f;
@@ -70,7 +86,6 @@ public class NyConfig {
     // ---------- Зимний фильтр ----------
     public boolean winterFilter = false;
     public boolean snowyGrass = true;
-    public boolean frostEdges = true;
     /** 0 .. 1 */
     public float coldTint = 0.35f;
 
@@ -89,6 +104,8 @@ public class NyConfig {
     public boolean menuGarland = true;
     /** New Year picture as the main menu background (over any resource pack). */
     public boolean titleBackground = false;
+    /** Christmas tree with presents on the New Year picture. */
+    public boolean titleGifts = true;
     /** Accent color in HSV (festive red by default). */
     public float accentHue = 0.0f;
     public float accentSat = 0.78f;
@@ -129,6 +146,9 @@ public class NyConfig {
         lastSong = Math.max(0, lastSong);
         flakeSize = Math.max(0, Math.min(2, flakeSize));
         garlandSpeed = Math.max(0, Math.min(1, garlandSpeed));
+        lightsMode = Math.max(0, Math.min(2, lightsMode));
+        lightsColors = Math.max(0, Math.min(2, lightsColors));
+        santaFrequency = Math.max(0, Math.min(1, santaFrequency));
         coldTint = clamp(coldTint, 0f, 1f);
         starBoost = clamp(starBoost, 0f, 1f);
         background = Math.max(0, Math.min(2, background));

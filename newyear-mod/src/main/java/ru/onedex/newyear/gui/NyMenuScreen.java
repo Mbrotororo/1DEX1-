@@ -54,6 +54,9 @@ public class NyMenuScreen extends Screen {
                 new Module("garlands", "Гирлянды", () -> c().garlands, () -> c().garlands = !c().garlands, NyMenuScreen::pageGarlands),
                 new Module("decor", "Украшения на ёлках", () -> c().treeDecor, () -> c().treeDecor = !c().treeDecor, null),
                 new Module("icicles", "Сосульки", () -> c().icicles, () -> c().icicles = !c().icicles, null),
+                new Module("hlights", "Гирлянды на домах", () -> c().houseLights, () -> c().houseLights = !c().houseLights, NyMenuScreen::pageHouseLights),
+                new Module("santa", "Санта на санях", () -> c().santa, () -> c().santa = !c().santa, NyMenuScreen::pageSanta),
+                new Module("frost", "Иней на экране", () -> c().frostGlass, () -> c().frostGlass = !c().frostGlass, null),
                 new Module("ice", "Лёд на воде", () -> c().iceOnWater, () -> c().iceOnWater = !c().iceOnWater, null),
                 new Module("filter", "Зимний фильтр", () -> c().winterFilter, () -> c().winterFilter = !c().winterFilter, NyMenuScreen::pageFilter),
                 new Module("breath", "Пар изо рта", () -> c().breath, () -> c().breath = !c().breath, null),
@@ -66,7 +69,7 @@ public class NyMenuScreen extends Screen {
                 new Module("fx_gar", "Гирлянды под бит", () -> c().fxGarlands, () -> c().fxGarlands = !c().fxGarlands, null))));
         COLUMNS.add(new Column("Визуал", List.of(
                 new Module("menu", "Меню", null, null, NyMenuScreen::pageVisual),
-                new Module("title", "Новогодний фон", () -> c().titleBackground, () -> c().titleBackground = !c().titleBackground, null))));
+                new Module("title", "Новогодний фон", () -> c().titleBackground, () -> c().titleBackground = !c().titleBackground, NyMenuScreen::pageTitle))));
     }
 
     private static NyConfig c() {
@@ -481,8 +484,30 @@ public class NyMenuScreen extends Screen {
         NyConfig c = c();
         float y0 = y;
         y = m.toggleRow(th, "w_grass", "Снежная трава", c.snowyGrass, () -> c.snowyGrass = !c.snowyGrass, x, y, w);
-        y = m.toggleRow(th, "w_frost", "Иней по краям", c.frostEdges, () -> c.frostEdges = !c.frostEdges, x, y, w);
         y = m.slider(th, "w_tint", "Холод", Math.round(c.coldTint * 100) + "%", x, y, w, c.coldTint, v -> c.coldTint = (float) v, mx, my);
+        return y - y0 + 4;
+    }
+
+    private static float pageHouseLights(NyMenuScreen m, Theme th, float x, float y, float w, int mx, int my) {
+        NyConfig c = c();
+        float y0 = y;
+        y = m.segmented(th, "hl_mode", "Огни", new String[]{"Мигают", "Бегут", "Переливы"}, c.lightsMode, i -> c.lightsMode = i, x, y, w);
+        y = m.segmented(th, "hl_col", "Цвет", new String[]{"Разные", "Тёплые", "Холодные"}, c.lightsColors, i -> c.lightsColors = i, x, y, w);
+        return y - y0 + 4;
+    }
+
+    private static float pageSanta(NyMenuScreen m, Theme th, float x, float y, float w, int mx, int my) {
+        NyConfig c = c();
+        float y0 = y;
+        y = m.segmented(th, "sa_freq", "Прилетает", new String[]{"Редко", "Часто"}, c.santaFrequency, i -> c.santaFrequency = i, x, y, w);
+        y = m.toggleRow(th, "sa_bell", "Колокольчики", c.santaBells, () -> c.santaBells = !c.santaBells, x, y, w);
+        return y - y0 + 4;
+    }
+
+    private static float pageTitle(NyMenuScreen m, Theme th, float x, float y, float w, int mx, int my) {
+        NyConfig c = c();
+        float y0 = y;
+        y = m.toggleRow(th, "t_gifts", "Ёлка и подарки", c.titleGifts, () -> c.titleGifts = !c.titleGifts, x, y, w);
         return y - y0 + 4;
     }
 

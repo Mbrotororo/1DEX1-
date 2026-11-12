@@ -70,7 +70,7 @@ public final class SnowCover {
 
     public static void tick(MinecraftClient mc) {
         NyConfig c = NyConfig.INSTANCE;
-        boolean needed = c.snowCover || c.icicles || c.treeDecor || c.iceOnWater;
+        boolean needed = c.snowCover || c.icicles || c.treeDecor || c.iceOnWater || c.houseLights;
         if (!needed || mc.world == null || mc.player == null) {
             if (built) WinterDecor.clear();
             built = false;
