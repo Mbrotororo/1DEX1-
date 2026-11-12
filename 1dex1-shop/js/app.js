@@ -796,6 +796,10 @@ Promise.all([import('./hero.js'), fontReady()])
 						breakSound();
 						notify(t('toast.endPortal'));
 						break;
+					case 'egg':
+						breakSound();
+						notify(t('toast.egg'));
+						break;
 					case 'break':
 						blockBroken('kirka');
 						break;

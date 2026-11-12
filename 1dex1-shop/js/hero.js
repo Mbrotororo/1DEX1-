@@ -864,17 +864,34 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		portalPx.tex.needsUpdate = true;
 	};
 	paintPortal(0);
-	// бездна портала в Энд: чёрная, с медленно плывущими цветными звёздами
+	// бездна портала в Энд: тёмно-бирюзовая дымка, поверх три слоя звёзд плывут с разной скоростью
 	const voidPx = pixelCanvasTex(32);
-	const voidStars = Array.from({length: 46}, (_, i) => ({x: (i * 37) % 32, y: (i * 53) % 32, v: 0.6 + ((i * 7) % 5) * 0.35, c: ['#ffffff', '#9fe8d8', '#c9a6ff', '#7dd3ff', '#e8ffd0'][i % 5]}));
+	const voidImg = voidPx.ctx.createImageData(32, 32);
+	const STAR_C = [[255, 255, 255], [159, 232, 216], [201, 166, 255], [125, 211, 255], [232, 255, 208]];
+	const voidStars = Array.from({length: 64}, (_, i) => ({x: (i * 37) % 32, y: (i * 53 + i * i) % 32, layer: i % 3, c: STAR_C[i % 5]}));
 	const paintVoid = (time) => {
-		const g = voidPx.ctx;
-		g.fillStyle = '#06040c';
-		g.fillRect(0, 0, 32, 32);
-		for (const s of voidStars) {
-			g.fillStyle = s.c;
-			g.fillRect(Math.floor((s.x + time * s.v) % 32), Math.floor((s.y + time * s.v * 0.6) % 32), 1, 1);
+		const d = voidImg.data;
+		for (let y = 0; y < 32; y++) {
+			for (let x = 0; x < 32; x++) {
+				const neb = Math.sin(x * 0.31 + time * 0.4) * Math.sin(y * 0.27 - time * 0.3) * 0.5 + 0.5;
+				const i = (y * 32 + x) * 4;
+				d[i] = 5 + neb * 10;
+				d[i + 1] = 8 + neb * 30;
+				d[i + 2] = 16 + neb * 34;
+				d[i + 3] = 255;
+			}
 		}
+		for (const st of voidStars) {
+			const sp = [0.5, 1.1, 1.9][st.layer];
+			const x = Math.floor((st.x + time * sp) % 32);
+			const y = Math.floor((st.y + time * sp * 0.55) % 32);
+			const i = (y * 32 + x) * 4;
+			const k = [0.55, 0.78, 1][st.layer];
+			d[i] = st.c[0] * k;
+			d[i + 1] = st.c[1] * k;
+			d[i + 2] = st.c[2] * k;
+		}
+		voidPx.ctx.putImageData(voidImg, 0, 0);
 		voidPx.tex.needsUpdate = true;
 	};
 	paintVoid(0);
@@ -916,6 +933,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			kind: 'nether',
 			to,
 			o,
+			open: true,
+			appearAt: -1,
 			group: g,
 			plane,
 			frameMesh,
@@ -930,59 +949,196 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		portals.push(p);
 		return p;
 	};
-	const END_S = 0.52; // блок рамки портала в Энд
+	const END_S = 0.52; // блок рамки портала в Энд (на главном острове)
+	const EXIT_S = 0.6; // блок бедроковой чаши выхода из Энда
 	const endFrameSide = lambert(tex.endFrameSide);
 	const endFrameMats = [endFrameSide, endFrameSide, lambert(tex.endFrameTop), lambert(tex.endStone), endFrameSide, endFrameSide];
+	const bedrockMat = lambert(tex.bedrock);
 	const eyeMat = new THREE.MeshLambertMaterial({color: '#2f8f62', emissive: '#0d3a26'});
 	const hitMat = new THREE.MeshBasicMaterial({colorWrite: false, depthWrite: false});
-	const buildEndPortal = (parent, o, to) => {
+	const eggMat = new THREE.MeshLambertMaterial({color: '#1d0f2b', emissive: '#14052a'});
+	const eggSpotMat = new THREE.MeshBasicMaterial({color: '#7b3fc4'});
+	const stickMat2 = new THREE.MeshLambertMaterial({color: '#7a5530'});
+	const flameMat2 = new THREE.MeshBasicMaterial({color: '#ffd45a'});
+	// 12 блоков рамки: квадрат 5×5 без углов
+	const RING = [];
+	for (let i = 0; i < 5; i++) for (let j = 0; j < 5; j++) if ((i === 0 || i === 4 || j === 0 || j === 4) && !((i === 0 || i === 4) && (j === 0 || j === 4))) RING.push([i, j]);
+	// по кругу, чтобы рамка вырастала блок за блоком друг за другом
+	RING.sort((a, b) => Math.atan2(a[1] - 2, a[0] - 2) - Math.atan2(b[1] - 2, b[0] - 2));
+	const glowSprite = (color, opacity) => new THREE.Sprite(new THREE.SpriteMaterial({map: glow, color, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending}));
+
+	// Портал в Энд. style 'frame' — рамка из 12 блоков с глазами Края (главный остров);
+	// 'exit' — выход из Энда: бедроковая чаша, посередине колонна с факелами и яйцом дракона на ней.
+	// Выход закрыт, пока не разбито яйцо.
+	const buildEndPortal = (parent, o, to, style = 'frame') => {
+		const exit = style === 'exit';
+		const S = exit ? EXIT_S : END_S;
+		const frameH = exit ? S : 0.8 * S;
+		const y = exit ? 0.7 * S : 0.62 * S; // высота бездны
 		const g = new THREE.Group();
 		g.position.set(o.x, 0, o.z);
 		g.rotation.y = o.rot;
-		const S = END_S;
-		const cells = [];
-		for (let i = 0; i < 5; i++) for (let j = 0; j < 5; j++) if ((i === 0 || i === 4 || j === 0 || j === 4) && !((i === 0 || i === 4) && (j === 0 || j === 4))) cells.push([i, j]);
-		const frameMesh = new THREE.InstancedMesh(box, endFrameMats, cells.length);
-		const eyes = new THREE.InstancedMesh(box, eyeMat, cells.length);
-		cells.forEach(([i, j], k) => {
-			dummy.rotation.set(0, 0, 0);
-			dummy.position.set((i - 2) * S, 0.4 * S, (j - 2) * S);
-			dummy.scale.set(S, 0.8 * S, S);
-			dummy.updateMatrix();
-			frameMesh.setMatrixAt(k, dummy.matrix);
-			dummy.position.set((i - 2) * S, 0.88 * S, (j - 2) * S);
-			dummy.scale.set(0.42 * S, 0.18 * S, 0.42 * S);
-			dummy.updateMatrix();
-			eyes.setMatrixAt(k, dummy.matrix);
-		});
+		const frameMesh = new THREE.InstancedMesh(box, exit ? bedrockMat : endFrameMats, RING.length);
+		frameMesh.frustumCulled = false;
+		const eyes = exit ? null : new THREE.InstancedMesh(box, eyeMat, RING.length);
+		if (eyes) eyes.frustumCulled = false;
 		const plane = new THREE.Mesh(new THREE.PlaneGeometry(3 * S, 3 * S), voidMat);
 		plane.rotation.x = -Math.PI / 2;
-		plane.position.y = 0.62 * S;
+		plane.position.y = y;
+		const glowTop = glowSprite('#7dffd8', 0.3);
+		glowTop.position.set(0, y + 0.25, 0);
+		glowTop.scale.set(5 * S, 1.4, 1);
+		const beam = glowSprite('#c4fff0', 0);
+		beam.position.set(0, y + 3.2, 0);
+		beam.scale.set(1.5, 7.5, 1);
+		beam.visible = false;
 		// портал плоский и сбоку почти не виден — клики ловит невидимая коробка на всю рамку
-		const hit = new THREE.Mesh(new THREE.BoxGeometry(5 * S, 1.3, 5 * S), hitMat);
-		hit.position.y = 0.5;
-		g.add(frameMesh, eyes, plane, hit);
+		const hit = new THREE.Mesh(new THREE.BoxGeometry(5 * S, exit ? 5.2 * S : 1.3, 5 * S), hitMat);
+		hit.position.y = exit ? 2.6 * S : 0.5;
+		g.add(frameMesh, plane, glowTop, beam, hit);
+		if (eyes) g.add(eyes);
+		let egg = null;
+		if (exit) {
+			// колонна из бедрока и четыре факела на ней
+			const pillar = new THREE.InstancedMesh(box, bedrockMat, 4);
+			for (let k = 0; k < 4; k++) {
+				dummy.position.set(0, (k + 0.5) * S, 0);
+				dummy.rotation.set(0, 0, 0);
+				dummy.scale.setScalar(S);
+				dummy.updateMatrix();
+				pillar.setMatrixAt(k, dummy.matrix);
+			}
+			g.add(pillar);
+			for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+				const tg = new THREE.Group();
+				tg.position.set(dx * 0.62 * S, 2.9 * S, dz * 0.62 * S);
+				tg.rotation.set(dz * 0.35, 0, -dx * 0.35);
+				const stick = new THREE.Mesh(box, stickMat2);
+				stick.scale.set(0.08, 0.36, 0.08);
+				stick.position.y = 0.18;
+				const flame = new THREE.Mesh(box, flameMat2);
+				flame.scale.setScalar(0.12);
+				flame.position.y = 0.4;
+				const halo = glowSprite('#ff9a2e', 0.6);
+				halo.position.y = 0.42;
+				halo.scale.setScalar(0.9);
+				tg.add(stick, flame, halo);
+				g.add(tg);
+			}
+			// яйцо дракона на колонне: чёрное, с фиолетовыми крапинками, рядом мерцает
+			egg = new THREE.Group();
+			egg.position.set(0, 4 * S, 0);
+			[[0.5, 0.24], [0.42, 0.2], [0.28, 0.16]].reduce((yy, [w, h]) => {
+				const m = new THREE.Mesh(box, eggMat);
+				m.scale.set(w, h, w);
+				m.position.y = yy + h / 2;
+				egg.add(m);
+				return yy + h;
+			}, 0);
+			for (const [sx, sy, sz] of [[0.26, 0.12, 0.1], [-0.2, 0.3, 0.22], [0.1, 0.44, -0.22], [-0.26, 0.16, -0.12]]) {
+				const sp = new THREE.Mesh(box, eggSpotMat);
+				sp.scale.setScalar(0.06);
+				sp.position.set(sx, sy, sz);
+				egg.add(sp);
+			}
+			const eggGlow = glowSprite('#b06bff', 0.35);
+			eggGlow.position.y = 0.3;
+			eggGlow.scale.setScalar(1.3);
+			egg.add(eggGlow);
+			g.add(egg);
+		}
 		parent.add(g);
 		// встаёт с той стороны, что ближе к середине острова
 		const toward = new THREE.Vector2(-o.x, -o.z).normalize();
-		const y = 0.62 * S;
+		const reach = exit ? 2.3 : 1.9;
 		const p = {
 			kind: 'end',
+			style,
 			to,
 			o,
+			S,
+			frameH,
+			y,
 			group: g,
 			plane,
 			frameMesh,
-			...addSparks(g, 'end', {w: 2.6 * S, d: 2.6 * S, y0: y, y1: y + 1.6}),
+			eyes,
+			glowTop,
+			beam,
+			egg,
+			open: !exit,
+			appearAt: -1,
+			fxStage: 0,
+			...addSparks(g, 'end', {w: 2.6 * S, d: 2.6 * S, y0: y, y1: y + 1.8}),
 			pick: [hit],
 			center: new THREE.Vector3(o.x, 0, o.z),
-			spot: new THREE.Vector3(o.x + toward.x * 1.9, 0, o.z + toward.y * 1.9),
+			spot: new THREE.Vector3(o.x + toward.x * reach, 0, o.z + toward.y * reach),
 			mid: new THREE.Vector3(0, y, 0),
-			corners: [[-1.5, -1.5], [1.5, -1.5], [1.5, 1.5], [-1.5, 1.5]].map(([a, b]) => new THREE.Vector3(a * S, y, b * S)),
+			corners: [[-1.3, -1.3], [1.3, -1.3], [1.3, 1.3], [-1.3, 1.3]].map(([a, b]) => new THREE.Vector3(a * S, y, b * S)),
 			parent,
 		};
+		p.animate = (t) => animateEndPortal(p, t);
+		p.animate(Infinity);
 		portals.push(p);
 		return p;
+	};
+	// Появление портала в Энд (t — секунды с начала, Infinity — готовое состояние).
+	// Рамка: блоки по кругу вырастают из земли, потом по очереди загораются глаза Края.
+	// Потом бездна разливается от середины, вверх бьёт столб света.
+	const surfaceStart = (p) => (p.style === 'frame' ? 1.9 : 0.25);
+	const appearTime = (p) => surfaceStart(p) + 1.5;
+	const animateEndPortal = (p, t) => {
+		const S = p.S;
+		const done = t === Infinity;
+		if (p.style === 'frame') {
+			RING.forEach(([i, j], k) => {
+				const kk = done ? 1 : clamp((t - k * 0.08) / 0.35, 0, 1);
+				const e = Math.max(0.001, done ? 1 : easeOutBack(kk));
+				dummy.rotation.set(0, 0, 0);
+				dummy.position.set((i - 2) * S, p.frameH / 2 - (1 - kk) * p.frameH * 1.2, (j - 2) * S);
+				dummy.scale.set(S * e, p.frameH * e, S * e);
+				dummy.updateMatrix();
+				p.frameMesh.setMatrixAt(k, dummy.matrix);
+				const ek = done ? 1 : clamp((t - 1.05 - k * 0.06) / 0.22, 0, 1);
+				const es = Math.max(0.001, done ? 1 : easeOutBack(ek));
+				dummy.position.set((i - 2) * S, p.frameH + 0.09 * S, (j - 2) * S);
+				dummy.scale.set(0.42 * S * es, 0.18 * S * es, 0.42 * S * es);
+				dummy.updateMatrix();
+				p.eyes.setMatrixAt(k, dummy.matrix);
+			});
+			p.frameMesh.instanceMatrix.needsUpdate = true;
+			p.eyes.instanceMatrix.needsUpdate = true;
+		} else if (done) {
+			RING.forEach(([i, j], k) => {
+				dummy.rotation.set(0, 0, 0);
+				dummy.position.set((i - 2) * S, p.frameH / 2, (j - 2) * S);
+				dummy.scale.setScalar(S);
+				dummy.updateMatrix();
+				p.frameMesh.setMatrixAt(k, dummy.matrix);
+			});
+			p.frameMesh.instanceMatrix.needsUpdate = true;
+		}
+		// бездна: от середины к краям
+		const t0 = surfaceStart(p);
+		const sv = done ? (p.open ? 1 : 0) : clamp((t - t0) / 0.6, 0, 1);
+		p.plane.visible = sv > 0;
+		p.plane.scale.setScalar(Math.max(0.001, done ? sv : easeOutBack(sv)));
+		p.glowTop.visible = sv > 0;
+		p.glowTop.material.opacity = 0.3 * sv;
+		p.sparks.visible = sv >= 1;
+		// столб света
+		const bt = done ? -1 : t - t0;
+		const bo = bt >= 0 && bt < 1.4 ? Math.sin((bt / 1.4) * Math.PI) * 0.9 : 0;
+		p.beam.material.opacity = bo;
+		p.beam.visible = bo > 0.01;
+	};
+	// закрыть выход из Энда (при каждом входе в Энд): яйцо на месте, бездны нет
+	const closeExit = (p) => {
+		p.open = false;
+		p.appearAt = -1;
+		p.egg.visible = true;
+		p.egg.rotation.set(0, 0, 0);
+		p.animate(Infinity);
 	};
 	// на главном острове: портал в Незер, а после того как его сломают незеритовой киркой — портал в Энд
 	const portalOver = buildNetherPortal(overGround, PORTAL_O, 'nether');
@@ -1192,8 +1348,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		};
 	};
 
-	// --- Энд: остров из камня Края, обсидиановые колонны с кристаллами Края,
-	// хорус, яйцо дракона на бедроке и портал домой ---
+	// --- Энд: остров из камня Края, обсидиановые колонны с кристаллами Края, хорус.
+	// На краю — выход домой: бедроковая чаша с яйцом дракона на колонне. Разбил яйцо — выход открылся ---
 	const buildEnd = () => {
 		const ground = new THREE.Group();
 		island.add(ground);
@@ -1213,8 +1369,6 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			{x: -1, z: -4, h: 4},
 		];
 		for (const p of PILLARS) for (let y = 0; y < p.h; y++) B.add('obsidian', p.x, y + 0.5, p.z);
-		const EGG = {x: -2, z: 1};
-		B.add('bedrock', EGG.x, 0.5, EGG.z);
 		const meshes = meshBlocks(B.list, {endStone: lambert(tex.endStone), obsidian: obsidianMat, bedrock: lambert(tex.bedrock)}, ground);
 		// кристаллы Края на колоннах: светятся, вращаются в клетке
 		const crystalMat = new THREE.MeshBasicMaterial({color: '#ffb3e6'});
@@ -1243,7 +1397,6 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			}
 			chorusParts.push([x, top, z, 'flower']);
 		};
-		grow(2, 0.25, 2, 4, [1, 0]);
 		grow(-3.5, 0.25, -0.2, 3, [0, 1]);
 		grow(0.5, 0.25, -2.6, 5, [-1, 0]);
 		const chorusMat = {stem: lambert(tex.chorus), flower: lambert(tex.chorusFlower)};
@@ -1259,15 +1412,6 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			});
 			ground.add(m);
 		}
-		// яйцо дракона на бедроке
-		const eggMat = new THREE.MeshLambertMaterial({color: '#1d0f2b', emissive: '#14052a'});
-		[[0.62, 0.3], [0.5, 0.25], [0.32, 0.2]].reduce((y, [s, h]) => {
-			const m = new THREE.Mesh(box, eggMat);
-			m.scale.set(s, h, s);
-			m.position.set(EGG.x, y + h / 2, EGG.z);
-			ground.add(m);
-			return y + h;
-		}, 1);
 		// фиолетовые пылинки вокруг
 		const fx = new THREE.Group();
 		world.add(fx);
@@ -1277,7 +1421,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const dustGeo = new THREE.BufferGeometry();
 		dustGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
 		fx.add(new THREE.Points(dustGeo, new THREE.PointsMaterial({color: '#c9a6ff', size: 2.5, sizeAttenuation: false, transparent: true, opacity: 0.7, depthWrite: false})));
-		const portal = buildEndPortal(ground, {x: 1.8, z: 1.4, rot: 0.3}, 'over');
+		// выход — на самом краю острова спереди справа; открывается, когда разбито яйцо на колонне
+		const portal = buildEndPortal(ground, {x: 2.4, z: 2.3, rot: 0.2}, 'over', 'exit');
 		return {
 			id: 'end',
 			ground,
@@ -1287,7 +1432,9 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			portal,
 			home: new THREE.Vector3(-0.6, 0, 1.6),
 			standR: 4,
-			obstacles: () => [...PILLARS.map((p) => ({x: p.x, z: p.z, r: 0.75})), {x: EGG.x, z: EGG.z, r: 0.7}, {x: 2, z: 2, r: 0.6}, {x: -3.5, z: -0.2, r: 0.6}, {x: 0.5, z: -2.6, r: 0.6}, {x: 1.8, z: 1.4, r: 1.35}],
+			// появляется посреди острова: выхода пока нет
+			arrive: new THREE.Vector3(-0.6, 0, 1.6),
+			obstacles: () => [...PILLARS.map((p) => ({x: p.x, z: p.z, r: 0.75})), {x: -3.5, z: -0.2, r: 0.6}, {x: 0.5, z: -2.6, r: 0.6}, {x: 2.4, z: 2.3, r: 1.75}],
 			box: {w: 13.5, h: 16, cy: 0.4},
 			view: [0.2, 0.42, 1],
 			hull: hullRing(5.2, 4.6, 1.8, -5.5),
@@ -1318,7 +1465,6 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	};
 	let warp = null; // {at, to, swapped} — вспышка портала, на её пике мир меняется
 	let portalShrink = 1;
-	let endPopAt = -1; // когда появился портал в Энд (выпрыгивает из земли)
 	const portalHere = () => (worldId === 'over' ? (progress.endPortal ? portalEndOver : portalOver) : worlds[worldId].portal);
 	const NETHER_KEY = 'dex.nether';
 	let visitedNether = false;
@@ -1332,7 +1478,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	warpFx.setAttribute('aria-hidden', 'true');
 	canvas.parentElement.append(warpFx);
 	const startWarp = () => {
-		if (warp) return;
+		if (warp && !warp.swapped) return; // уже летит; на «хвосте» вспышки после прибытия — можно снова
 		warp = {at: now, to: portalHere().to, swapped: false};
 		const z = canvas.parentElement;
 		z.classList.remove('is-warping', 'warp-end');
@@ -1372,11 +1518,12 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		if (W.css) z.classList.add(W.css);
 		frame();
 		widgetsAt = -1;
-		// персонаж выходит из портала другого мира
+		// персонаж выходит из портала другого мира (в Энде выход закрыт — появляется посреди острова)
 		const p = portalHere();
+		if (p.style === 'exit') closeExit(p);
 		P.mode = 'idle';
 		P.queue = [walkTo(HOME)];
-		P.pos.copy(p.spot);
+		P.pos.copy(W.arrive || p.spot);
 		P.face = Math.atan2(p.spot.x - p.center.x, p.spot.z - p.center.z);
 		P.holding = false;
 		portalShrink = 1;
@@ -1407,16 +1554,41 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		progress.endPortal = true;
 		saveProgress(progress);
 		portalEndOver.group.visible = true;
-		portalEndOver.group.scale.setScalar(0.001);
-		endPopAt = now;
+		portalEndOver.appearAt = now;
+		portalEndOver.fxStage = 0;
+		portalEndOver.animate(0);
 		OBSTACLES.splice(0, OBSTACLES.length, ...overObstacles());
 		say('say.endPortal', 2);
 		on('endPortal');
 	};
+	// разбил яйцо дракона на колонне — выход из Энда открывается
+	const openEndExit = () => {
+		const p = portalHere();
+		const at = world.worldToLocal(p.egg.getWorldPosition(new THREE.Vector3()));
+		for (let i = 0; i < 18; i++) spawnDebris(at, i % 3 ? '#1d0f2b' : '#9a4bff', 1, 0.8, 1);
+		const c = toPx(p.egg.getWorldPosition(tmp));
+		const r = canvas.getBoundingClientRect();
+		flash(r.left + c.x, r.top + c.y);
+		p.egg.visible = false;
+		p.open = true;
+		p.appearAt = now;
+		p.fxStage = 0;
+		say('say.eggBroken', 1.8);
+		on('egg');
+	};
 	// клик по порталу: персонаж идёт и заходит в него; летающий — летит в портал.
 	// С незеритовой киркой портал в Незер на главном острове он ломает.
 	const enterPortal = () => {
-		if (warp) return;
+		if (warp && !warp.swapped) return;
+		const ph = portalHere();
+		if (!ph.open) {
+			// выход из Энда закрыт: сначала разбить яйцо дракона
+			if (P.mode === 'free') return warn('away');
+			if (busy()) return warn('busy');
+			P.queue = [walkTo(ph.spot), {type: 'breakEgg'}];
+			say('say.breakEgg', 1.5);
+			return;
+		}
 		const breaking = worldId === 'over' && !progress.endPortal && progress.tier >= 4;
 		if (P.mode === 'free') {
 			if (breaking) return warn('away');
@@ -1449,6 +1621,16 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const p = portalHere();
 		const pts = p.corners.map((v) => toPx(p.group.localToWorld(tmp.copy(v))));
 		return convexHull(pts).map((q) => ({x: q.x + o.x, y: q.y + o.y}));
+	};
+	// летающий персонаж над завесой портала? У плоского портала (Энд) считается точка у ног —
+	// иначе он «затягивался», когда его просто ставили на остров рядом с порталом
+	const overPortalNow = () => {
+		const ph = portalHere();
+		if (!ph.open || !zone.getClientRects().length) return false;
+		const pp = portalPolyDoc();
+		if (pp.length < 3) return false;
+		if (ph.kind === 'end') return hullDistance(PB.x, PB.y + PB.hh * 0.6, pp).dist < 0;
+		return !!boxPoly({x: PB.x, y: PB.y, hw: PB.hw * 0.8, hh: PB.hh * 0.7}, pp);
 	};
 	// летающего персонажа закинули в портал
 	const enterFromFree = () => {
@@ -1803,7 +1985,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		return i < 0 ? null : {set: SETS[0], i, x, y};
 	};
 	const pickPlayer = () => {
-		if (P.mode === 'free' || P.mode === 'portal' || warp) return false; // в портале его не схватить
+		if (P.mode === 'free' || P.mode === 'portal' || (warp && !warp.swapped)) return false; // в портале его не схватить
 		castRay();
 		return raycaster.intersectObject(rig.root, true).length > 0;
 	};
@@ -2596,6 +2778,10 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			} else if (a.type === 'breakPortal') {
 				P.mode = 'breakPortal';
 				P.actT = 0;
+			} else if (a.type === 'breakEgg') {
+				P.mode = 'breakEgg';
+				P.actT = 0;
+				P.holding = true;
 			} else if (a.type === 'leap') {
 				// прыжок с острова к стене — с алмазной киркой в руке
 				P.queue = [];
@@ -2682,6 +2868,25 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				}
 				break;
 			}
+			case 'breakEgg': {
+				// бьёт по яйцу дракона: яйцо шатается, летят осколки — и оно разбивается
+				const ph = portalHere();
+				P.actT += dt;
+				P.face = Math.atan2(ph.center.x - P.pos.x, ph.center.z - P.pos.z);
+				ph.egg.rotation.z = Math.sin(P.actT * 32) * 0.1 * Math.min(1, P.actT * 2);
+				const hitsBefore = Math.floor((P.actT - dt) / 0.3);
+				if (Math.floor(P.actT / 0.3) > hitsBefore) {
+					spawnDebris(world.worldToLocal(ph.egg.getWorldPosition(new THREE.Vector3())), Math.random() < 0.4 ? '#9a4bff' : '#1d0f2b', 4, 0.5);
+					on('wallHit');
+				}
+				if (P.actT >= 1.4) {
+					openEndExit();
+					P.holding = false;
+					P.mode = 'idle';
+					P.queue.shift();
+				}
+				break;
+			}
 			case 'breakPortal': {
 				// бьёт незеритовой киркой по обсидиану: осколки, завеса тускнеет — и портал рассыпается
 				P.actT += dt;
@@ -2762,7 +2967,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			PB.y = ny;
 			PB.idleT = 0;
 			// над порталом не спрыгивает: отпустишь — уйдёт в портал
-			const overPortal = zone.getClientRects().length > 0 && !!boxPoly({x: PB.x, y: PB.y, hw: PB.hw * 0.8, hh: PB.hh * 0.7}, portalPolyDoc());
+			const overPortal = overPortalNow();
 			// поднесли к острову — сам спрыгивает на траву
 			if (!overPortal && PB.clearOfIsland && islandGap !== null && islandGap < 16 && islandGap > -PB.hh) {
 				landOnIsland();
@@ -2908,12 +3113,9 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		// закинули в портал (бросок или отпустили над ним) или отправили кликом — телепорт в другой мир.
 		// Просто пролетая мимо, в портал не затягивает.
 		const toPortal = PB.auto?.then === 'portal' || (!PB.auto && now - (PB.thrownAt ?? -99) < 1.6);
-		if (!PB.held && !warp && toPortal && zone.getClientRects().length) {
-			const pp = portalPolyDoc();
-			if (pp.length >= 3 && boxPoly({x: PB.x, y: PB.y, hw: PB.hw * 0.8, hh: PB.hh * 0.7}, pp)) {
-				enterFromFree();
-				return;
-			}
+		if (!PB.held && !warp && toPortal && overPortalNow()) {
+			enterFromFree();
+			return;
 		}
 		// остров: сверху — спрыгивает на траву, в бок — не пускает (кроме полёта в портал)
 		if (!PB.perch && P.mode === 'free' && PB.auto?.then !== 'portal') {
@@ -3031,7 +3233,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				break;
 			}
 			case 'breakPortal':
-				Object.assign(target, {armRx: swing(0.3), armRz: 0.1, headPitch: -0.1});
+			case 'breakEgg':
+				Object.assign(target, {armRx: swing(0.3), armRz: 0.1, headPitch: -0.2});
 				break;
 			case 'wall': {
 				const ph = (PB.poseT / 0.45) % 1;
@@ -3169,11 +3372,31 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			ph.sparks.setMatrixAt(i, dummy.matrix);
 		});
 		ph.sparks.instanceMatrix.needsUpdate = true;
-		// портал в Энд выпрыгивает из земли
-		if (endPopAt >= 0) {
-			const k = (now - endPopAt) / 0.55;
-			portalEndOver.group.scale.setScalar(Math.max(0.001, easeOutBack(k)));
-			if (k >= 1) endPopAt = -1;
+		// появление порталов в Энд: рамка растёт, глаза загораются, бездна разливается, столб света
+		for (const p of portals) {
+			if (p.appearAt < 0 || !p.parent.visible) continue;
+			const t = now - p.appearAt;
+			const t0 = surfaceStart(p);
+			const g = (x, y, z) => world.worldToLocal(p.group.localToWorld(tmp.set(x, y, z)));
+			if (p.fxStage === 0) {
+				p.fxStage = 1;
+				if (p.style === 'frame') for (const [i, j] of RING) spawnDebris(g((i - 2) * p.S, 0.1, (j - 2) * p.S), '#dedfa6', 2, 0.35, 0.8);
+			}
+			if (p.fxStage === 1 && p.style === 'frame' && t > 1.05) {
+				p.fxStage = 2;
+				for (const [i, j] of RING) spawnDebris(g((i - 2) * p.S, p.frameH + 0.1, (j - 2) * p.S), '#5dffb0', 1, 0.3, 0.6);
+			}
+			if (p.fxStage < 3 && t > t0) {
+				p.fxStage = 3;
+				for (let i = 0; i < 16; i++) spawnDebris(g(0, p.y + 0.1, 0), i % 2 ? '#9ff0d8' : '#c9a6ff', 1, 0.7, 0.7);
+				const c = toPx(p.group.localToWorld(tmp.set(0, p.y, 0)));
+				const r = canvas.getBoundingClientRect();
+				flash(r.left + c.x, r.top + c.y);
+			}
+			if (t >= appearTime(p)) {
+				p.appearAt = -1;
+				p.animate(Infinity);
+			} else p.animate(t);
 		}
 		worlds[worldId].tick?.(dt, idle);
 		if (worldId === 'over' && !visitedNether && P.mode === 'idle' && !P.queue.length && heroVisible && now > portalHintAt) {
