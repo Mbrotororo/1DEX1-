@@ -2,10 +2,11 @@
 import {ACHIEVEMENTS, count, notify, onChange, renderList, unlock} from './achievements.js';
 import * as auth from './auth.js';
 import {initCollab} from './collab.js';
-import {CASE, LEGAL, MARQUEE, SITE, TASKS, VISUALS} from './data.js';
+import {CASE, FARM, LEGAL, MARQUEE, SITE, TASKS, VISUALS} from './data.js';
 import {initFootWord} from './footer.js';
 import {applyI18n, getLang, locale, onLang, setLang, t} from './i18n.js';
 import {getDoc} from './legal.js';
+import {fontReady} from './voxelword.js';
 import {caseArt, coverArt, icon, navIcon} from './pixel.js';
 import {breakSound} from './sound.js';
 
@@ -767,15 +768,57 @@ auth.init().then(async () => {
 });
 
 // ---------- 3D-сцена первого экрана (грузится последней, чтобы не тормозить страницу) ----------
-import('./hero.js')
-	.then(({initHero}) => {
+// ---------- панель адской фермы (видна, когда персонаж за порталом) ----------
+const farmHud = $('#farm-hud');
+let inNether = false;
+const paintFarmHud = () => {
+	farmHud.hidden = !inNether;
+	if (!inNether) return;
+	const n = auth.current()?.farm?.warts || 0;
+	$('#farm-count').textContent = t('farm.count', {n, max: FARM.wartsForCase});
+	$('#farm-bar').style.width = `${(n / FARM.wartsForCase) * 100}%`;
+	$('#farm-hint').textContent = t('farm.hint', {hours: FARM.growHours, max: FARM.wartsForCase});
+};
+auth.onAuth(paintFarmHud);
+onLang(paintFarmHud);
+
+// надпись «1DEX1 SHOP» собирается из букв шрифта сайта — сначала ждём шрифт
+Promise.all([import('./hero.js'), fontReady()])
+	.then(([{initHero}]) => {
 		const tier = (id) => t(`tier.${id}`);
 		const ok = initHero($('#hero-gl'), {
 			reducedMotion,
 			wall: $('#marquee'),
 			sky: $('#hero-sky'),
+			// ферма за порталом: посадить и собрать — через аккаунт (сервер или браузер)
+			farm: {
+				loggedIn: () => Boolean(auth.current()),
+				plant: (plot) => auth.farmPlant(plot),
+				harvest: (plot) => auth.farmHarvest(plot),
+			},
 			on(event, data) {
 				switch (event) {
+					case 'portal':
+						if (data === 'nether') unlock('nether');
+						break;
+					case 'world':
+						inNether = data === 'nether';
+						paintFarmHud();
+						if (inNether) notify(t('toast.nether'));
+						break;
+					case 'farmLogin':
+						notify(t('toast.farmLogin'));
+						openAuth('login');
+						break;
+					case 'farmError':
+						notify(errText(data));
+						break;
+					case 'harvest':
+						if (data?.caseAwarded) {
+							breakSound();
+							notify(t('toast.farmCase'));
+						}
+						break;
 					case 'break':
 						blockBroken('kirka');
 						break;
@@ -823,6 +866,11 @@ import('./hero.js')
 			},
 		});
 		document.documentElement.classList.add(ok ? 'has-gl' : 'no-gl');
+		// ферма в сцене показывает грядки вошедшего игрока
+		if (ok) {
+			ok.setFarm(auth.current()?.farm);
+			auth.onAuth((user) => ok.setFarm(user?.farm));
+		}
 		// адрес с ?debug открывает доступ к сцене из консоли — нужно только для проверки
 		if (new URLSearchParams(location.search).has('debug')) window.__hero = ok;
 	})

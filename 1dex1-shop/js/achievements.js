@@ -1,4 +1,4 @@
-// Достижения: 8 обычных и 2 секретных. Хранятся в браузере посетителя
+// Достижения: 8 обычных и 3 секретных. Хранятся в браузере посетителя
 // (localStorage), сервер для них не нужен.
 import {t} from './i18n.js';
 import {icon} from './pixel.js';
@@ -17,6 +17,7 @@ export const ACHIEVEMENTS = [
 	{id: 'digger', icon: 'shovel'},
 	{id: 'treasure', icon: 'gem', hidden: true},
 	{id: 'tickle', icon: 'feather', hidden: true},
+	{id: 'nether', icon: 'portal', hidden: true},
 ];
 
 const load = () => {

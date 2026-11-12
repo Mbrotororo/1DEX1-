@@ -7,7 +7,7 @@ import {createServer} from 'node:http';
 import {extname, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
-import {CASE, TASKS} from '../js/data.js';
+import {CASE, FARM, TASKS} from '../js/data.js';
 import {q, tx} from './db.js';
 import {mailConfigured, sendCode} from './mail.js';
 
@@ -121,6 +121,13 @@ const taskStates = (u) => {
 	}
 	return out;
 };
+// Адская ферма: на какой грядке когда посажено (null — пусто) и сколько наростов собрано
+const GROW_MS = FARM.growHours * 3600e3;
+const farmJson = (u) => {
+	const plots = Array.from({length: FARM.plots}, () => null);
+	for (const r of q('SELECT plot, planted_at FROM farm WHERE user_id = ?').all(u.id)) if (r.plot < FARM.plots) plots[r.plot] = r.planted_at;
+	return {plots, warts: u.warts || 0};
+};
 const userJson = (id) => {
 	const u = q('SELECT * FROM users WHERE id = ?').get(id);
 	if (!u) return null;
@@ -144,6 +151,7 @@ const userJson = (id) => {
 			.all(u.id)
 			.map((o) => ({id: `o${o.id}`, productId: o.product_id, title: o.title, titleEn: o.title_en, price: rub(o.price), at: iso(o.created_at)})),
 		tasks: taskStates(u),
+		farm: farmJson(u),
 	};
 };
 const productJson = (p) => ({
@@ -317,6 +325,44 @@ route(
 			q('INSERT INTO case_opens (user_id, source, prize, created_at) VALUES (?, ?, ?, ?)').run(u.id, source, prize.id, now);
 			return [200, {prize, source}];
 		}),
+	{auth: true},
+);
+
+// --- адская ферма: посадить нарост и собрать созревший. Время роста считает сервер ---
+const plotOf = (body) => {
+	const plot = Number(body.plot);
+	return Number.isInteger(plot) && plot >= 0 && plot < FARM.plots ? plot : null;
+};
+route(
+	'POST',
+	'farm/plant',
+	({body, user}) => {
+		const plot = plotOf(body);
+		if (plot === null) return [400, {error: 'bad_plot'}];
+		const r = q('INSERT INTO farm (user_id, plot, planted_at) VALUES (?, ?, ?) ON CONFLICT (user_id, plot) DO NOTHING').run(user.id, plot, Date.now());
+		if (!r.changes) return [409, {error: 'farm_busy'}];
+		return [200, {ok: true}];
+	},
+	{auth: true},
+);
+route(
+	'POST',
+	'farm/harvest',
+	({body, user}) => {
+		const plot = plotOf(body);
+		if (plot === null) return [400, {error: 'bad_plot'}];
+		return tx(() => {
+			const row = q('SELECT planted_at FROM farm WHERE user_id = ? AND plot = ?').get(user.id, plot);
+			if (!row) return [409, {error: 'farm_empty'}];
+			if (Date.now() - row.planted_at < GROW_MS) return [409, {error: 'farm_growing', ready: row.planted_at + GROW_MS}];
+			q('DELETE FROM farm WHERE user_id = ? AND plot = ?').run(user.id, plot);
+			const u = q('SELECT warts FROM users WHERE id = ?').get(user.id);
+			const warts = (u.warts || 0) + 1;
+			const caseAwarded = warts >= FARM.wartsForCase;
+			q('UPDATE users SET warts = ?, bonus_cases = bonus_cases + ? WHERE id = ?').run(caseAwarded ? warts - FARM.wartsForCase : warts, caseAwarded ? 1 : 0, user.id);
+			return [200, {caseAwarded}];
+		});
+	},
 	{auth: true},
 );
 

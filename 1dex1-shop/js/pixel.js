@@ -97,6 +97,8 @@ export const ICONS = {
 	plane: ['........p', '......ppP', '....ppPPP', '..ppPPPP.', 'ppPPqPPP.', '..pqqPP..', '...qqP...', '...qP....', '...q.....'],
 	shovel: ['.......SS', '......SwS', '.....bSS.', '....b....', '...b.....', '.sb......', 'sSs......', 'sSSs.....', '.ss......'],
 	gem: ['....l....', '...lLl...', '..lLLLl..', '.lLLwLLl.', 'lLLwLLLLl', '.lLLLLLl.', '..lLLLl..', '...lLl...', '....l....'],
+	// портал в Незер: рамка из обсидиана, внутри — фиолетовая завеса
+	portal: ['.ddddddd.', '.dqpPpqd.', '.dpPqPpd.', '.dqpPpqd.', '.dpqPqpd.', '.dPpqpPd.', '.dqPpPqd.', '.dpqpqpd.', '.ddddddd.'],
 	feather: ['......PPP', '.....PwwP', '....PwwP.', '...PwwP..', '..PwwP...', '.PwPP....', '.PP......', 'p........', '.........'],
 	// интерфейс
 	lock: ['...ddd...', '..d...d..', '..d...d..', '.ddddddd.', '.dsssssd.', '.dssdssd.', '.dssdssd.', '.dsssssd.', '.ddddddd.'],

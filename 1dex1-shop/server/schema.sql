@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
 	balance INTEGER NOT NULL DEFAULT 0,       -- баланс в копейках
 	bonus_cases INTEGER NOT NULL DEFAULT 0,   -- бесплатные кейсы за задания
 	case_at INTEGER,                          -- когда открыт ежедневный кейс
+	warts INTEGER NOT NULL DEFAULT 0,         -- собранные адские наросты (ферма за порталом)
 	created_at INTEGER NOT NULL
 );
 
@@ -88,6 +89,15 @@ CREATE TABLE IF NOT EXISTS case_opens (
 	source TEXT NOT NULL,
 	prize TEXT NOT NULL,
 	created_at INTEGER NOT NULL
+);
+
+-- Адская ферма: что и когда посажено на грядке (plot — номер грядки с 0).
+-- Собранные наросты копятся в users.warts, каждые FARM.wartsForCase — бесплатный кейс
+CREATE TABLE IF NOT EXISTS farm (
+	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	plot INTEGER NOT NULL,
+	planted_at INTEGER NOT NULL,
+	PRIMARY KEY (user_id, plot)
 );
 
 -- Задания: когда открыл ссылку и когда забрал кейс; achievements — награда за достижения

@@ -1,184 +1,247 @@
-// Подвал: большая надпись «1DEX1 SHOP» из блоков. Блоки светятся под курсором,
-// ломаются кликом (трещины -> осколки, как в Minecraft) и через 3 секунды
-// плавно появляются снова.
-import {CROSSHAIR, wordPixels} from './pixel.js';
+// Подвал: большая надпись «1DEX1 SHOP» в 3D из множества маленьких блоков (буквы из шрифта сайта).
+// Блоки светятся и приподнимаются под курсором, надпись чуть поворачивается за мышью.
+// Клик ломает кучку блоков — они разлетаются кубиками и быстро вырастают снова.
+// three.js загружается, только когда подвал близко к экрану.
+import {CROSSHAIR} from './pixel.js';
+import {burst, cellIndex, fontReady, rasterize, voxelState} from './voxelword.js';
 
-const RESPAWN = 3;
-const APPEAR = 0.7;
-const CRACK = 0.16;
+const FLY = 0.75; // сколько секунд летят выбитые кубики
+const PAD = 2; // поля вокруг надписи в блоках: место для наклона и разлёта
+const ROWS = 10; // высота буквы в блоках
 
-// Три стадии трещин: каждая строка — ряд из пяти «пикселей» внутри блока
-const CRACKS = [
-	['..#..', '..#..', '.##..', '.#...', '.....'],
-	['..#.#', '..##.', '.##..', '##.#.', '#..#.'],
-	['#.#.#', '.###.', '###.#', '##.##', '#.##.'],
-];
-
-const mix = (a, b, k) => a.map((v, i) => Math.round(v + (b[i] - v) * k));
-const easeOutCubic = (x) => 1 - Math.pow(1 - Math.min(1, Math.max(0, x)), 3);
+// цвет блока по свечению: тёмный -> фиолетовый -> голубой -> салатовый
+const DARK = [34, 27, 58];
+const PURPLE = [154, 107, 255];
+const mix = (a, b, k) => a.map((v, i) => v + (b[i] - v) * k);
 
 export const initFootWord = (canvas, {on = () => {}, reducedMotion = false} = {}) => {
-	const ctx = canvas.getContext('2d');
-	let cells = [];
-	let cols = 1;
-	let rows = 7;
-	let cell = 10;
-	let mouse = null;
-	let visible = false;
-	let t = 0;
-	const particles = [];
+	const wideNow = () => canvas.clientWidth >= 560;
+	// пока three.js не загрузился, держим примерную высоту, чтобы страница не прыгала
+	const guessHeight = () => {
+		const w = canvas.clientWidth;
+		if (w && !canvas.dataset.ready) canvas.style.height = `${Math.round(w * (wideNow() ? 0.115 : 0.46))}px`;
+	};
+	guessHeight();
+	addEventListener('resize', guessHeight);
 
-	// На широком экране надпись в одну строку, на телефоне — в две
-	const layout = (wide) => {
-		const lines = wide ? ['1DEX1 SHOP'] : ['1DEX1', 'SHOP'];
-		const words = lines.map(wordPixels);
-		cols = Math.max(...words.map((w) => w.width));
-		rows = lines.length * 7 + (lines.length - 1) * 2;
-		cells = [];
-		words.forEach((w, line) => {
-			const offset = Math.floor((cols - w.width) / 2);
-			for (const p of w.pixels) {
-				cells.push({gx: p.x + offset, gy: line * 9 + (6 - p.y), glow: 0, crackAt: -1, brokenAt: -1});
+	let started = false;
+	const start = () => {
+		if (started) return;
+		started = true;
+		Promise.all([import('../vendor/three.module.min.js'), fontReady()])
+			.then(([THREE]) => run(THREE))
+			.catch(() => {});
+	};
+	new IntersectionObserver(([e]) => e.isIntersecting && start(), {rootMargin: '700px 0px'}).observe(canvas);
+
+	const run = (THREE) => {
+		let renderer;
+		try {
+			renderer = new THREE.WebGLRenderer({canvas, antialias: true, alpha: true});
+		} catch {
+			return; // без WebGL подвал остаётся без надписи
+		}
+		canvas.dataset.ready = '1';
+		renderer.setClearColor(0x000000, 0);
+		const scene = new THREE.Scene();
+		const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -200, 200);
+		camera.position.set(0, 0, 100);
+		scene.add(new THREE.AmbientLight(0xcfc4ff, 1.45));
+		const key = new THREE.DirectionalLight(0xffffff, 2.3);
+		key.position.set(-0.45, 0.8, 1);
+		scene.add(key);
+		const group = new THREE.Group();
+		scene.add(group);
+
+		// блок: светлый, с тёмной рамкой и лёгким шумом — цвет задаётся каждому отдельно
+		const tc = document.createElement('canvas');
+		tc.width = tc.height = 16;
+		const tg = tc.getContext('2d');
+		for (let y = 0; y < 16; y++) {
+			for (let x = 0; x < 16; x++) {
+				const edge = x === 0 || y === 0 || x === 15 || y === 15;
+				const v = Math.round((edge ? 0.74 : 0.9 + ((x * 7 + y * 13) % 5) * 0.025) * 255);
+				tg.fillStyle = `rgb(${v},${v},${v})`;
+				tg.fillRect(x, y, 1, 1);
+			}
+		}
+		const tex = new THREE.CanvasTexture(tc);
+		tex.magFilter = THREE.NearestFilter;
+		tex.colorSpace = THREE.SRGBColorSpace;
+		const geo = new THREE.BoxGeometry(1, 1, 1.4);
+		const mat = new THREE.MeshLambertMaterial({map: tex});
+		// цвета свечения заранее, 64 ступени: тёмный -> фиолетовый, дальше по кругу цветов
+		// через голубой к салатовому (напрямую получается серый)
+		const PALETTE = Array.from({length: 64}, (_, i) => {
+			const g = i / 63;
+			if (g >= 0.5) {
+				const k = (g - 0.5) * 2;
+				return new THREE.Color().setHSL((263 - k * 181) / 360, 0.92 + k * 0.08, 0.66 - k * 0.04, THREE.SRGBColorSpace);
+			}
+			const [r, gg, b] = mix(DARK, PURPLE, g * 2);
+			return new THREE.Color().setRGB(r / 255, gg / 255, b / 255, THREE.SRGBColorSpace);
+		});
+
+		let mesh = null;
+		let word = null;
+		let list = [];
+		let find = () => -1;
+		let wide = null;
+		let W = 1;
+		let Hh = 1;
+		const build = (isWide) => {
+			if (wide === isWide) return;
+			wide = isWide;
+			word = rasterize(isWide ? ['1DEX1 SHOP'] : ['1DEX1', 'SHOP'], ROWS);
+			find = cellIndex(word);
+			list = word.cells.map((c) => ({...c, glow: 0, brokenAt: -1, regrowAt: 0, vx: 0, vy: 0, vz: 0, spin: 0, flyColor: 0}));
+			if (mesh) {
+				group.remove(mesh);
+				mesh.dispose();
+			}
+			mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, list.length));
+			mesh.frustumCulled = false;
+			list.forEach((_, i) => mesh.setColorAt(i, PALETTE[0]));
+			group.add(mesh);
+		};
+
+		let width = 1;
+		const resize = () => {
+			const w = canvas.clientWidth;
+			if (!w) return;
+			build(w >= 560);
+			W = word.width + PAD * 2;
+			Hh = word.height + PAD * 2;
+			const h = (w * Hh) / W;
+			width = w;
+			canvas.style.height = `${h.toFixed(1)}px`;
+			renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+			renderer.setSize(w, h, false);
+			camera.left = -W / 2;
+			camera.right = W / 2;
+			camera.top = Hh / 2;
+			camera.bottom = -Hh / 2;
+			camera.updateProjectionMatrix();
+		};
+
+		// ---- курсор: точка на надписи (в блоках) ----
+		const raycaster = new THREE.Raycaster();
+		const ndc = new THREE.Vector2();
+		const inv = new THREE.Matrix4();
+		const o = new THREE.Vector3();
+		const d = new THREE.Vector3();
+		let pointer = null; // {nx, ny} — от -1 до 1 по холсту
+		let aim = null; // {x, y} — точка на надписи
+		const aimAt = () => {
+			if (!pointer) return (aim = null);
+			ndc.set(pointer.nx, pointer.ny);
+			raycaster.setFromCamera(ndc, camera);
+			group.updateMatrixWorld();
+			inv.copy(group.matrixWorld).invert();
+			o.copy(raycaster.ray.origin).applyMatrix4(inv);
+			d.copy(raycaster.ray.origin).add(raycaster.ray.direction).applyMatrix4(inv).sub(o);
+			if (Math.abs(d.z) < 1e-6) return (aim = null);
+			const k = (0.7 - o.z) / d.z;
+			aim = {x: o.x + d.x * k, y: o.y + d.y * k};
+			return aim;
+		};
+		const local = (e) => {
+			const r = canvas.getBoundingClientRect();
+			return {nx: ((e.clientX - r.left) / r.width) * 2 - 1, ny: -(((e.clientY - r.top) / r.height) * 2 - 1)};
+		};
+		canvas.addEventListener('pointermove', (e) => {
+			pointer = local(e);
+			const a = aimAt();
+			canvas.style.cursor = a && find(list, a.x, a.y, 1) >= 0 ? CROSSHAIR : '';
+		});
+		canvas.addEventListener('pointerleave', () => {
+			pointer = null;
+			aim = null;
+			canvas.style.cursor = '';
+		});
+		let downAt = null;
+		canvas.addEventListener('pointerdown', (e) => (downAt = [e.clientX, e.clientY]));
+		canvas.addEventListener('pointerup', (e) => {
+			if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 10) return;
+			pointer = local(e);
+			const a = aimAt();
+			if (!a || find(list, a.x, a.y, 1.2) < 0) return;
+			const hit = burst(list, a.x, a.y, t, wide ? 3.4 : 3);
+			for (const v of hit) {
+				// кубики разлетаются от места удара и к зрителю
+				const dx = v.x - a.x;
+				const dy = v.y - a.y;
+				const len = Math.hypot(dx, dy) || 1;
+				const power = 5 + Math.random() * 6;
+				v.vx = (dx / len) * power + (Math.random() - 0.5) * 3;
+				v.vy = (dy / len) * power * 0.6 + 5 + Math.random() * 6;
+				v.vz = 8 + Math.random() * 10;
+				v.spin = (Math.random() - 0.5) * 16;
+				v.flyColor = Math.max(32, Math.round(v.glow * 63));
+			}
+			if (hit.length) on('break');
+			if (e.pointerType !== 'mouse') {
+				pointer = null;
+				aim = null;
 			}
 		});
-	};
 
-	const resize = () => {
-		const w = canvas.clientWidth;
-		if (!w) return;
-		layout(w >= 560);
-		const dpr = Math.min(window.devicePixelRatio || 1, 2);
-		cell = w / cols;
-		canvas.width = Math.round(w * dpr);
-		canvas.height = Math.round(cell * rows * dpr);
-		canvas.style.height = `${cell * rows}px`;
-		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-		draw();
-	};
-
-	const cellAt = (x, y) => {
-		const gx = Math.floor(x / cell);
-		const gy = Math.floor(y / cell);
-		return cells.find((c) => c.gx === gx && c.gy === gy);
-	};
-	const alive = (c) => c && c.brokenAt < 0 && c.crackAt < 0;
-
-	const colorOf = (g) =>
-		// тёмный блок -> фиолетовый -> салатовый
-		g < 0.5 ? mix([34, 27, 58], [154, 107, 255], g * 2) : mix([154, 107, 255], [184, 255, 61], (g - 0.5) * 2);
-
-	const shatter = (c) => {
-		c.brokenAt = t;
-		c.crackAt = -1;
-		const col = colorOf(Math.max(c.glow, 0.45));
-		for (let i = 0; i < 8; i++) {
-			particles.push({
-				x: (c.gx + 0.2 + Math.random() * 0.6) * cell,
-				y: (c.gy + 0.2 + Math.random() * 0.6) * cell,
-				vx: (Math.random() - 0.5) * cell * 7,
-				vy: -(1 + Math.random() * 5) * cell,
-				life: 0.5 + Math.random() * 0.4,
-				size: cell * (0.16 + Math.random() * 0.16),
-				col,
-			});
-		}
-		on('break');
-	};
-
-	const draw = () => {
-		const w = canvas.clientWidth;
-		const h = cell * rows;
-		ctx.clearRect(0, 0, w, h);
-		const gap = Math.max(1, cell * 0.08);
-		const px = (cell - gap) / 5;
-		for (const c of cells) {
-			const cx = (c.gx + 0.5) * cell;
-			const cy = (c.gy + 0.5) * cell;
-			let target = reducedMotion ? 0 : (Math.sin(t * 1.4 - c.gx * 0.45) * 0.5 + 0.5) * 0.16;
-			if (mouse) {
-				const d = Math.hypot(mouse.x - cx, mouse.y - cy) / (cell * 3.2);
-				target = Math.max(target, 1 - Math.min(1, d));
-			}
-			c.glow += (target - c.glow) * (target > c.glow ? 0.5 : 0.06);
-
-			let alpha = 1;
-			if (c.brokenAt >= 0) {
-				const since = t - c.brokenAt;
-				if (since < RESPAWN) continue;
-				alpha = easeOutCubic((since - RESPAWN) / APPEAR);
-				if (since >= RESPAWN + APPEAR) c.brokenAt = -1;
-			}
-			const x = c.gx * cell + gap / 2;
-			const y = c.gy * cell + gap / 2;
-			ctx.globalAlpha = alpha;
-			ctx.fillStyle = `rgb(${colorOf(c.glow)})`;
-			ctx.fillRect(x, y, cell - gap, cell - gap);
-
-			if (c.crackAt >= 0) {
-				// трещины становятся гуще, потом блок рассыпается
-				const k = (t - c.crackAt) / CRACK;
-				if (k >= 1) {
-					shatter(c);
-				} else {
-					const stage = CRACKS[Math.min(2, Math.floor(k * 3))];
-					ctx.fillStyle = 'rgba(8,5,16,.62)';
-					stage.forEach((line, r) => {
-						for (let i = 0; i < 5; i++) if (line[i] === '#') ctx.fillRect(x + i * px, y + r * px, px, px);
-					});
+		// ---- кадр ----
+		const dummy = new THREE.Object3D();
+		let t = 0;
+		let tiltX = 0;
+		let tiltY = 0;
+		let visible = false;
+		let last = performance.now();
+		const frame = (now) => {
+			requestAnimationFrame(frame);
+			const dt = Math.min(0.05, (now - last) / 1000);
+			last = now;
+			if (!visible || !mesh) return;
+			t += dt;
+			// наклон за мышью, без мыши — лёгкое покачивание
+			const tx = reducedMotion ? 0 : pointer ? pointer.ny * -0.2 : Math.sin(t * 0.45) * 0.05;
+			const ty = reducedMotion ? 0 : pointer ? pointer.nx * 0.28 : Math.sin(t * 0.32) * 0.1;
+			tiltX += (tx - tiltX) * (1 - Math.exp(-dt * 5));
+			tiltY += (ty - tiltY) * (1 - Math.exp(-dt * 5));
+			group.rotation.set(tiltX, tiltY, 0);
+			if (pointer) aimAt();
+			for (let i = 0; i < list.length; i++) {
+				const v = list[i];
+				let target = reducedMotion ? 0 : (Math.sin(t * 1.4 - v.x * 0.16) * 0.5 + 0.5) * 0.16;
+				let lift = 0;
+				if (aim) {
+					const near = 1 - Math.min(1, Math.hypot(aim.x - v.x, aim.y - v.y) / 4.6);
+					target = Math.max(target, near);
+					lift = near;
 				}
+				v.glow += (target - v.glow) * (target > v.glow ? 0.35 : 0.06);
+				const since = v.brokenAt >= 0 ? t - v.brokenAt : -1;
+				if (since >= 0 && since < FLY) {
+					// выбитый кубик летит, крутится и уменьшается
+					const k = since / FLY;
+					dummy.position.set(v.x + v.vx * since, v.y + v.vy * since - 16 * since * since, 0.7 + v.vz * since);
+					dummy.rotation.set(v.spin * since, v.spin * since * 0.7, 0);
+					dummy.scale.setScalar(Math.max(0.0001, 1 - k * 0.75));
+					mesh.setColorAt(i, PALETTE[v.flyColor]);
+				} else {
+					const s = voxelState(v, t);
+					dummy.position.set(v.x, v.y, lift * lift * 1.6);
+					dummy.rotation.set(0, 0, 0);
+					dummy.scale.setScalar(Math.max(0.0001, s) * (1 + lift * 0.08));
+					mesh.setColorAt(i, PALETTE[Math.round(Math.min(1, v.glow) * 63)]);
+				}
+				dummy.updateMatrix();
+				mesh.setMatrixAt(i, dummy.matrix);
 			}
-		}
-		ctx.globalAlpha = 1;
-		for (let i = particles.length - 1; i >= 0; i--) {
-			const p = particles[i];
-			p.life -= 1 / 60;
-			if (p.life <= 0) {
-				particles.splice(i, 1);
-				continue;
-			}
-			p.vy += cell * 22 * (1 / 60);
-			p.x += p.vx / 60;
-			p.y += p.vy / 60;
-			ctx.globalAlpha = Math.min(1, p.life * 3);
-			ctx.fillStyle = `rgb(${p.col})`;
-			ctx.fillRect(p.x, p.y, p.size, p.size);
-		}
-		ctx.globalAlpha = 1;
-	};
+			mesh.instanceMatrix.needsUpdate = true;
+			mesh.instanceColor.needsUpdate = true;
+			renderer.render(scene, camera);
+		};
 
-	const loop = () => {
-		if (visible) {
-			t += 1 / 60;
-			draw();
-		}
-		requestAnimationFrame(loop);
+		new ResizeObserver(resize).observe(canvas);
+		new IntersectionObserver(([e]) => (visible = e.isIntersecting)).observe(canvas);
+		resize();
+		requestAnimationFrame(frame);
 	};
-
-	const local = (e) => {
-		const r = canvas.getBoundingClientRect();
-		return {x: e.clientX - r.left, y: e.clientY - r.top};
-	};
-	canvas.addEventListener('pointermove', (e) => {
-		mouse = local(e);
-		// над блоком появляется прицел
-		canvas.style.cursor = alive(cellAt(mouse.x, mouse.y)) ? CROSSHAIR : '';
-	});
-	canvas.addEventListener('pointerleave', () => {
-		mouse = null;
-		canvas.style.cursor = '';
-	});
-	let downAt = null;
-	canvas.addEventListener('pointerdown', (e) => (downAt = local(e)));
-	canvas.addEventListener('pointerup', (e) => {
-		const p = local(e);
-		if (!downAt || Math.hypot(p.x - downAt.x, p.y - downAt.y) > 10) return;
-		const c = cellAt(p.x, p.y);
-		if (alive(c)) c.crackAt = t;
-		if (e.pointerType !== 'mouse') mouse = null;
-	});
-
-	new ResizeObserver(resize).observe(canvas);
-	new IntersectionObserver(([e]) => (visible = e.isIntersecting)).observe(canvas);
-	resize();
-	requestAnimationFrame(loop);
 };

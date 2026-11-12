@@ -219,6 +219,28 @@ ul{padding:0;list-style:none}
 /* прослойка поверх сайта, на которой летает персонаж */
 .dex-overlay{position:fixed;inset:0;width:100%;height:100%;z-index:35;pointer-events:none;display:none}
 .dex-overlay.is-on{display:block}
+/* портал: фиолетовое завихрение на весь первый экран, на его пике меняется мир */
+.hero-warp{position:absolute;inset:0;z-index:3;pointer-events:none;opacity:0;overflow:hidden;background:radial-gradient(circle at 50% 50%,rgba(224,190,255,.96),rgba(126,52,226,.94) 36%,rgba(36,8,84,.97) 78%)}
+.hero-warp::after{content:"";position:absolute;inset:-60%;background:repeating-conic-gradient(from 0deg,rgba(255,255,255,.2) 0 9deg,transparent 9deg 22deg)}
+.hero.is-warping .hero-warp{animation:warp 1.05s ease-in-out}
+.hero.is-warping .hero-warp::after{animation:warp-spin 1.05s linear}
+.hero.is-warping .hero__gl{animation:warp-wobble 1.05s ease-in-out}
+@keyframes warp{0%{opacity:0}40%,55%{opacity:1}100%{opacity:0}}
+@keyframes warp-spin{to{transform:rotate(220deg) scale(1.35)}}
+@keyframes warp-wobble{0%,100%{transform:none;filter:none}45%{transform:scale(1.07) skewX(5deg);filter:blur(3px) hue-rotate(40deg)}}
+/* Незер: красное небо, звёзды становятся тлеющими искрами */
+.hero.is-nether{background:radial-gradient(60% 70% at 74% 52%,rgba(255,74,26,.26),transparent 62%),linear-gradient(180deg,#140505 0%,#2a0a08 58%,#120405 100%)}
+.hero.is-nether .hero__sky{filter:hue-rotate(125deg) saturate(1.7) brightness(.7)}
+/* панель адской фермы */
+.farm-hud{width:min(380px,100%);margin-bottom:16px;padding:12px 14px;background:rgba(26,8,8,.82);border:2px solid #5a1a14;box-shadow:inset 0 0 0 2px rgba(0,0,0,.35);animation:rise .4s var(--ease) both}
+.farm-hud[hidden]{display:none}
+.farm-hud__head{display:flex;align-items:center;gap:8px;font-size:14px;color:#ffb48a}
+.farm-hud__head b{color:#fff;font-weight:600}
+.farm-hud__head .pxi{width:18px;height:18px}
+.farm-hud__head #farm-count{margin-left:auto;color:var(--gold)}
+.farm-hud__bar{height:10px;margin:9px 0 8px;background:#1a0606;box-shadow:inset 2px 2px 0 rgba(0,0,0,.5)}
+.farm-hud__bar i{display:block;height:100%;width:0;background:repeating-linear-gradient(90deg,#ff5a3a 0 10px,#c8202a 10px 12px);transition:width .5s var(--ease)}
+.farm-hud p{font-size:12.5px;line-height:1.45;color:#d9b9ae}
 /* вспышка телепорта персонажа (телефон, смена экрана): белое ядро и фиолетовые частицы, как у эндер-жемчуга */
 .tp-flash{position:fixed;left:0;top:0;z-index:36;width:0;height:0;pointer-events:none}
 .tp-flash b{position:absolute;left:calc(var(--s)*-.5);top:calc(var(--s)*-.5);width:var(--s);height:var(--s);border-radius:50%;background:radial-gradient(circle,#fff 0 16%,rgba(230,217,255,.95) 28%,rgba(154,107,255,.6) 48%,rgba(154,107,255,0) 70%);animation:tp-core .45s ease-out forwards}
