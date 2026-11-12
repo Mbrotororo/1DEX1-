@@ -58,7 +58,6 @@ public class PvpAiClient implements ClientModInitializer {
             ScreenMouseEvents.allowMouseClick(screen).register((s, click) -> !HudOverlay.onClick(click));
             ScreenMouseEvents.allowMouseDrag(screen).register((s, click, dx, dy) -> !HudOverlay.onDrag(click));
             ScreenMouseEvents.allowMouseRelease(screen).register((s, click) -> !HudOverlay.onRelease(click));
-            ScreenMouseEvents.allowMouseScroll(screen).register((s, mx, my, hAmount, vAmount) -> !HudOverlay.onScroll(mx, my, vAmount));
         });
 
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> Brain.INSTANCE.save());

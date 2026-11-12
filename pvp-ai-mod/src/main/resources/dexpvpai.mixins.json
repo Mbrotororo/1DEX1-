@@ -7,7 +7,6 @@
     "ClientPlayNetworkHandlerMixin",
     "LivingEntityMixin",
     "PlayerEntityRendererMixin",
-    "GameOptionsMixin",
     "GameRendererMixin"
   ],
   "injectors": {

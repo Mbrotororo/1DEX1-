@@ -61,6 +61,7 @@ public class MenuScreen extends Screen {
 
     public MenuScreen() {
         super(Text.literal("1DEX1"));
+        GlassMask.ensure();
     }
 
     private static ModConfig cfg() {
@@ -70,12 +71,6 @@ public class MenuScreen extends Screen {
     @Override
     public boolean shouldPause() {
         return false;
-    }
-
-    /** Blur amount 0..10 while this screen is open (fed to the blur shader as MenuBlurRadius, used to fade it in). */
-    public int blurRadius() {
-        if (!Theme.current().blur()) return 0;
-        return Math.max(0, Math.min(10, Math.round(10 * openProgress)));
     }
 
     // ------------------------------------------------------------------ open / close
@@ -207,7 +202,8 @@ public class MenuScreen extends Screen {
     public void renderBackground(DrawContext context, int mouseX, int mouseY, float deltaTicks) {
         openProgress = computeOpen();
         Theme th = Theme.current();
-        if (th.blur() && blurRadius() >= 1) context.applyBlur();
+        // glass: the blur pass runs, but the mask limits it to the panels (background stays sharp)
+        if (th.blur()) context.applyBlur();
         R2D.begin(context);
         R2D.rect(0, 0, width, height, R2D.withAlpha(th.overlay(), openProgress));
     }
@@ -253,12 +249,28 @@ public class MenuScreen extends Screen {
             R2D.alpha = a;
         }
 
+        // tell the glass shader where the panels are (with the same open animation transform)
+        GlassMask.begin();
+        if (th.blur()) {
+            glass(mainX, top, MAIN_W, mainH, e);
+            if (sa > 0.01f && shownIdx >= 0) glass(mainX + MAIN_W + GAP + (1 - sa) * 14, top, rightW, lastSetH, e * sa);
+        }
+        GlassMask.commit(width, height);
+
         context.getMatrices().popMatrix();
         R2D.alpha = 1f;
 
         if (PvpAiClient.DEV && ++frames % 120 == 0) {
             PvpAiClient.LOGGER.info("[dev] menu draw elements per frame: {}", R2D.elements);
         }
+    }
+
+    private float lastSetH;
+
+    private void glass(float x, float y, float w, float h, float a) {
+        float gx = pivotX + (x - pivotX) * curScale;
+        float gy = pivotY + (y - pivotY) * curScale + curOffY;
+        GlassMask.add(gx, gy, w * curScale, h * curScale, 14 * curScale, a);
     }
 
     private void panelBg(Theme th, float x, float y, float w, float h, float r) {
@@ -275,7 +287,7 @@ public class MenuScreen extends Screen {
         R2D.textMidCentered("1D", Font.S9, hx + 11, hcy, Theme.onAccent());
         R2D.textMid("1DEX1", Font.S11, hx + 31, hcy - 5, th.text());
         R2D.textMid("PvP AI client", Font.M7, hx + 31, hcy + 7, th.sub());
-        R2D.textMidRight("v1.1", Font.M7, x + MAIN_W - 14, hcy - 5, R2D.withAlpha(th.sub(), 0.7f));
+        R2D.textMidRight("v1.2", Font.M7, x + MAIN_W - 14, hcy - 5, R2D.withAlpha(th.sub(), 0.7f));
         R2D.rect(x + 12, y + 44, MAIN_W - 24, 1f / R2D.guiScale(), th.border());
 
         float ry = y + 44 + 6;
@@ -342,6 +354,7 @@ public class MenuScreen extends Screen {
         float contentH = MEASURED[idx];
         float h = Math.min(maxH, headerH + contentH);
         float animH = animFrom("setH", h, h, 16);
+        lastSetH = animH;
         panelBg(th, x, y, w, animH, 14);
         String name = idx == 0 ? "PvP AI" : "Визуал";
         R2D.textMid(name, Font.S9, x + 14, y + 13, th.text());

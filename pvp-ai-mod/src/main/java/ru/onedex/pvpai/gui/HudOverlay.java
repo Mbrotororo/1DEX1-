@@ -17,7 +17,7 @@ import ru.onedex.pvpai.gui.R2D.Font;
 
 /**
  * HUD mode: a compact card with the current fight analysis.
- * While the chat is open it can be dragged with the mouse, resized with the wheel, reset with RMB.
+ * While the chat is open it can be moved with the mouse, resized by dragging its edges/corners, reset with RMB.
  */
 public final class HudOverlay {
     private HudOverlay() {}
@@ -35,6 +35,14 @@ public final class HudOverlay {
     private static boolean dragging;
     private static double grabX, grabY;
     private static float editGlow;
+    /** Smoothly displayed scale. */
+    private static float dispScale = Float.NaN;
+    /** Resize state: which edges are grabbed and the fixed opposite corner (GUI units). */
+    private static boolean resizing;
+    private static int edgeX, edgeY; // -1 = left/top, 1 = right/bottom, 0 = not grabbed
+    private static double anchorX, anchorY;
+    private static float hoverEdges;
+    private static final float EDGE = 5;
 
     private static boolean editing(MinecraftClient mc) {
         return mc.currentScreen instanceof ChatScreen;
@@ -66,7 +74,10 @@ public final class HudOverlay {
 
         R2D.begin(ctx);
         int gs = R2D.guiScale();
-        float k = gs * c.hudScale;
+        if (Float.isNaN(dispScale)) dispScale = c.hudScale;
+        dispScale += (c.hudScale - dispScale) * (1 - (float) Math.exp(-dt * (resizing ? 30 : 16)));
+        if (Math.abs(dispScale - c.hudScale) < 0.001f) dispScale = c.hudScale;
+        float k = gs * dispScale;
         R2D.unit(k);
 
         WinModel.Result r = s == null ? null : (s.done ? s.result : s.live);
@@ -84,7 +95,7 @@ public final class HudOverlay {
             dispX = tx;
             dispY = ty;
         }
-        float follow = 1 - (float) Math.exp(-dt * (dragging ? 28 : 16));
+        float follow = 1 - (float) Math.exp(-dt * (dragging || resizing ? 30 : 16));
         dispX += (tx - dispX) * follow;
         dispY += (ty - dispY) * follow;
         float x = Math.round(dispX) / k, y = Math.round(dispY) / k;
@@ -157,13 +168,28 @@ public final class HudOverlay {
         }
 
         if (edit) {
-            String tip = "тяни мышкой · колесо " + Math.round(c.hudScale * 100) + "% · ПКМ сброс";
-            float tw = R2D.width(tip, Font.M6);
+            // resize handles on the corners and edge midpoints
+            double mx = mc.mouse.getScaledX(mc.getWindow()), my = mc.mouse.getScaledY(mc.getWindow());
+            boolean nearEdge = resizing || (!dragging && edgeAt(mx, my) != 0);
+            hoverEdges += ((nearEdge ? 1 : 0) - hoverEdges) * (1 - (float) Math.exp(-dt * 14));
+            float hr = 2.2f + hoverEdges * 0.8f;
+            int hc = R2D.lerpColor(R2D.withAlpha(accent, 0.75f), accent, hoverEdges);
+            float[][] pts = {{x, y}, {x + W, y}, {x, y + shownH}, {x + W, y + shownH},
+                    {x + W / 2f, y}, {x + W / 2f, y + shownH}, {x, y + shownH / 2f}, {x + W, y + shownH / 2f}};
+            for (float[] pt : pts) {
+                R2D.circle(pt[0], pt[1], hr + 0.8f, 0xFFFFFFFF);
+                R2D.circle(pt[0], pt[1], hr, hc);
+            }
+            String tip = resizing ? "размер " + Math.round(c.hudScale * 100) + "%"
+                    : "тяни — двигать · тяни за край — размер " + Math.round(c.hudScale * 100) + "% · ПКМ — сброс";
+            Font tf = resizing ? Font.S9 : Font.M6;
+            float tw = R2D.width(tip, tf);
+            float th2 = resizing ? 14 : 10;
             float tipX = Math.max(7, Math.min(x + W / 2f - tw / 2f, screenW / k - tw - 7));
-            float tipY = y + shownH + 7;
-            if (tipY * k > screenH - 4 * k) tipY = y - 7;
-            R2D.roundRect(tipX - 5, tipY - 5, tw + 10, 10, 5, 0xB0000000);
-            R2D.textMid(tip, Font.M6, tipX, tipY, 0xFFFFFFFF);
+            float tipY = y + shownH + 6 + th2 / 2f;
+            if ((tipY + th2) * k > screenH) tipY = y - 6 - th2 / 2f;
+            R2D.roundRect(tipX - 6, tipY - th2 / 2f, tw + 12, th2, th2 / 2f, 0xC0000000);
+            R2D.textMid(tip, tf, tipX, tipY, 0xFFFFFFFF);
         }
         R2D.alpha = 1f;
         R2D.unit(gs);
@@ -195,9 +221,32 @@ public final class HudOverlay {
         return visible && mx >= rectX && mx < rectX + rectW && my >= rectY && my < rectY + rectH;
     }
 
+    /** Which edges are under the mouse: bit 1/2 = left/right, bit 4/8 = top/bottom, 0 = none. */
+    private static int edgeAt(double mx, double my) {
+        if (!visible) return 0;
+        if (mx < rectX - EDGE || mx > rectX + rectW + EDGE || my < rectY - EDGE || my > rectY + rectH + EDGE) return 0;
+        int e = 0;
+        if (Math.abs(mx - rectX) <= EDGE) e |= 1;
+        else if (Math.abs(mx - (rectX + rectW)) <= EDGE) e |= 2;
+        if (Math.abs(my - rectY) <= EDGE) e |= 4;
+        else if (Math.abs(my - (rectY + rectH)) <= EDGE) e |= 8;
+        return e;
+    }
+
     /** @return true if the HUD consumed the click */
     public static boolean onClick(Click click) {
-        if (!enabled() || !over(click.x(), click.y())) return false;
+        if (!enabled() || !visible) return false;
+        int edges = edgeAt(click.x(), click.y());
+        if (click.button() == 0 && edges != 0) {
+            resizing = true;
+            edgeX = (edges & 1) != 0 ? -1 : (edges & 2) != 0 ? 1 : 0;
+            edgeY = (edges & 4) != 0 ? -1 : (edges & 8) != 0 ? 1 : 0;
+            // the opposite side stays where it is
+            anchorX = edgeX < 0 ? rectX + rectW : rectX;
+            anchorY = edgeY < 0 ? rectY + rectH : rectY;
+            return true;
+        }
+        if (!over(click.x(), click.y())) return false;
         if (click.button() == 0) {
             dragging = true;
             grabX = click.x() - rectX;
@@ -216,10 +265,27 @@ public final class HudOverlay {
     }
 
     public static boolean onDrag(Click click) {
-        if (!dragging) return false;
+        if (!dragging && !resizing) return false;
         MinecraftClient mc = MinecraftClient.getInstance();
         ModConfig c = ModConfig.INSTANCE;
         float screenW = mc.getWindow().getScaledWidth(), screenH = mc.getWindow().getScaledHeight();
+        if (resizing) {
+            // card size at 100% in GUI units
+            float baseW = W, baseH = Math.max(1, shownH);
+            double sx = edgeX != 0 ? Math.abs(click.x() - anchorX) / baseW : 0;
+            double sy = edgeY != 0 ? Math.abs(click.y() - anchorY) / baseH : 0;
+            float scale = (float) Math.max(sx, sy);
+            scale = Math.max(0.5f, Math.min(1.5f, Math.round(scale * 100f) / 100f));
+            c.hudScale = scale;
+            float w = baseW * scale, h = baseH * scale;
+            double left = edgeX < 0 ? anchorX - w : (edgeX > 0 ? anchorX : rectX + rectW / 2.0 - w / 2.0);
+            double top = edgeY < 0 ? anchorY - h : (edgeY > 0 ? anchorY : rectY + rectH / 2.0 - h / 2.0);
+            if (edgeX == 0) left = rectX;
+            if (edgeY == 0) top = rectY;
+            c.hudX = (float) Math.max(0, Math.min(1, left / Math.max(1, screenW - w)));
+            c.hudY = (float) Math.max(0, Math.min(1, top / Math.max(1, screenH - h)));
+            return true;
+        }
         double nx = click.x() - grabX, ny = click.y() - grabY;
         float freeW = Math.max(1, screenW - rectW), freeH = Math.max(1, screenH - rectH);
         c.hudX = (float) Math.max(0, Math.min(1, nx / freeW));
@@ -228,16 +294,9 @@ public final class HudOverlay {
     }
 
     public static boolean onRelease(Click click) {
-        if (!dragging) return false;
+        if (!dragging && !resizing) return false;
         dragging = false;
-        ModConfig.save();
-        return true;
-    }
-
-    public static boolean onScroll(double mx, double my, double amount) {
-        if (!enabled() || !over(mx, my) || amount == 0) return false;
-        ModConfig c = ModConfig.INSTANCE;
-        c.hudScale = Math.max(0.5f, Math.min(1.5f, Math.round((c.hudScale + (amount > 0 ? 0.05f : -0.05f)) * 20f) / 20f));
+        resizing = false;
         ModConfig.save();
         return true;
     }
