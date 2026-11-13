@@ -59,8 +59,6 @@
 		<div class="hero__fallback" aria-hidden="true">1DEX1</div>
 		<div class="hero__content">
 			<h1 class="visually-hidden" data-i18n="hero.h1">1DEX1 SHOP — моды и ресурс-паки для Minecraft</h1>
-			<p class="hero__hint px m-only" data-i18n="m.hint">Нажми на блок — он сломается</p>
-			<p class="hero__tagline m-only" data-i18n="m.tagline">Моды и ресурс-паки из моих роликов</p>
 			<div class="hero__cta">
 				<a class="btn btn--lime btn--hero" href="#shop"><span data-i18n="hero.cta">В магазин</span>
 					<svg class="arr" viewBox="0 0 7 7" aria-hidden="true"><path d="M3 0h1v4h1v1H4v1H3V5H2V4h1z"/><path d="M1 3h1v1H1zM5 3h1v1H5z"/></svg>
@@ -71,17 +69,10 @@
 
 	<div class="marquee px" id="marquee" aria-hidden="true" data-page="home"></div>
 
-	<!-- ============ ГЛАВНАЯ НА ТЕЛЕФОНЕ: плитки, лента товаров, разделы ============ -->
+	<!-- ============ ГЛАВНАЯ НА ТЕЛЕФОНЕ: товары и разделы ============ -->
 	<section class="mhome m-only" id="mhome" data-page="home" aria-label="Главная" data-i18n-attr="aria-label:m.home">
-		<div class="mtiles">
-			<a class="mtile" href="#shop" data-shop-filter="mod"><span class="mtile__ic" data-icon="pick"></span><span><b data-i18n="shop.mods">Моды</b><small class="px" data-count="mod">0</small></span></a>
-			<a class="mtile" href="#shop" data-shop-filter="rp"><span class="mtile__ic" data-icon="gem"></span><span><b data-i18n="m.rp">Ресурс-паки</b><small class="px" data-count="rp">0</small></span></a>
-			<a class="mtile" href="#cases"><span class="mtile__ic" data-icon="chest"></span><span><b data-i18n="m.case">Кейс</b><small class="px" id="m-case-state">—</small></span></a>
-			<button class="mtile" type="button" data-open-ach><span class="mtile__ic" data-icon="trophy"></span><span><b data-i18n="m.ach">Достижения</b><small class="px" data-ach-count>0/12</small></span></button>
-		</div>
 		<div class="mhead">
 			<h2 data-i18n="shop.label">Магазин</h2>
-			<a href="#shop" data-shop-filter="all" data-i18n="m.all">Все товары</a>
 		</div>
 		<div class="mcards" id="mcards"></div>
 		<nav class="mrows" aria-label="Разделы" data-i18n-attr="aria-label:hb.aria">

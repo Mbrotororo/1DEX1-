@@ -718,37 +718,26 @@ h2{font:400 clamp(26px,4vw,50px)/1.05 var(--font-display);letter-spacing:-.01em;
 	html[data-page]:not([data-page="home"]) .topbar__right{display:none}
 	.topbar__back svg{width:9px;height:14px;fill:currentColor}
 
-	/* первый экран — компактный: остров с надписью, подсказка и слоган */
+	/* первый экран — компактный: только остров с надписью */
 	.hero{padding-bottom:4px}
 	.hero__gl{height:min(52svh,420px)}
 	.hero__content{width:100%;margin:0}
 	.hero__cta{display:none}
-	.hero__hint{display:block;margin-top:-4px;font-size:12px;letter-spacing:.04em;text-align:center;color:var(--dim)}
-	.hero__tagline{display:block;margin:10px 0 2px;font:400 clamp(19px,5.6vw,24px)/1.15 var(--font-display);word-spacing:-.35em}
 	.marquee{padding:10px 0}
 
-	/* Главная: плитки 2×2 */
+	/* Главная: товары сеткой 2×2 (ровно по ширине экрана), ниже — разделы */
 	.mhome{display:block;padding:18px var(--gutter) 6px}
-	.mtiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-	.mtile{display:flex;align-items:center;gap:12px;min-width:0;padding:10px;color:var(--ink);font:inherit;text-align:left;text-decoration:none;cursor:pointer;background:var(--surface);border:2px solid var(--line);box-shadow:var(--bevel);transition:border-color .15s,transform .15s}
-	.mtile:active{transform:translateY(2px);border-color:var(--line-2)}
-	.mtile__ic{display:grid;place-items:center;flex:none;width:42px;height:42px;font-size:22px;background:var(--well)}
-	.mtile>span:last-child{min-width:0}
-	.mtile b{display:block;overflow:hidden;font-size:15px;font-weight:600;line-height:1.2;white-space:nowrap;text-overflow:ellipsis}
-	.mtile small{display:block;margin-top:3px;font-size:12px;color:var(--dim)}
-	/* лента товаров */
-	.mhead{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:26px 0 12px}
+	.mhead{margin:4px 0 12px}
 	.mhead h2{font:400 20px/1 var(--font-display);word-spacing:-.3em}
-	.mhead a{font-size:14px;color:var(--muted);text-decoration:none}
-	.mcards{display:flex;gap:10px;overflow-x:auto;margin:0 calc(var(--gutter)*-1);padding:0 var(--gutter) 4px;scroll-snap-type:x mandatory;scroll-padding-inline:var(--gutter);scrollbar-width:none}
-	.mcards::-webkit-scrollbar{display:none}
-	.mcard{flex:none;display:grid;justify-items:start;gap:4px;width:44%;padding:12px;color:var(--ink);font:inherit;text-align:left;cursor:pointer;scroll-snap-align:start;background:var(--surface);border:2px solid var(--line);box-shadow:var(--bevel)}
+	.mcards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+	.mcard{display:grid;align-content:start;justify-items:start;gap:4px;min-width:0;padding:12px;color:var(--ink);font:inherit;text-align:left;cursor:pointer;background:var(--surface);border:2px solid var(--line);box-shadow:var(--bevel)}
+	.mcard b,.mcard small{max-width:100%;overflow-wrap:anywhere}
 	.mcard__ic{display:grid;place-items:center;width:46px;height:46px;margin-bottom:6px;overflow:hidden;font-size:26px;background:var(--well);border:2px solid var(--line)}
 	.mcard__ic img{width:100%;height:100%;object-fit:cover}
 	.mcard b{font-size:15px;font-weight:600;line-height:1.2}
 	.mcard small{font-size:12.5px;color:var(--dim)}
 	.mcard__price{margin-top:6px;font-size:16px;color:var(--gold)}
-	.mcard--empty{width:100%;cursor:default}
+	.mcard--empty{grid-column:1/-1;cursor:default}
 	/* список разделов */
 	.mrows{display:grid;margin-top:18px;background:var(--surface);border:2px solid var(--line);box-shadow:var(--bevel)}
 	.mrow{display:flex;align-items:center;gap:14px;min-height:56px;padding:0 14px;color:var(--ink);font-size:16px;text-decoration:none}
@@ -761,6 +750,10 @@ h2{font:400 clamp(26px,4vw,50px)/1.05 var(--font-display);letter-spacing:-.01em;
 	.section{padding:calc(var(--topbar) + var(--safe-top) + 14px) 0 28px}
 	.section .head{display:none}
 	.mfaq{display:block}
+
+	/* Сотрудничество: рамка выше, аватарка меньше — значкам есть где летать и над ней, и под ней */
+	.collab__space{height:clamp(340px,46svh,390px)}
+	.collab__ava{width:112px}
 
 	/* Магазин: фильтры лентой, товары строками (картинка, название, цена, кнопка) */
 	.tabs{display:flex;flex-wrap:nowrap;width:100%;margin-bottom:14px;overflow-x:auto;scrollbar-width:none}
@@ -783,9 +776,10 @@ h2{font:400 clamp(26px,4vw,50px)/1.05 var(--font-display);letter-spacing:-.01em;
 	.case__stage{min-height:220px;background:repeating-conic-gradient(from 0deg at 50% 52%,rgba(255,200,61,.09) 0 7deg,transparent 7deg 20deg),radial-gradient(60% 60% at 50% 52%,rgba(255,200,61,.16),transparent 70%),var(--well)}
 	.case>*{min-width:0}
 	.case__body{padding:18px 16px}
-	.case__loot{display:flex;gap:8px;margin:16px -16px 18px;padding:0 16px 4px;overflow-x:auto;scrollbar-width:none}
-	.case__loot::-webkit-scrollbar{display:none}
-	.case__loot li{flex:none;min-width:156px}
+	.case__loot{grid-template-columns:1fr;gap:8px;margin:16px 0 18px}
+	.case__loot li>span{display:flex;flex:1;align-items:center;justify-content:space-between;gap:10px;min-width:0}
+	.case__loot b{min-width:0}
+	.case__loot small{flex:none;font-size:12.5px}
 	.tasks{padding:16px}
 
 	/* Частые вопросы */
@@ -827,7 +821,6 @@ h2{font:400 clamp(26px,4vw,50px)/1.05 var(--font-display);letter-spacing:-.01em;
 
 /* ============ узкий телефон ============ */
 @media (max-width:380px){
-	.case__loot{grid-template-columns:1fr}
 	.logo__name{font-size:15px}
 }
 

@@ -2209,8 +2209,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		['.social .btn', false],
 		['.foot__word', false],
 		['.foot__links button', false],
-		// телефон: плитки, лента товаров, список разделов, вопросы
-		['.mtile', false],
+		// телефон: товары, список разделов, вопросы
 		['.mcard', false],
 		['.mrows', false],
 		['.mhead h2', true],

@@ -159,18 +159,17 @@ const card = (p, i) => {
 		</div>
 	</article>`;
 };
-// телефон: лента товаров на Главной (первые 8) и счётчики на плитках
+// телефон: товары на Главной — сетка 2×2, первые четыре
 const renderPhoneShop = () => {
 	$('#mcards').innerHTML = products.length
 		? products
-				.slice(0, 8)
+				.slice(0, 4)
 				.map(
 					(p) =>
 						`<button class="mcard" type="button" data-product="${esc(p.id)}"><span class="mcard__ic">${p.cover ? `<img src="${esc(p.cover)}" alt="" loading="lazy">` : icon(p.kind === 'rp' ? 'gem' : 'pick')}</span><b>${esc(titleOf(p))}</b><small>${t(`kind.${p.kind}`)}</small><span class="mcard__price px">${priceOf(p)}</span></button>`,
 				)
 				.join('')
 		: `<div class="mcard mcard--empty"><span class="mcard__ic">${icon('chest')}</span><b>${t('m.soonT')}</b><small>${t('m.soonP')}</small></div>`;
-	$$('[data-count]').forEach((el) => (el.textContent = products.filter((p) => p.kind === el.dataset.count).length));
 };
 // телефон: карточка товара выезжает снизу (описание и кнопки покупки)
 const sheet = $('#product-sheet');
@@ -209,13 +208,6 @@ $('#shop-tabs').addEventListener('click', (e) => {
 	filter = b.dataset.filter;
 	seenTabs.add(filter);
 	if (seenTabs.has('mod') && seenTabs.has('rp')) unlock('showcase');
-	renderShop();
-});
-// плитки «Моды» / «Ресурс-паки» / «Все товары» на Главной телефона открывают магазин с нужным фильтром
-document.addEventListener('click', (e) => {
-	const f = e.target.closest('[data-shop-filter]');
-	if (!f) return;
-	filter = f.dataset.shopFilter;
 	renderShop();
 });
 // телефон: нажатие на строку товара (не на кнопку) открывает его карточку
@@ -654,7 +646,6 @@ let paintCase = () => {};
 	const prizeBox = $('#case-prize');
 	const btn = $('#case-open');
 	const dots = [$('.hotbar__dot'), $('.topnav__dot')].filter(Boolean);
-	const mCase = $('#m-case-state');
 	const LOOT_ICON = {money: 'coin', rp: 'gem'};
 	art.innerHTML = caseArt();
 	const total = CASE.loot.reduce((sum, l) => sum + l.chance, 0);
@@ -686,7 +677,6 @@ let paintCase = () => {};
 		const ms = left();
 		const bonus = user?.bonusCases || 0;
 		dots.forEach((d) => (d.hidden = Boolean(user) && ms > 0 && !bonus));
-		set(mCase, 'textContent', !user ? t('m.caseLogin') : ms === 0 || bonus > 0 ? t('m.caseReady') : t('m.caseIn', {t: clock(ms)}));
 		if (!user) {
 			set(btn, 'disabled', false);
 			set(btn, 'textContent', t('case.login'));
