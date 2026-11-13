@@ -9,7 +9,7 @@ import {applyI18n, getLang, locale, onLang, setLang, t} from './i18n.js';
 import {getDoc} from './legal.js';
 import {fontReady} from './voxelword.js';
 import {caseArt, coverArt, icon, navIcon} from './pixel.js';
-import {breakSound, punchSound} from './sound.js';
+import {breakSound, punchSound, shatterSound} from './sound.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -1193,7 +1193,10 @@ Promise.all([import('./hero.js'), fontReady()])
 						unlock('tickle');
 						break;
 					case 'rageHit':
-						punchSound();
+						punchSound(data);
+						break;
+					case 'shatter':
+						shatterSound();
 						break;
 					default:
 				}

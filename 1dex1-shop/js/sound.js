@@ -25,8 +25,8 @@ export const breakSound = () => {
 	}
 };
 
-// Удар кулаком по экрану: низкий «бум» и хруст стекла
-export const punchSound = () => {
+// Удар по экрану: низкий «бум» и хруст стекла. kind: punchR / punchL / head / kick — разный тембр
+export const punchSound = (kind = 'punchR') => {
 	try {
 		ctx ||= new (window.AudioContext || window.webkitAudioContext)();
 		if (ctx.state === 'suspended') ctx.resume();
@@ -34,9 +34,10 @@ export const punchSound = () => {
 		const boom = ctx.createOscillator();
 		const bg = ctx.createGain();
 		boom.type = 'sine';
-		boom.frequency.setValueAtTime(110, t0);
+		boom.frequency.setValueAtTime(kind === 'head' ? 80 : kind === 'kick' ? 130 : 110, t0);
 		boom.frequency.exponentialRampToValueAtTime(38, t0 + 0.35);
-		bg.gain.setValueAtTime(0.55, t0);
+		const vol = kind === 'grab' ? 0.45 : 1; // хватается за край дыры — тише, чем удар
+		bg.gain.setValueAtTime(0.55 * vol, t0);
 		bg.gain.exponentialRampToValueAtTime(0.001, t0 + 0.45);
 		boom.connect(bg).connect(ctx.destination);
 		boom.start(t0);
@@ -56,9 +57,42 @@ export const punchSound = () => {
 		hp.type = 'highpass';
 		hp.frequency.value = 2400;
 		const g = ctx.createGain();
-		g.gain.value = 0.32;
+		g.gain.value = 0.32 * vol;
 		src.connect(hp).connect(g).connect(ctx.destination);
 		src.start(t0 + 0.02);
+	} catch {
+		// звук не обязателен
+	}
+};
+
+// Стекло лопнуло и посыпалось: громкий хруст, потом звон падающих осколков
+export const shatterSound = () => {
+	try {
+		ctx ||= new (window.AudioContext || window.webkitAudioContext)();
+		if (ctx.state === 'suspended') ctx.resume();
+		const t0 = ctx.currentTime;
+		const dur = 1.6;
+		const buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * dur), ctx.sampleRate);
+		const data = buf.getChannelData(0);
+		// хруст в начале
+		for (let i = 0; i < ctx.sampleRate * 0.25; i++) data[i] += (Math.random() * 2 - 1) * Math.pow(1 - i / (ctx.sampleRate * 0.25), 2) * 0.9;
+		// звон: короткие высокие «тинь» в случайные моменты
+		for (let c = 0; c < 28; c++) {
+			const at = Math.floor(ctx.sampleRate * (0.15 + Math.random() * 1.3));
+			const f = 2500 + Math.random() * 4500;
+			const len = Math.floor(ctx.sampleRate * (0.03 + Math.random() * 0.08));
+			const amp = 0.25 + Math.random() * 0.35;
+			for (let i = 0; i < len && at + i < data.length; i++) data[at + i] += Math.sin((2 * Math.PI * f * i) / ctx.sampleRate) * Math.exp(-i / (len * 0.25)) * amp;
+		}
+		const src = ctx.createBufferSource();
+		src.buffer = buf;
+		const hp = ctx.createBiquadFilter();
+		hp.type = 'highpass';
+		hp.frequency.value = 900;
+		const gain = ctx.createGain();
+		gain.gain.value = 0.35;
+		src.connect(hp).connect(gain).connect(ctx.destination);
+		src.start(t0);
 	} catch {
 		// звук не обязателен
 	}
