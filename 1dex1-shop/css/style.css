@@ -287,6 +287,8 @@ h2{font:400 clamp(26px,4vw,50px)/1.05 var(--font-display);letter-spacing:-.01em;
 .item__cover::after{content:"";position:absolute;inset:-40% -60%;background:linear-gradient(105deg,transparent 46%,rgba(255,255,255,.16) 50%,transparent 54%);transform:translateX(-60%);transition:transform .9s var(--ease);pointer-events:none}
 .item:hover .item__cover::after{transform:translateX(60%)}
 .item__cover .tag{position:absolute;left:12px;top:12px}
+.item__cover .tag--excl{left:auto;right:12px;background:#eaf3ff;color:#1d2246;box-shadow:0 2px 0 #9fb6e8}
+.item__excl{color:#bcd6ff}
 .item__body{display:flex;flex-direction:column;flex:1;min-width:0;padding:18px 18px 20px}
 .item__kind{font-size:13px;color:var(--purple-hi);text-transform:uppercase;letter-spacing:.12em}
 .item__title{margin-top:6px;font:600 20px/1.2 var(--font-body)}

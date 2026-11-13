@@ -4,6 +4,9 @@
 //        --desc "Тёмное небо и звёзды" --tags 1.21,Optifine --cover img/rp-night.png \
 //        --file ~/packs/night.zip            (или --link https://… — внешняя ссылка)
 //        [--title-en "Night pack"] [--desc-en "…"] [--status soon] [--sort 1]
+//        [--until 2027-02-20]   эксклюзив: продаётся до этого дня включительно, потом пропадает
+//   npm run admin -- product import     перенести товары из js/data.js в базу
+//        (обновляет название, описание, цену, картинку и срок; загруженные файлы не трогает)
 //   npm run admin -- product list
 //   npm run admin -- product hide <id>  |  product show <id>  |  product remove <id>
 //   npm run admin -- product price <id> <рубли>
@@ -40,6 +43,34 @@ const kop = (v) => {
 	if (!Number.isFinite(n) || n < 0) fail(`не понял сумму «${v}»`);
 	return Math.round(n * 100);
 };
+const day = (v) => {
+	if (v === undefined || v === null || v === '' || v === true) return null;
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v)) || Number.isNaN(Date.parse(`${v}T00:00:00Z`))) fail(`дата «${v}»: нужно ГГГГ-ММ-ДД, например 2027-02-20`);
+	return String(v);
+};
+// Сохранить товар (новый или обновить старый); файл, если не передан, остаётся прежним
+const saveProduct = (p) =>
+	q(`INSERT INTO products (id, kind, status, title, title_en, descr, descr_en, tags, price, cover, link, file, sale_until, sort, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (id) DO UPDATE SET kind = excluded.kind, status = excluded.status, title = excluded.title, title_en = excluded.title_en,
+			descr = excluded.descr, descr_en = excluded.descr_en, tags = excluded.tags, price = excluded.price, cover = excluded.cover,
+			link = excluded.link, file = COALESCE(excluded.file, products.file), sale_until = excluded.sale_until, sort = excluded.sort, active = 1`).run(
+		p.id,
+		p.kind,
+		p.status,
+		p.title,
+		p.titleEn,
+		p.desc,
+		p.descEn,
+		JSON.stringify(p.tags),
+		p.price,
+		p.cover,
+		p.link,
+		p.file,
+		p.until,
+		p.sort,
+		Date.now(),
+	);
 const userBy = (nick) => q('SELECT * FROM users WHERE nick = ?').get(nick) || fail(`нет пользователя ${nick}`);
 const table = (rows) => (rows.length ? console.table(rows) : console.log('(пусто)'));
 
@@ -59,30 +90,49 @@ if (what === 'product' && action === 'add') {
 		file = `${id}${extname(src)}`;
 		copyFileSync(src, resolve(FILES, file));
 	}
-	const tags = opts.tags ? JSON.stringify(String(opts.tags).split(',').map((s) => s.trim()).filter(Boolean)) : '[]';
-	q(`INSERT INTO products (id, kind, status, title, title_en, descr, descr_en, tags, price, cover, link, file, sort, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT (id) DO UPDATE SET kind = excluded.kind, status = excluded.status, title = excluded.title, title_en = excluded.title_en,
-			descr = excluded.descr, descr_en = excluded.descr_en, tags = excluded.tags, price = excluded.price, cover = excluded.cover,
-			link = excluded.link, file = COALESCE(excluded.file, products.file), sort = excluded.sort, active = 1`).run(
+	saveProduct({
 		id,
-		opts.kind,
-		opts.status === 'soon' ? 'soon' : 'ready',
-		String(opts.title),
-		opts['title-en'] ? String(opts['title-en']) : null,
-		opts.desc ? String(opts.desc) : '',
-		opts['desc-en'] ? String(opts['desc-en']) : null,
-		tags,
+		kind: opts.kind,
+		status: opts.status === 'soon' ? 'soon' : 'ready',
+		title: String(opts.title),
+		titleEn: opts['title-en'] ? String(opts['title-en']) : null,
+		desc: opts.desc ? String(opts.desc) : '',
+		descEn: opts['desc-en'] ? String(opts['desc-en']) : null,
+		tags: opts.tags ? String(opts.tags).split(',').map((s) => s.trim()).filter(Boolean) : [],
 		price,
-		opts.cover ? String(opts.cover) : null,
-		opts.link ? String(opts.link) : null,
+		cover: opts.cover ? String(opts.cover) : null,
+		link: opts.link ? String(opts.link) : null,
 		file,
-		Number(opts.sort) || 0,
-		Date.now(),
-	);
+		until: day(opts.until),
+		sort: Number(opts.sort) || 0,
+	});
 	console.log(`Товар ${id} сохранён${file ? `, файл: server/files/${file}` : ''}.`);
+} else if (what === 'product' && action === 'import') {
+	const {PRODUCTS} = await import('../js/data.js');
+	PRODUCTS.forEach((p, i) => {
+		if (!/^[a-z0-9-]{2,40}$/.test(p.id || '')) fail(`id «${p.id}»: латиница, цифры и дефис`);
+		if (!['mod', 'rp'].includes(p.kind)) fail(`${p.id}: kind — mod или rp`);
+		saveProduct({
+			id: p.id,
+			kind: p.kind,
+			status: p.status === 'soon' ? 'soon' : 'ready',
+			title: String(p.title || p.id),
+			titleEn: p.titleEn || null,
+			desc: p.desc || '',
+			descEn: p.descEn || null,
+			tags: Array.isArray(p.tags) ? p.tags.map(String) : [],
+			price: typeof p.price === 'number' ? kop(p.price) : null,
+			cover: p.cover || null,
+			link: p.link || null,
+			file: null,
+			until: day(p.until),
+			sort: i,
+		});
+		console.log(`  ${p.id} — ${p.title}${p.until ? ` (до ${p.until})` : ''}`);
+	});
+	console.log(`Готово: ${PRODUCTS.length} товар(ов) из js/data.js в базе.`);
 } else if (what === 'product' && action === 'list') {
-	table(q('SELECT id, kind, status, title, price / 100.0 AS rub, active, COALESCE(file, link, \'—\') AS download FROM products ORDER BY sort, created_at DESC').all());
+	table(q('SELECT id, kind, status, title, price / 100.0 AS rub, active, COALESCE(sale_until, \'—\') AS until, COALESCE(file, link, \'—\') AS download FROM products ORDER BY sort, created_at DESC').all());
 } else if (what === 'product' && ['hide', 'show', 'remove'].includes(action)) {
 	const id = args[0] || fail('укажи id товара');
 	const sql = {hide: 'UPDATE products SET active = 0 WHERE id = ?', show: 'UPDATE products SET active = 1 WHERE id = ?', remove: 'DELETE FROM products WHERE id = ? AND NOT EXISTS (SELECT 1 FROM orders WHERE product_id = products.id)'}[action];

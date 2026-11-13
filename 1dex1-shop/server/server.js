@@ -9,7 +9,7 @@ import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 import {brotliCompressSync, constants as ZLIB, gzipSync} from 'node:zlib';
 import {CASE, TASKS} from '../js/data.js';
-import {q, tx} from './db.js';
+import {q, saleOver, tx} from './db.js';
 import {mailConfigured, sendCode} from './mail.js';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -158,6 +158,7 @@ const productJson = (p) => ({
 	tags: JSON.parse(p.tags || '[]'),
 	price: p.price === null ? null : rub(p.price),
 	cover: p.cover,
+	until: p.sale_until || undefined,
 	downloadable: Boolean(p.link || p.file),
 });
 
@@ -370,7 +371,15 @@ route(
 );
 
 // --- товары и покупки ---
-route('GET', 'products', () => [200, {products: q('SELECT * FROM products WHERE active = 1 ORDER BY sort, created_at DESC').all().map(productJson)}]);
+route('GET', 'products', () => [
+	200,
+	{
+		products: q('SELECT * FROM products WHERE active = 1 ORDER BY sort, created_at DESC')
+			.all()
+			.filter((p) => !saleOver(p))
+			.map(productJson),
+	},
+]);
 route(
 	'POST',
 	'buy',
@@ -378,6 +387,7 @@ route(
 		tx(() => {
 			const p = q('SELECT * FROM products WHERE id = ? AND active = 1').get(String(body.productId || ''));
 			if (!p || p.price === null || p.status !== 'ready') return [404, {error: 'server'}];
+			if (saleOver(p)) return [410, {error: 'ended'}];
 			if (q('SELECT 1 FROM orders WHERE user_id = ? AND product_id = ?').get(user.id, p.id)) return [409, {error: 'owned'}];
 			const now = Date.now();
 			let paidWith = 'balance';

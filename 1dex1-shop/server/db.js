@@ -19,6 +19,10 @@ if (!db.prepare('PRAGMA table_info(users)').all().some((c) => c.name === 'num'))
 	db.exec('UPDATE users SET num = (SELECT COUNT(*) FROM users AS o WHERE o.verified = 1 AND o.id <= users.id) WHERE verified = 1');
 }
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_num ON users (num)');
+// База, созданная до эксклюзивов: добавить срок продажи товара
+if (!db.prepare('PRAGMA table_info(products)').all().some((c) => c.name === 'sale_until')) db.exec('ALTER TABLE products ADD COLUMN sale_until TEXT');
+// Эксклюзив продаётся до дня sale_until включительно (по Москве); после — не виден в магазине и не продаётся
+export const saleOver = (p) => Boolean(p.sale_until) && Date.now() > Date.parse(`${p.sale_until}T23:59:59.999+03:00`);
 // Адской фермы больше нет: убрать её таблицу и счётчик наростов, если остались
 db.exec('DROP TABLE IF EXISTS farm');
 if (db.prepare('PRAGMA table_info(users)').all().some((c) => c.name === 'warts')) db.exec('ALTER TABLE users DROP COLUMN warts');

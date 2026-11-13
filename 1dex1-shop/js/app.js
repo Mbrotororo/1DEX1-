@@ -128,6 +128,11 @@ const titleOf = (p) => (getLang() === 'en' && p.titleEn) || p.title;
 const descOf = (p) => (getLang() === 'en' && p.descEn) || p.desc || '';
 
 const priceOf = (p) => (p.price === null ? t('price.later') : p.price === 0 ? t('price.free') : price(p.price));
+// эксклюзив: продаётся до дня until включительно (по Москве), потом пропадает из магазина
+const untilEnd = (p) => Date.parse(`${p.until}T23:59:59.999+03:00`);
+const onSale = (p) => !p.until || !(Date.now() > untilEnd(p));
+const untilText = (p) => t('item.until', {d: new Date(untilEnd(p)).toLocaleDateString(locale(), {day: 'numeric', month: 'long', timeZone: 'Europe/Moscow'})});
+const kindOf = (p) => `${t(`kind.${p.kind}`)}${p.until ? ` · <span class="item__excl">${t('item.excl')}</span>` : ''}`;
 const card = (p, i) => {
 	const user = auth.current();
 	const order = user?.orders?.find((o) => o.productId === p.id);
@@ -146,9 +151,10 @@ const card = (p, i) => {
 	return `<article class="item card" data-kind="${esc(p.kind)}" data-id="${esc(p.id)}" style="--i:${i}">
 		<div class="item__cover ${p.cover ? '' : 'is-art'}">${cover}
 			<span class="tag ${p.status === 'ready' ? 'tag--lime' : 'tag--gold'} px">${t(p.status === 'ready' ? 'status.ready' : 'status.soon')}</span>
+			${p.until ? `<span class="tag tag--excl px">${esc(untilText(p))}</span>` : ''}
 		</div>
 		<div class="item__body">
-			<span class="item__kind px">${t(`kind.${p.kind}`)}</span>
+			<span class="item__kind px">${kindOf(p)}</span>
 			<h3 class="item__title">${esc(titleOf(p))}</h3>
 			<p class="item__desc">${esc(descOf(p))}</p>
 			${p.tags?.length ? `<ul class="item__tags px">${p.tags.map((tag) => `<li>${esc(tag)}</li>`).join('')}</ul>` : ''}
@@ -166,7 +172,7 @@ const renderPhoneShop = () => {
 				.slice(0, 4)
 				.map(
 					(p) =>
-						`<button class="mcard" type="button" data-product="${esc(p.id)}"><span class="mcard__ic">${p.cover ? `<img src="${esc(p.cover)}" alt="" loading="lazy">` : icon(p.kind === 'rp' ? 'gem' : 'pick')}</span><b>${esc(titleOf(p))}</b><small>${t(`kind.${p.kind}`)}</small><span class="mcard__price px">${priceOf(p)}</span></button>`,
+						`<button class="mcard" type="button" data-product="${esc(p.id)}"><span class="mcard__ic">${p.cover ? `<img src="${esc(p.cover)}" alt="" loading="lazy">` : icon(p.kind === 'rp' ? 'gem' : 'pick')}</span><b>${esc(titleOf(p))}</b><small>${kindOf(p)}</small><span class="mcard__price px">${priceOf(p)}</span></button>`,
 				)
 				.join('')
 		: `<div class="mcard mcard--empty"><span class="mcard__ic">${icon('chest')}</span><b>${t('m.soonT')}</b><small>${t('m.soonP')}</small></div>`;
@@ -847,7 +853,7 @@ $('#year').textContent = new Date().getFullYear();
 
 // ---------- запуск: узнать, есть ли сервер, загрузить вошедшего и товары ----------
 auth.init().then(async () => {
-	products = await auth.loadProducts();
+	products = (await auth.loadProducts()).filter(onSale);
 	renderShop();
 });
 

@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS products (
 	cover TEXT,                               -- картинка, например img/rp-night.png
 	link TEXT,                                -- внешняя ссылка на скачивание
 	file TEXT,                                -- или файл в server/files — отдаётся только купившим
+	sale_until TEXT,                          -- эксклюзив: продаётся до этого дня включительно (по Москве), '2027-02-20'; NULL — без срока
 	active INTEGER NOT NULL DEFAULT 1,        -- 0 — скрыт с сайта
 	sort INTEGER NOT NULL DEFAULT 0,
 	created_at INTEGER NOT NULL

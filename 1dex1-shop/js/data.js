@@ -42,36 +42,64 @@ export const MARQUEE = {
 };
 
 // ------------------------------------------------------------
-//  ТОВАРЫ для сайта без сервера. Когда сайт запущен с сервером (папка server/),
-//  товары берутся из базы данных, а этот список не используется — товар в базу
-//  добавляет команда: node server/admin.js product add ... (см. README).
+//  ТОВАРЫ. Сайт без сервера берёт их отсюда. Когда сайт запущен с сервером (папка server/),
+//  товары берутся из базы данных — перенести этот список в базу одной командой:
+//  npm run admin -- product import   (файлы к товарам — product add --file, см. README).
 //
-//  Сейчас список пустой — на сайте стоит заглушка «Товаров пока нет».
-//  Чтобы добавить товар, скопируй пример ниже внутрь квадратных скобок
-//  и убери две косые черты в начале каждой строки.
+//  Порядок в списке — порядок в магазине. Чтобы добавить товар, скопируй любой
+//  из них и поменяй поля.
 //
 //  titleEn, descEn — название и описание для английской версии (можно не писать)
 //  kind:   'mod' — мод, 'rp' — ресурс-пак
 //  status: 'soon' — в разработке, 'ready' — готов
 //  price:  число в рублях или null (покажет «Цена позже»)
-//  cover:  путь к картинке, например 'img/my-mod.png', или null
+//  cover:  путь к картинке, например 'img/products/my-mod.webp', или null
 //  link:   ссылка «Купить / Скачать» или null (покажет «Скоро»)
 //  tags:   короткие пометки: версия игры, загрузчик, сервер
+//  until:  эксклюзив — продаётся до этого дня включительно (по Москве), например '2027-02-20';
+//          на карточке пометка «Эксклюзив · до 20 февраля», потом товар сам пропадает
+//          из магазина (у купивших остаётся в профиле). Без срока — не пиши это поле.
 // ------------------------------------------------------------
 export const PRODUCTS = [
-	// {
-	// 	id: 'mod-1',
-	// 	kind: 'mod',
-	// 	status: 'soon',
-	// 	title: 'Название мода',
-	// 	titleEn: 'Mod name',
-	// 	desc: 'Короткое описание в одну-две строки.',
-	// 	descEn: 'A short description.',
-	// 	tags: ['1.21', 'Fabric'],
-	// 	price: null,
-	// 	cover: null,
-	// 	link: null,
-	// },
+	{
+		id: 'pvp-ai',
+		kind: 'mod',
+		status: 'ready',
+		title: 'PvP AI',
+		desc: 'Мой PvP-мод из роликов.',
+		descEn: 'My PvP mod from the videos.',
+		tags: [],
+		price: null,
+		cover: 'img/products/pvp-ai.webp',
+		link: null,
+	},
+	{
+		id: 'new-year-mod',
+		kind: 'mod',
+		status: 'ready',
+		title: 'Новогодний мод',
+		titleEn: 'New Year mod',
+		desc: 'Эксклюзивный новогодний мод. Продаётся только до 20 февраля — потом пропадёт из магазина.',
+		descEn: 'Exclusive New Year mod. On sale only until February 20, then it leaves the shop.',
+		tags: [],
+		price: null,
+		cover: 'img/products/new-year.webp',
+		link: null,
+		until: '2027-02-20',
+	},
+	{
+		id: 'rp-1dex1',
+		kind: 'rp',
+		status: 'ready',
+		title: 'Ресурс-пак 1DEX1',
+		titleEn: '1DEX1 resource pack',
+		desc: 'Мой ресурс-пак из роликов: новые текстуры оружия, брони и зелий.',
+		descEn: 'My resource pack from the videos: new textures for weapons, armor and potions.',
+		tags: [],
+		price: null,
+		cover: 'img/products/rp-1dex1.webp',
+		link: null,
+	},
 ];
 
 // ------------------------------------------------------------
