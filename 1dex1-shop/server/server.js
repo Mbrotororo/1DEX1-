@@ -11,7 +11,8 @@ import {brotliCompressSync, constants as ZLIB, gzipSync} from 'node:zlib';
 import {CASE, CASHBACK, PROMOS, TASKS} from '../js/data.js';
 import {q, saleOver, tx} from './db.js';
 import {mailConfigured, sendCode} from './mail.js';
-import {tellOwner} from './telegram.js';
+import {COMMANDS, botCommand} from './bot.js';
+import {startBot, tellOwner} from './telegram.js';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const FILES = resolve(ROOT, 'server', 'files');
@@ -1020,4 +1021,5 @@ const server = createServer(async (req, res) => {
 server.listen(PORT, HOST, () => {
 	console.log(`1DEX1 SHOP: http://localhost:${PORT}`);
 	if (!mailConfigured) console.log('Почта не настроена: коды подтверждения пишутся сюда и в server/data/outbox.log');
+	if (startBot(botCommand, COMMANDS)) console.log('Telegram-бот слушает команды владельца (/help).');
 });

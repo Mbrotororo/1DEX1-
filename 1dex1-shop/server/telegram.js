@@ -7,6 +7,10 @@
 //  4. Узнай номер чата: npm run admin -- telegram chatid → впиши в server/.env: TELEGRAM_CHAT_ID=...
 //  5. Проверка: npm run admin -- telegram test — бот пришлёт тестовое сообщение.
 // Пока токена и номера чата нет, уведомления просто не отправляются — сайт работает как обычно.
+//
+// Команды владельца (/stats, /promo, /give…): сервер сам забирает сообщения у Telegram
+// (long polling — домен и настройка webhook не нужны) и отвечает только на твой чат.
+// Выключить команды, оставив уведомления: TELEGRAM_COMMANDS=0 в server/.env.
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const CHAT = process.env.TELEGRAM_CHAT_ID || '';
@@ -14,12 +18,12 @@ const API = (process.env.TELEGRAM_API || 'https://api.telegram.org').replace(/\/
 
 export const telegramConfigured = Boolean(TOKEN && CHAT);
 
-const call = async (method, body) => {
+const call = async (method, body, timeout = 30e3) => {
 	const res = await fetch(`${API}/bot${TOKEN}/${method}`, {
 		method: 'POST',
 		headers: {'Content-Type': 'application/json'},
 		body: JSON.stringify(body || {}),
-		signal: AbortSignal.timeout(30e3),
+		signal: AbortSignal.timeout(timeout),
 	});
 	const data = await res.json().catch(() => null);
 	if (!data?.ok) throw new Error(data?.description || `HTTP ${res.status}`);
@@ -49,3 +53,41 @@ export const recentChats = async () => {
 	return [...chats].map(([id, name]) => ({id, name}));
 };
 export const hasToken = Boolean(TOKEN);
+
+// Слушать команды владельца. handle(текст) → текст ответа. Чужие чаты бот не читает,
+// старые сообщения (отправленные, пока сервер был выключен) не выполняет.
+const STALE = 120; // секунд: команда старше — пропускаем (например, /give, набранная вчера)
+export const startBot = (handle, commands = []) => {
+	if (!telegramConfigured || process.env.TELEGRAM_COMMANDS === '0') return false;
+	const send = (text) => call('sendMessage', {chat_id: CHAT, text: String(text).slice(0, 4000), disable_web_page_preview: true});
+	// меню команд в Telegram — только в твоём чате
+	call('setMyCommands', {commands: commands.map(([command, description]) => ({command, description})), scope: {type: 'chat', chat_id: CHAT}}).catch((err) =>
+		console.error('Telegram: меню команд не установилось —', err.message),
+	);
+	let offset = 0;
+	(async () => {
+		for (;;) {
+			try {
+				const updates = await call('getUpdates', {offset, timeout: 25, allowed_updates: ['message']}, 40e3);
+				for (const u of updates) {
+					offset = u.update_id + 1;
+					const m = u.message;
+					if (!m?.text || String(m.chat?.id) !== String(CHAT)) continue; // только твой чат
+					if (Date.now() / 1000 - m.date > STALE) continue;
+					let reply;
+					try {
+						reply = await handle(m.text);
+					} catch (err) {
+						console.error('Telegram-команда:', err);
+						reply = 'Что-то пошло не так, подробности — в консоли сервера.';
+					}
+					if (reply) await send(reply).catch((err) => console.error('Telegram: ответ не отправился —', err.message));
+				}
+			} catch (err) {
+				console.error('Telegram: не получилось забрать сообщения —', err.message);
+				await new Promise((r) => setTimeout(r, 5000));
+			}
+		}
+	})();
+	return true;
+};

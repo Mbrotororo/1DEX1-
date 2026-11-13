@@ -13,7 +13,8 @@
 //   npm run admin -- product price <id> <рубли>
 //
 //   npm run admin -- user admin <ник>             дать доступ в админку на сайте (unadmin — забрать)
-//   npm run admin -- telegram chatid              номер чата для уведомлений (сначала напиши боту)
+//   npm run admin -- telegram chatid              номер чата для уведомлений (сначала напиши боту;
+//                                                 пока сервер запущен, он сам забирает сообщения — останови его)
 //   npm run admin -- telegram test                тестовое уведомление в Telegram
 //
 //   npm run admin -- user list
