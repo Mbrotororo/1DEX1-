@@ -244,24 +244,13 @@ ul{padding:0;list-style:none}
 @keyframes tp-core{0%{transform:scale(.15);opacity:1}35%{transform:scale(1);opacity:1}100%{transform:scale(1.3);opacity:0}}
 @keyframes tp-bit{0%{transform:none;opacity:1}100%{transform:translate(var(--dx),var(--dy)) scale(.35);opacity:0}}
 /* облачко с эмоцией над головой персонажа */
-/* танцы под музыку — кнопка в углу первого экрана */
-.groove{position:absolute;right:clamp(12px,2vw,24px);bottom:clamp(12px,2vw,24px);z-index:4;display:flex;align-items:center;gap:8px;height:40px;padding:0 14px 0 10px;color:var(--muted);font:inherit;font-size:13px;cursor:pointer;background:rgba(18,13,34,.72);border:2px solid var(--line-2);box-shadow:var(--bevel);transition:color .15s,border-color .15s,background-color .15s}
-.groove:hover{color:var(--ink);border-color:var(--purple)}
-.groove [data-icon]{display:grid;place-items:center;font-size:18px}
-.groove b{font-weight:400;letter-spacing:.06em}
-.groove.is-on{color:#fff;border-color:var(--lime);background:rgba(184,255,61,.12)}
-.groove.is-hearing [data-icon]{animation:groove-hop .5s ease-in-out infinite}
-@keyframes groove-hop{50%{transform:translateY(-3px) rotate(-8deg)}}
 /* трещина на экране после удара: держится 5 секунд, потом тает */
-.dex-crack{position:fixed;inset:0;z-index:38;pointer-events:none;animation:crack-in .12s ease-out both}
-.dex-crack svg{display:block;width:100%;height:100%}
-.dex-crack__dark path{fill:none;stroke:rgba(10,6,20,.55);stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round}
-.dex-crack__light path{fill:none;stroke:rgba(255,255,255,.88);stroke-width:1.3;stroke-linecap:round;stroke-linejoin:round}
-.dex-crack__flash{animation:crack-flash .6s ease-out forwards}
-.dex-crack.is-fading{opacity:0;transition:opacity 1.6s ease}
-@keyframes crack-in{from{opacity:0;transform:scale(1.04)}}
+.dex-crack{position:fixed;inset:0;z-index:38;width:100%;height:100%;pointer-events:none;animation:crack-in .09s ease-out both}
+.dex-crack.is-fading{opacity:0;transition:opacity 1.7s ease}
+.dex-flash{position:fixed;inset:0;z-index:39;pointer-events:none;animation:crack-flash .6s ease-out forwards}
+@keyframes crack-in{from{opacity:0}}
 @keyframes crack-flash{to{opacity:0}}
-.dex-overlay.is-shake{animation:screen-shake .45s cubic-bezier(.36,.07,.19,.97)}
+.dex-overlay.is-shake,.dex-crack.is-shake{animation:screen-shake .45s cubic-bezier(.36,.07,.19,.97)}
 @keyframes screen-shake{10%,90%{transform:translate(-2px,1px)}20%,80%{transform:translate(5px,-3px)}30%,50%,70%{transform:translate(-9px,4px)}40%,60%{transform:translate(9px,-4px)}}
 .dex-bubble{
 	position:fixed;left:0;top:0;z-index:37;pointer-events:none;opacity:0;

@@ -98,8 +98,7 @@ const RU = () => ({
 					'аватарку, если ты её загрузил;',
 					'баланс, историю операций, покупки, открытые кейсы и выполненные задания;',
 					'технические данные — IP-адрес и время запросов, чтобы защищать Сайт от взлома и перебора паролей;',
-					'cookie входа и данные в памяти браузера: язык сайта, прогресс игры на первом экране, достижения;',
-					'микрофон — только если ты сам нажал «Танцы» и разрешил его в браузере: звук разбирается прямо в браузере, чтобы персонаж танцевал в такт музыке, не записывается и никуда не отправляется.',
+					'cookie входа и данные в памяти браузера: язык сайта, прогресс игры на первом экране, достижения.',
 				],
 			},
 			{
@@ -294,8 +293,7 @@ const EN = () => ({
 					'your avatar, if you upload one;',
 					'your balance, transaction history, purchases, opened cases and completed quests;',
 					'technical data — IP address and request times, to protect the Site from hacking and password guessing;',
-					'the sign-in cookie and data in your browser storage: site language, game progress on the first screen, achievements;',
-					'the microphone — only if you tapped “Dance” and allowed it in the browser: the sound is analysed right in the browser so the character can dance to the beat; it is never recorded or sent anywhere.',
+					'the sign-in cookie and data in your browser storage: site language, game progress on the first screen, achievements.',
 				],
 			},
 			{

@@ -2159,12 +2159,9 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		fitPoseBox();
 	};
 
-	// ================= ТАНЦЫ ПОД МУЗЫКУ =================
-	// Такт приходит из js/groove.js (микрофон): music = {playing, beat()}. Без музыки танец
-	// в позах на тексте идёт в своём темпе — 120 ударов в минуту.
-	let music = null;
-	const grooving = () => Boolean(music?.playing);
-	// каждые 8 ударов — новое движение
+	// ================= ТАНЦЫ =================
+	// Танцует, когда сам захочет: на острове время от времени, если ничем не занят,
+	// и иногда — сидя на тексте (поза «dance» среди поз на виджете). Темп — 120 ударов в минуту.
 	const DANCES = ['bob', 'floss', 'shuffle', 'hands', 'robot', 'arms'];
 	const ROBOT = [
 		{armRx: -1.57, armRz: 0.05, armLx: 0, armLz: -0.05, headYaw: 0.55},
@@ -2172,8 +2169,15 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		{armRx: -1.57, armRz: -0.9, armLx: -1.57, armLz: 0.9, headYaw: 0},
 		{armRx: -3.0, armRz: 0.05, armLx: 0.35, armLz: -0.05, headYaw: 0.3},
 	];
-	const danceTarget = (t) => {
-		const beat = grooving() ? music.beat() : t * 2;
+	const dance = {until: -1, next: 14 + Math.random() * 16, start: 0, offset: 0};
+	const freshDance = () => {
+		dance.start = now;
+		dance.offset = Math.floor(Math.random() * DANCES.length) * 8; // каждый раз начинает с другого движения
+	};
+	const dancingOnIsland = () => now < dance.until;
+	// каждые 8 ударов — новое движение
+	const danceTarget = () => {
+		const beat = (now - dance.start) * 2 + dance.offset;
 		const n = Math.floor(beat);
 		const hit = Math.exp(-(beat - n) * 7); // толчок на каждый удар
 		const sw = Math.sin(beat * Math.PI); // туда-сюда: полный цикл за две доли
@@ -2195,28 +2199,59 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	};
 
 	// ================= ЗЛОСТЬ =================
-	// Стена сломана, персонаж сидит на тексте, его 5 раз быстро тыкнули: огненная аура, злое
-	// облачко, вырастает на весь экран и бьёт кулаком «в стекло» — экран трескается на 5 секунд.
-	const RAGE_HIT = 2.3; // секунда удара
-	const RAGE_END = 3.9;
+	// Стена сломана, персонаж сидит на тексте, его 5 раз быстро тыкнули. Как в кино:
+	// сидит и трясётся от злости → медленно встаёт → наливается силой и вырастает во весь
+	// экран → тяжёлый замах с поворотом корпуса → резкий удар кулаком прямо в экран →
+	// стекло трескается → держит кулак → расслабляется, уменьшается и садится обратно.
+	const RAGE_HIT = 3.62; // секунда удара
+	const RAGE_END = 6.1;
 	let rage = null; // {t, hit}
 	const rageTaps = [];
 	const startRage = () => {
 		rage = {t: 0, hit: false};
 		PB.idleT = 0;
 		setPose('rage');
-		say('icon:angry', 0.8);
+		say('icon:angry', 1.1);
 		on('rage');
 	};
-	// поза: дрожит от злости → вырастает, руки в стороны → замах → удар кулаком прямо в экран
-	const ragePose = (t) => {
-		const T = rage ? rage.t : 0;
-		const shake = Math.sin(t * 46) * 0.035;
-		if (T < 0.8) return {armRx: -0.25, armLx: -0.25, armRz: 0.25, armLz: -0.25, headPitch: 0.22, tiltZ: shake, legRz: 0.08, legLz: -0.08};
-		if (T < 1.75) return {armRx: -0.4, armLx: -0.4, armRz: 0.75, armLz: -0.75, headPitch: 0.15, tiltZ: shake * 0.6, legRz: 0.12, legLz: -0.12};
-		if (T < 2.15) return {armRx: 1.05, armRz: 0.35, armLx: -1.35, armLz: -0.2, headPitch: 0.12, tiltZ: -0.05, legRz: 0.12, legLz: -0.12};
-		if (T < 3.0) return {armRx: -1.57, armRz: 0, armLx: 0.4, armLz: -0.25, headPitch: 0.05, tiltZ: 0.03, legRz: 0.12, legLz: -0.12};
-		return {armRx: -0.3, armLx: -0.3, armRz: 0.1, armLz: -0.1};
+	const inOut = (x) => (x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2); // плавный разгон и торможение
+	const punchOut = (x) => 1 - (1 - x) ** 5; // удар: сразу быстро, в конце тормозит
+	const SIT_ANGRY = {armRx: -0.35, armRz: 0.14, armLx: -0.35, armLz: -0.14, legR: -1.25, legL: -1.25, legRz: 0, legLz: 0, drop: 1.01, tiltZ: 0, headPitch: 0.32, headYaw: 0, hipX: 0};
+	const STAND = {armRx: -0.12, armRz: 0.32, armLx: -0.12, armLz: -0.32, legR: 0, legL: 0, legRz: 0.06, legLz: -0.06, drop: 0, tiltZ: 0, headPitch: 0.28, headYaw: 0, hipX: 0};
+	const POWER = {armRx: -0.28, armRz: 0.72, armLx: -0.28, armLz: -0.72, legR: 0, legL: 0, legRz: 0.13, legLz: -0.13, drop: 0.04, tiltZ: 0, headPitch: 0.16, headYaw: 0, hipX: 0};
+	const WINDUP = {armRx: 1.3, armRz: 0.5, armLx: -1.35, armLz: -0.12, legR: -0.25, legL: 0.2, legRz: 0.13, legLz: -0.13, drop: 0.14, tiltZ: -0.07, headPitch: 0.2, headYaw: 0.15, hipX: -0.06};
+	const PUNCH = {armRx: -1.57, armRz: 0, armLx: 0.6, armLz: -0.28, legR: 0.22, legL: -0.25, legRz: 0.13, legLz: -0.13, drop: 0.05, tiltZ: 0.05, headPitch: 0.06, headYaw: -0.05, hipX: 0.08};
+	const HOLD = {...PUNCH, armRx: -1.47, drop: 0.03, hipX: 0.04};
+	const RELAX = {...STAND, armRx: -0.25, armLx: -0.25, armRz: 0.15, armLz: -0.15, headPitch: 0.12};
+	const SIT_CALM = {...SIT_ANGRY, headPitch: 0.05};
+	// [секунда, поза, кривая перехода к ней, рост 0..1, поворот корпуса, выпад вперёд]
+	const RAGE_KEYS = [
+		[0, SIT_ANGRY, inOut, 0, 0, 1],
+		[0.8, SIT_ANGRY, inOut, 0, 0, 1],
+		[1.7, STAND, inOut, 0, 0, 1],
+		[2.85, POWER, inOut, 1, 0, 1],
+		[3.48, WINDUP, inOut, 1, -0.62, 0.98],
+		[RAGE_HIT, PUNCH, punchOut, 1, 0.24, 1.13],
+		[4.55, HOLD, inOut, 1, 0.12, 1.02],
+		[5.05, RELAX, inOut, 1, 0, 1],
+		[5.9, SIT_CALM, inOut, 0, 0, 1],
+		[RAGE_END, SIT_CALM, inOut, 0, 0, 1],
+	];
+	// где он сейчас в сцене злости: поза, рост, поворот, выпад
+	const rageAt = (T, t) => {
+		let k = 0;
+		while (k < RAGE_KEYS.length - 2 && T >= RAGE_KEYS[k + 1][0]) k++;
+		const [t0, a, , g0, w0, l0] = RAGE_KEYS[k];
+		const [t1, b, ease, g1, w1, l1] = RAGE_KEYS[k + 1];
+		const e = ease(clamp((T - t0) / (t1 - t0), 0, 1));
+		const pose = {};
+		for (const key of Object.keys(a)) pose[key] = lerp(a[key], b[key], e);
+		// дрожит от злости, пока сидит и пока наливается силой; дышит тяжело
+		const tremble = (1 - smooth(T, 1.4, 1.9)) + smooth(T, 2.5, 2.9) * (1 - smooth(T, 3.35, 3.5));
+		pose.tiltZ += Math.sin(t * 47) * 0.028 * tremble;
+		pose.headYaw += Math.sin(t * 31) * 0.035 * tremble;
+		pose.drop += Math.sin(t * 5.5) * 0.012 * smooth(T, 1.7, 2.2) * (1 - smooth(T, 3.3, 3.48));
+		return {pose, grow: lerp(g0, g1, e), twist: lerp(w0, w1, e), lunge: lerp(l0, l1, e)};
 	};
 	// огонь вокруг: спрайты в слое поверх сайта, позади и чуть впереди персонажа
 	const FLAMES = 90;
@@ -2250,25 +2285,23 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		}
 		rage.t += dt;
 		const T = rage.t;
-		// сколько он вырос: на весь экран по высоте
-		const grow = smooth(T, 0.8, 1.7) * (1 - smooth(T, RAGE_END - 0.75, RAGE_END));
+		const {grow, twist, lunge} = rageAt(T, now);
 		// во весь экран по высоте, но на узком телефоне — по ширине, чтобы голова не уходила под шапку
 		const bigK = Math.max(1, Math.min(vh * 1.05, vw * 1.6) / (2.7 * playerK));
-		const R = 1 + (bigK - 1) * grow;
+		const R = (1 + (bigK - 1) * grow) * lunge;
 		const p = oRig.pivot.position;
 		p.set(lerp(p.x, vw / 2, grow), lerp(p.y, -vh * 0.6, grow), 0);
 		oRig.pivot.scale.setScalar(R);
-		oRig.pivot.rotation.set(lerp(0.12, 0, grow), lerp(0.2, 0, grow), oRig.pivot.rotation.z * (1 - grow));
-		const heat = smooth(T, 0, 0.35) * (1 - smooth(T, RAGE_END - 0.5, RAGE_END));
+		oRig.pivot.rotation.set(lerp(0.12, 0, grow), lerp(0.2, 0, grow) + twist, oRig.pivot.rotation.z * (1 - grow));
+		const heat = smooth(T, 0.15, 1.3) * (1 - smooth(T, 5.0, 5.85));
 		tint(heat * (0.75 + Math.sin(T * 18) * 0.25));
-		// огонь
+		// огонь: языки пламени по краям фигуры, снизу вверх
 		const fl = ensureFlames();
 		const unit = playerK * R;
-		spawnAcc += dt * 120 * heat;
+		spawnAcc += dt * (40 + 80 * grow) * heat;
 		for (const f of fl) {
 			if (f.life <= 0 && spawnAcc >= 1) {
 				spawnAcc -= 1;
-				// языки пламени — по краям фигуры (плечи, бока, голова), снизу вверх
 				const side = Math.random() < 0.5 ? -1 : 1;
 				f.max = f.life = 0.35 + Math.random() * 0.4;
 				f.x = side * (0.42 + Math.random() * 0.28);
@@ -2293,7 +2326,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				f.s.visible = true;
 			} else f.s.visible = false;
 		}
-		// удар: точка кулака на экране — там трескается «стекло»
+		// удар: точка кулака на экране — там трескается стекло
 		if (!rage.hit && T >= RAGE_HIT) {
 			rage.hit = true;
 			oRig.root.updateMatrixWorld(true);
@@ -2314,76 +2347,181 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			say('say.phew', 1.8);
 		}
 	};
-	// трещина на экране: рисуем паутину из лучей и колец, держим 5 секунд, потом плавно убираем
+
+	// Трещина на экране, как на настоящем разбитом стекле: от точки удара — лучи (у центра
+	// толще, к краю тоньше, с изломами), между ними изломанные кольца и ответвления; у центра —
+	// раздавленная зона и пятно протёкшей матрицы. Осколки по-разному ловят свет, у каждой
+	// трещины — тень и светлая грань. Держится 5 секунд, потом плавно тает.
 	const crackScreen = (cx, cy) => {
 		const w = document.documentElement.clientWidth;
 		const h = window.innerHeight;
-		const far = Math.hypot(Math.max(cx, w - cx), Math.max(cy, h - cy));
+		const dpr = Math.min(2, window.devicePixelRatio || 1);
+		const cv = document.createElement('canvas');
+		cv.className = 'dex-crack';
+		cv.setAttribute('aria-hidden', 'true');
+		cv.width = Math.round(w * dpr);
+		cv.height = Math.round(h * dpr);
+		const g = cv.getContext('2d');
+		g.scale(dpr, dpr);
+		g.lineCap = 'round';
+		g.lineJoin = 'round';
 		const rnd = Math.random;
+		const far = Math.hypot(Math.max(cx, w - cx), Math.max(cy, h - cy));
+		// лучи
 		const rays = [];
-		const n = 11 + Math.floor(rnd() * 5);
-		let lines = '';
+		const n = 15 + Math.floor(rnd() * 7);
 		for (let i = 0; i < n; i++) {
-			let a = (i / n) * Math.PI * 2 + (rnd() - 0.5) * 0.35;
+			let a = ((i + (rnd() - 0.5) * 0.7) / n) * Math.PI * 2;
+			const len = far * (rnd() < 0.45 ? 0.85 + rnd() * 0.4 : 0.25 + rnd() * 0.5);
+			const pts = [{x: cx, y: cy, d: 0}];
 			let x = cx;
 			let y = cy;
-			const len = far * (0.3 + rnd() * 0.55);
-			const pts = [[x, y]];
-			for (let d = 0; d < len; ) {
-				const step = 16 + rnd() * 34;
-				d += step;
-				a += (rnd() - 0.5) * 0.32;
-				x += Math.cos(a) * step;
-				y += Math.sin(a) * step;
-				pts.push([x, y]);
-				// ответвление
-				if (rnd() < 0.12 && d > 40) {
-					let ba = a + (rnd() < 0.5 ? -1 : 1) * (0.4 + rnd() * 0.5);
-					let bx = x;
-					let by = y;
-					let b = `M${x.toFixed(1)} ${y.toFixed(1)}`;
-					for (let k = 0, bl = 30 + rnd() * 90; k < bl; ) {
-						const st = 12 + rnd() * 20;
-						k += st;
-						ba += (rnd() - 0.5) * 0.4;
-						bx += Math.cos(ba) * st;
-						by += Math.sin(ba) * st;
-						b += `L${bx.toFixed(1)} ${by.toFixed(1)}`;
-					}
-					lines += `<path d="${b}"/>`;
+			let d = 0;
+			while (d < len) {
+				const st = (6 + rnd() * 14) * (1 + (d / far) * 2.2); // у центра изломы мельче
+				d += st;
+				a += (rnd() - 0.5) * 0.18;
+				x += Math.cos(a) * st;
+				y += Math.sin(a) * st;
+				pts.push({x, y, d});
+			}
+			rays.push({pts, w0: 1.6 + rnd() * 1.7});
+		}
+		const onRay = (ray, r) => ray.pts.find((q) => q.d >= r) || null;
+		const lines = rays.map((r) => ({pts: r.pts, w0: r.w0, w1: 0.35}));
+		// кольца: изломанные дуги между соседними лучами, чуть выгнутые наружу
+		const rings = [];
+		for (let r = 14 + rnd() * 8; r < far * 0.75; r *= 1.45 + rnd() * 0.35) rings.push(r);
+		rings.forEach((r, k) => {
+			for (let i = 0; i < rays.length; i++) {
+				if (rnd() < 0.15 + k * 0.1) continue;
+				const A = onRay(rays[i], r * (0.9 + rnd() * 0.2));
+				const B = onRay(rays[(i + 1) % rays.length], r * (0.9 + rnd() * 0.2));
+				if (!A || !B) continue;
+				const out = 0.04 + rnd() * 0.06;
+				const mx = (A.x + B.x) / 2 + (rnd() - 0.5) * r * 0.1;
+				const my = (A.y + B.y) / 2 + (rnd() - 0.5) * r * 0.1;
+				const wk = Math.max(0.5, 1.7 - k * 0.28);
+				lines.push({pts: [A, {x: mx + (mx - cx) * out, y: my + (my - cy) * out}, B], w0: wk, w1: wk * 0.6});
+			}
+		});
+		// ответвления
+		for (const ray of rays) {
+			for (const q of ray.pts) {
+				if (q.d < 30 || rnd() > 0.07) continue;
+				let a = Math.atan2(q.y - cy, q.x - cx) + (rnd() < 0.5 ? -1 : 1) * (0.35 + rnd() * 0.7);
+				let x = q.x;
+				let y = q.y;
+				const pts = [{x, y}];
+				for (let d = 0, bl = 25 + rnd() * 140; d < bl; ) {
+					const st = 6 + rnd() * 14;
+					d += st;
+					a += (rnd() - 0.5) * 0.3;
+					x += Math.cos(a) * st;
+					y += Math.sin(a) * st;
+					pts.push({x, y});
+				}
+				lines.push({pts, w0: 0.95, w1: 0.25});
+			}
+		}
+		// раздавленная зона у центра: мелкая сетка
+		for (let i = 0; i < 80; i++) {
+			const a = rnd() * Math.PI * 2;
+			const r0 = rnd() ** 0.7 * 24;
+			const x = cx + Math.cos(a) * r0;
+			const y = cy + Math.sin(a) * r0;
+			const b = rnd() * Math.PI * 2;
+			const l = 3 + rnd() * 10;
+			lines.push({pts: [{x, y}, {x: x + Math.cos(b) * l, y: y + Math.sin(b) * l}], w0: 0.7, w1: 0.5});
+		}
+		// 1) осколки: каждый кусок стекла чуть иначе ловит свет — где-то блик, где-то тень
+		for (let k = 0; k < Math.min(5, rings.length); k++) {
+			for (let i = 0; i < rays.length; i++) {
+				const j = (i + 1) % rays.length;
+				const a0 = k === 0 ? {x: cx, y: cy} : onRay(rays[i], rings[k - 1]);
+				const b0 = k === 0 ? {x: cx, y: cy} : onRay(rays[j], rings[k - 1]);
+				const a1 = onRay(rays[i], rings[k]);
+				const b1 = onRay(rays[j], rings[k]);
+				if (!a0 || !a1 || !b0 || !b1) continue;
+				const gr = g.createLinearGradient(a0.x, a0.y, b1.x, b1.y);
+				const v = (0.03 + rnd() * 0.13) * (1 - k * 0.12);
+				const c = rnd() < 0.55 ? '255,255,255' : '0,0,0';
+				gr.addColorStop(0, `rgba(${c},${v.toFixed(3)})`);
+				gr.addColorStop(1, `rgba(${c},0)`);
+				g.fillStyle = gr;
+				g.beginPath();
+				g.moveTo(a0.x, a0.y);
+				g.lineTo(a1.x, a1.y);
+				g.lineTo(b1.x, b1.y);
+				g.lineTo(b0.x, b0.y);
+				g.closePath();
+				g.fill();
+			}
+		}
+		// 2) под стеклом протекла матрица: тёмное пятно с цветной каймой
+		for (let i = 0; i < 7; i++) {
+			const a = rnd() * Math.PI * 2;
+			const r0 = rnd() * 14;
+			const x = cx + Math.cos(a) * r0;
+			const y = cy + Math.sin(a) * r0;
+			const R = 12 + rnd() * 26;
+			const gr = g.createRadialGradient(x, y, 0, x, y, R);
+			gr.addColorStop(0, 'rgba(4,2,10,.92)');
+			gr.addColorStop(0.65, 'rgba(4,2,10,.55)');
+			gr.addColorStop(0.85, i % 2 ? 'rgba(255,40,190,.22)' : 'rgba(40,220,255,.2)');
+			gr.addColorStop(1, 'rgba(0,0,0,0)');
+			g.fillStyle = gr;
+			g.beginPath();
+			g.arc(x, y, R, 0, Math.PI * 2);
+			g.fill();
+		}
+		// 3) трещины: мягкое свечение, тень со сдвигом, светлая грань поверх — проходами, чтобы грани лежали сверху
+		const passes = [
+			(t, wd) => [`rgba(255,255,255,0.06)`, wd * 4.5, 0, 0],
+			(t, wd) => [`rgba(0,0,0,0.62)`, wd + 1.3, 0.8, 1],
+			(t, wd) => [`rgba(255,255,255,${(0.95 - t * 0.4).toFixed(2)})`, wd * 0.72, 0, 0],
+		];
+		for (const pass of passes) {
+			for (const L of lines) {
+				const N = L.pts.length;
+				for (let j = 1; j < N; j++) {
+					const t = (j - 1) / Math.max(1, N - 1);
+					const [color, lw, ox, oy] = pass(t, L.w0 + (L.w1 - L.w0) * t);
+					g.strokeStyle = color;
+					g.lineWidth = lw;
+					g.beginPath();
+					g.moveTo(L.pts[j - 1].x + ox, L.pts[j - 1].y + oy);
+					g.lineTo(L.pts[j].x + ox, L.pts[j].y + oy);
+					g.stroke();
 				}
 			}
-			rays.push(pts);
-			lines += `<path d="M${pts.map((q) => `${q[0].toFixed(1)} ${q[1].toFixed(1)}`).join('L')}"/>`;
 		}
-		// кольца паутины между соседними лучами
-		const at = (pts, r) => pts.find((q) => Math.hypot(q[0] - cx, q[1] - cy) >= r) || null;
-		for (const r of [26, 62, 115, 190, 290]) {
-			for (let i = 0; i < rays.length; i++) {
-				if (rnd() < 0.3) continue;
-				const a = at(rays[i], r * (0.85 + rnd() * 0.3));
-				const b = at(rays[(i + 1) % rays.length], r * (0.85 + rnd() * 0.3));
-				if (a && b) lines += `<path d="M${a[0].toFixed(1)} ${a[1].toFixed(1)}L${((a[0] + b[0]) / 2 + (rnd() - 0.5) * 10).toFixed(1)} ${((a[1] + b[1]) / 2 + (rnd() - 0.5) * 10).toFixed(1)}L${b[0].toFixed(1)} ${b[1].toFixed(1)}"/>`;
-			}
-		}
-		const el = document.createElement('div');
-		el.className = 'dex-crack';
-		el.setAttribute('aria-hidden', 'true');
-		el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">
-			<defs><radialGradient id="crack-glow"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".35" stop-color="#fff" stop-opacity=".35"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient></defs>
-			<circle class="dex-crack__flash" cx="${cx}" cy="${cy}" r="${Math.max(w, h) * 0.6}" fill="url(#crack-glow)"/>
-			<g class="dex-crack__dark">${lines}</g><g class="dex-crack__light">${lines}</g>
-			<circle cx="${cx}" cy="${cy}" r="14" fill="rgba(255,255,255,.55)"/>
-		</svg>`;
-		document.body.append(el);
+		// 4) скол в точке удара
+		const chip = g.createRadialGradient(cx, cy, 0, cx, cy, 16);
+		chip.addColorStop(0, 'rgba(255,255,255,.95)');
+		chip.addColorStop(0.5, 'rgba(255,255,255,.35)');
+		chip.addColorStop(1, 'rgba(255,255,255,0)');
+		g.fillStyle = chip;
+		g.beginPath();
+		g.arc(cx, cy, 16, 0, Math.PI * 2);
+		g.fill();
+		document.body.append(cv);
+		// вспышка от удара
+		const flash = document.createElement('div');
+		flash.className = 'dex-flash';
+		flash.style.background = `radial-gradient(circle at ${cx}px ${cy}px, rgba(255,255,255,.85), rgba(255,255,255,.25) 18%, rgba(255,255,255,0) 45%)`;
+		document.body.append(flash);
+		setTimeout(() => flash.remove(), 700);
 		if (!reducedMotion) {
-			overlay.classList.remove('is-shake');
-			void overlay.offsetWidth;
-			overlay.classList.add('is-shake');
+			for (const el of [overlay, cv]) {
+				el.classList.remove('is-shake');
+				void el.offsetWidth;
+				el.classList.add('is-shake');
+			}
 			setTimeout(() => overlay.classList.remove('is-shake'), 500);
 		}
-		setTimeout(() => el.classList.add('is-fading'), 5000);
-		setTimeout(() => el.remove(), 6700);
+		setTimeout(() => cv.classList.add('is-fading'), 5000);
+		setTimeout(() => cv.remove(), 6800);
 	};
 
 	// --- облачко с эмоцией над головой ---
@@ -2417,6 +2555,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		let roll = Math.random() * list.reduce((sum, o) => sum + o[2], 0);
 		const pick = list.find((o) => (roll -= o[2]) <= 0) || list[0];
 		setPose(pick[0], pick[1] * (0.8 + Math.random() * 0.4));
+		if (pick[0] === 'dance') freshDance();
 		if (pick[0] === 'sitHappy' || pick[0] === 'dance') say('icon:note', 1.8);
 		else if (pick[0] === 'look' && Math.random() < 0.5) say('?', 1.4);
 	};
@@ -3294,15 +3433,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 					const near = Math.hypot(pointerDoc.x - PB.x, pointerDoc.y - PB.y) < 170;
 					if (rage) {
 						// злится — ничего другого не делает
-					} else if (grooving()) {
-						// играет музыка — танцует, пока она не кончится
-						PB.idleT = 0;
-						if (PB.pose !== 'dance') {
-							setPose('dance', 1e9);
-							say('icon:note', 1.8);
-						}
-					} else if (PB.pose === 'dance' && PB.poseDur > 1e8) perchPose(); // музыка кончилась
-					else if (PB.pose === 'sleep' || PB.pose === 'doze') {
+					} else if (PB.pose === 'sleep' || PB.pose === 'doze') {
 						if (now > PB.zzzAt) {
 							PB.zzzAt = now + 2.8;
 							say('Zzz', 1.9);
@@ -3474,7 +3605,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const target = {armRx: 0, armRz: 0.04, armLx: 0, armLz: -0.04, legR: 0, legL: 0, legRz: 0, legLz: 0, hipX: 0, sneak: 0, drop: 0, roll: 0, tiltZ: 0, headPitch: 0, headYaw: 0};
 		const sway = Math.sin(idle * 2) * 0.05;
 		// на острове под музыку танцует, если ничем не занят
-		const state = P.mode === 'free' ? PB.pose : P.mode === 'idle' && !P.queue.length && !P.holding && grooving() ? 'dance' : P.mode;
+		const state = P.mode === 'free' ? PB.pose : P.mode === 'idle' && !P.queue.length && !P.holding && dancingOnIsland() ? 'dance' : P.mode;
 		let snap = false; // «робот»: позы меняются рывком, без плавности
 		const swing = (period) => {
 			const ph = (P.actT / period) % 1;
@@ -3531,15 +3662,16 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				Object.assign(target, {armRx: -2.35, armRz: 0.55, armLx: -sway, headYaw: Math.sin(t * 1.7) * 0.9});
 				break;
 			case 'dance': {
-				const d = danceTarget(t);
+				const d = danceTarget();
 				snap = Boolean(d.snap);
 				delete d.snap;
 				Object.assign(target, d);
 				break;
 			}
 			case 'rage':
-				Object.assign(target, ragePose(t));
-				snap = Boolean(rage && rage.t > 2.15 && rage.t < 2.45); // удар — резко
+				// позы злости уже плавные (ключевые кадры) — тело следует за ними без запаздывания
+				Object.assign(target, rageAt(rage ? rage.t : RAGE_END, t).pose);
+				snap = true;
 				break;
 			case 'crouch':
 				Object.assign(target, {armRx: 0.45 + sway, armLx: 0.45 - sway, sneak: 1, drop: 0.13});
@@ -3670,6 +3802,14 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			} else p.animate(t);
 		}
 		worlds[worldId].tick?.(dt, idle);
+		// захотел потанцевать: на острове, когда ничем не занят, раз в полминуты-минуту, 6–12 секунд
+		const islandFree = P.mode === 'idle' && !P.queue.length && !P.holding && !warp;
+		if (islandFree && heroVisible && now > dance.next && !dancingOnIsland()) {
+			freshDance();
+			dance.until = now + 6 + Math.random() * 6;
+			dance.next = dance.until + 25 + Math.random() * 35;
+			say('icon:note', 1.8);
+		} else if (!islandFree && dancingOnIsland()) dance.until = -1; // занялся делом — танец закончился
 		if (worldId === 'over' && !visitedNether && P.mode === 'idle' && !P.queue.length && heroVisible && now > portalHintAt) {
 			// подсказка: что там, в портале?
 			portalHintAt = now + 32 + Math.random() * 20;
@@ -3923,8 +4063,6 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	return {
 		tier: () => TIERS[progress.tier].id,
 		world: () => worldId,
-		// танцы под музыку: src = {playing, beat()} из js/groove.js, null — выключить
-		music: (src) => (music = src),
 		debug: {
 			portal: () => {
 				enterPortal();
@@ -3967,6 +4105,11 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				return true;
 			},
 			rageT: () => (rage ? +rage.t.toFixed(2) : null),
+			dance: (sec = 8) => {
+				freshDance();
+				dance.until = now + sec;
+				return true;
+			},
 			word: () => {
 				const c = page(toPx(bigGroup.localToWorld(new THREE.Vector3(0, 0, 0))));
 				return {blocks: bigVoxels.length, width: BIG.width, height: BIG.height, cell: +bigCell.toFixed(3), center: {x: Math.round(c.x), y: Math.round(c.y)}, broken: bigVoxels.filter((v) => v.brokenAt >= 0).length};
