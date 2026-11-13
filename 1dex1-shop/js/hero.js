@@ -2482,7 +2482,6 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 
 	let now = 0;
 	let jumpAt = -10;
-	let throwAt = -10; // когда кинул снежок (под Новый год)
 	let broken = 0;
 	let tickles = 0;
 
@@ -4681,13 +4680,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			}
 		}
 		if (cheer > 0) Object.assign(target, {armRx: lerp(target.armRx, -2.9, cheer), armRz: lerp(target.armRz, -0.3, cheer), armLx: lerp(target.armLx, -2.9, cheer), armLz: lerp(target.armLz, 0.3, cheer), legR: cheer * 0.3, legL: -cheer * 0.3});
-		// бросок снежка: рука взлетает назад-вверх и резко идёт вперёд
-		const th = (now - throwAt) / 0.42;
-		if (th >= 0 && th < 1) {
-			target.armRx = th < 0.4 ? lerp(target.armRx, -3.0, th / 0.4) : lerp(-3.0, -1.1, (th - 0.4) / 0.6);
-			target.armRz = 0.05;
-		}
-		const fast = state === 'mine' || state === 'wall' || (th >= 0 && th < 1);
+		const fast = state === 'mine' || state === 'wall';
 		for (const key of Object.keys(pose)) pose[key] = lerp(pose[key], target[key], snap ? 1 - Math.exp(-dt * 40) : fast && key === 'armRx' ? 1 - Math.exp(-dt * 30) : k);
 		p.armR.rotation.set(pose.armRx, 0, pose.armRz);
 		p.armL.rotation.set(pose.armLx, 0, pose.armLz);
@@ -5353,34 +5346,6 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		tier: () => TIERS[progress.tier].id,
 		world: () => worldId,
 		celebrate, // покупка: прыгает от радости
-		// снежок: персонаж кидает его в точку (tx, ty) экрана. Возвращает, откуда он полетит,
-		// или null, если персонажа не видно или он занят (тогда снежок прилетит сверху)
-		throwSnowball: (tx, ty) => {
-			if (!NY || rage || tp || warp) return null;
-			let hand;
-			if (P.mode === 'free') {
-				if (PB.held) return null;
-				oRig.root.updateMatrixWorld(true);
-				const w = oRig.parts.armR.localToWorld(new THREE.Vector3(0, -10, 0));
-				hand = {x: w.x, y: -w.y};
-			} else if (P.mode === 'idle' && !P.queue.length && heroVisible && nap.state !== 'sleep') {
-				if (nap.state) napWake(30);
-				rig.root.updateMatrixWorld(true);
-				const pt = toPx(rig.parts.armR.localToWorld(new THREE.Vector3(0, -10, 0)));
-				const r = canvas.getBoundingClientRect();
-				hand = {x: pt.x + r.left, y: pt.y + r.top};
-			} else return null;
-			if (hand.y < -40 || hand.y > innerHeight + 40 || hand.x < -40 || hand.x > innerWidth + 40) return null;
-			throwAt = now;
-			PB.idleT = 0;
-			return {x: hand.x, y: hand.y - 4, delay: 0.17};
-		},
-		// пустое ли место на первом экране (не остров, не надпись, не портал, не персонаж)
-		emptyAt: (cx, cy) => {
-			updatePointer(cx, cy);
-			if (!pointerInHero) return true;
-			return !pickVoxel() && !pickPlayer() && !pickPortal() && !pickBlock() && !(P.mode === 'free' && hitFree());
-		},
 		debug: {
 			// подменить час (ночь/утро); null — снова настоящие часы
 			clock: (h = null) => {

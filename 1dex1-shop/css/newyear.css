@@ -87,7 +87,7 @@
 .ny-count.is-happy .ny-count__v{color:var(--gold);text-shadow:0 3px 0 var(--gold-lo)}
 @media (max-width:899px){.ny-count{display:grid;justify-items:center;margin:4px 0 6px;text-align:center}}
 
-/* ---------- Новогодний мод — «Хит сезона» ---------- */
+/* ---------- Новогодний мод: сияющая рамка и снег внутри обложки ---------- */
 .ny .item[data-id="new-year-mod"]{border-color:rgba(159,220,255,.7);animation:pop .5s var(--ease) both,ny-glow 2.6s ease-in-out infinite;animation-delay:calc(var(--i)*55ms),0s}
 @keyframes ny-glow{0%,100%{box-shadow:var(--bevel),0 0 0 0 rgba(159,220,255,0),0 0 18px rgba(159,220,255,.18)}50%{box-shadow:var(--bevel),0 0 0 2px rgba(159,220,255,.25),0 0 34px rgba(159,220,255,.4)}}
 /* снег внутри обложки */
@@ -99,12 +99,6 @@
 	animation:ny-fall 7s linear infinite;
 }
 @keyframes ny-fall{to{background-position:0 46px,17px 38px}}
-.ny-hit{
-	position:absolute;right:-42px;top:22px;z-index:3;width:170px;padding:6px 0;transform:rotate(38deg);
-	font-size:11px;line-height:1;text-align:center;text-transform:uppercase;letter-spacing:.12em;color:#fff;
-	background:linear-gradient(var(--ny-red),var(--ny-red-lo));box-shadow:0 3px 0 rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.35);
-}
-.mcard .ny-hit{right:-48px;top:14px;width:150px;font-size:9px;padding:4px 0}
 .ny .mcard[data-product="new-year-mod"]{overflow:hidden;border-color:rgba(159,220,255,.7);animation:ny-glow 2.6s ease-in-out infinite}
 
 /* ---------- кейс-подарок: из коробки вылетает снег ---------- */
@@ -119,20 +113,6 @@
 	45%{transform:translate(var(--x),var(--y))}
 	100%{transform:translate(calc(var(--x)*1.25),calc(var(--y) + 120px));opacity:0}
 }
-
-/* ---------- снежки ---------- */
-.ny-ball{
-	position:fixed;left:0;top:0;z-index:36;width:14px;height:14px;margin:-7px 0 0 -7px;pointer-events:none;
-	background:#f7fbff;box-shadow:inset -3px -3px 0 #bcd8f2,0 2px 0 rgba(0,0,0,.25);
-	clip-path:polygon(4px 0,10px 0,10px 2px,12px 2px,12px 4px,14px 4px,14px 10px,12px 10px,12px 12px,10px 12px,10px 14px,4px 14px,4px 12px,2px 12px,2px 10px,0 10px,0 4px,2px 4px,2px 2px,4px 2px);
-}
-.ny-splat{
-	position:absolute;z-index:32;width:56px;height:56px;margin:-28px 0 0 -28px;pointer-events:none;
-	background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' shape-rendering='crispEdges'%3E%3Cpath fill='%23bcd8f2' d='M4 3h6v1h2v2h1v4h-1v2h-2v1H4v-1H2v-2H1V6h1V4h2z'/%3E%3Cpath fill='%23f7fbff' d='M5 3h4v1h2v2h1v3h-1v2h-2v1H5v-1H3V9H2V6h1V4h2zM1 2h1v1H1zM12 1h1v1h-1zM13 7h1v1h-1zM0 8h1v1H0zM6 0h1v1H6zM11 12h1v1h-1zM2 12h1v1H2zM7 13h1v1H7z'/%3E%3C/svg%3E") 0 0/100% 100%;
-	image-rendering:pixelated;
-}
-.ny-splat i{position:absolute;left:50%;top:50%;width:4px;height:4px;background:#f4faff;animation:ny-crumb .5s ease-out forwards}
-@keyframes ny-crumb{to{transform:translate(var(--x),var(--y));opacity:0}}
 
 /* ---------- полночь: «С Новым годом!» ---------- */
 .ny-banner{

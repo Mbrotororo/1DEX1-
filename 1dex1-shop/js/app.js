@@ -129,12 +129,11 @@ let products = [];
 let heroApi = null;
 // праздничное оформление (js/data.js → SEASON)
 const NY = SEASON === 'newyear';
-const isHit = (p) => NY && p.id === 'new-year-mod'; // «Хит сезона»
 const celebrate = () => {
 	fireworks({reducedMotion, onLaunch: () => fireworkSound('launch'), onPop: () => fireworkSound('pop')});
 	heroApi?.celebrate?.();
 };
-if (NY) initNewYear({reducedMotion, hero: () => heroApi, celebrate: () => heroApi?.celebrate?.(), debug: new URLSearchParams(location.search).has('debug')});
+if (NY) initNewYear({reducedMotion, celebrate: () => heroApi?.celebrate?.(), debug: new URLSearchParams(location.search).has('debug')});
 let filter = 'all';
 const seenTabs = new Set();
 const titleOf = (p) => (getLang() === 'en' && p.titleEn) || p.title;
@@ -159,7 +158,7 @@ const card = (p, i) => {
 	else action = `<button class="btn btn--lime btn--sm" data-checkout="${esc(p.id)}">${t('item.buy')}</button>`;
 	const cover = p.cover ? `<img src="${esc(p.cover)}" alt="" loading="lazy">` : coverArt(p.kind, i);
 	return `<article class="item card" data-kind="${esc(p.kind)}" data-id="${esc(p.id)}" style="--i:${i}">
-		<div class="item__cover ${p.cover ? '' : 'is-art'}">${cover}${isHit(p) ? `<span class="ny-hit px">${t('ny.hit')}</span>` : ''}
+		<div class="item__cover ${p.cover ? '' : 'is-art'}">${cover}
 			<span class="item__badges">${p.status === 'ready' ? '' : `<span class="tag tag--gold px">${t('status.soon')}</span>`}${p.until ? `<span class="tag tag--excl px">${esc(untilText(p))}</span>` : ''}</span>
 		</div>
 		<div class="item__body">
@@ -181,7 +180,7 @@ const renderPhoneShop = () => {
 				.slice(0, 4)
 				.map(
 					(p) =>
-						`<button class="mcard" type="button" data-product="${esc(p.id)}">${isHit(p) ? `<span class="ny-hit px">${t('ny.hit')}</span>` : ''}<span class="mcard__ic">${p.cover ? `<img src="${esc(p.cover)}" alt="" loading="lazy">` : icon(p.kind === 'rp' ? 'gem' : 'pick')}</span><b>${esc(titleOf(p))}</b><small>${kindOf(p)}</small><span class="mcard__price px">${priceOf(p)}</span></button>`,
+						`<button class="mcard" type="button" data-product="${esc(p.id)}"><span class="mcard__ic">${p.cover ? `<img src="${esc(p.cover)}" alt="" loading="lazy">` : icon(p.kind === 'rp' ? 'gem' : 'pick')}</span><b>${esc(titleOf(p))}</b><small>${kindOf(p)}</small><span class="mcard__price px">${priceOf(p)}</span></button>`,
 				)
 				.join('')
 		: `<div class="mcard mcard--empty"><span class="mcard__ic">${icon('chest')}</span><b>${t('m.soonT')}</b><small>${t('m.soonP')}</small></div>`;

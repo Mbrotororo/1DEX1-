@@ -200,20 +200,3 @@ export const fireworkSound = (kind = 'pop') => {
 		// звук не обязателен
 	}
 };
-
-// снежок разбился о сайт: мягкий глухой «пуф»
-export const snowSound = () => {
-	try {
-		const a = audio();
-		const src = noise(a, 0.22, (k) => Math.pow(1 - k, 2.5));
-		const lp = a.createBiquadFilter();
-		lp.type = 'lowpass';
-		lp.frequency.value = 900 + Math.random() * 300;
-		const g = a.createGain();
-		g.gain.value = 0.28;
-		src.connect(lp).connect(g).connect(a.destination);
-		src.start();
-	} catch {
-		// звук не обязателен
-	}
-};

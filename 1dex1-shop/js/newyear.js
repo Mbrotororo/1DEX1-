@@ -1,10 +1,9 @@
 // Новогодний стиль сайта: снегопад, гирлянды, северное сияние за островом, отсчёт до
-// Нового года (в полночь — салют и «С Новым годом!») и снежки: клик по пустому месту —
-// персонаж кидает снежок, он разбивается о сайт и тает.
+// Нового года (в полночь — салют и «С Новым годом!»), снег из кейса-подарка.
 // Включается в js/data.js: SEASON = 'newyear'. Выключил — этот файл ничего не делает.
 import {fireworks} from './fireworks.js';
 import {onLang, t} from './i18n.js';
-import {fireworkSound, snowSound} from './sound.js';
+import {fireworkSound} from './sound.js';
 
 const BULBS = ['#ff4d5e', '#ffc83d', '#b8ff3d', '#4de1ff', '#c3a6ff'];
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -131,7 +130,7 @@ export const snowBurst = (host, reducedMotion = false) => {
 	setTimeout(() => box.remove(), 1800);
 };
 
-export const initNewYear = ({reducedMotion = false, hero = () => null, celebrate = () => {}, debug = false} = {}) => {
+export const initNewYear = ({reducedMotion = false, celebrate = () => {}, debug = false} = {}) => {
 	document.documentElement.classList.add('ny');
 	if (!reducedMotion) snowfall();
 	garland(document.querySelector('.topbar'), 'ny-garland--top');
@@ -191,71 +190,5 @@ export const initNewYear = ({reducedMotion = false, hero = () => null, celebrate
 		if (!seen) setTimeout(() => show(8), 1800);
 	}
 
-	// ---------- снежки: клик по пустому месту ----------
-	const SKIP = 'a, button, input, textarea, select, label, summary, dialog, [role="button"], [role="tab"], [contenteditable], .item, .mcard, .mrow, .case, .collab__space, .topbar, .hotbar, .ny-count, .marquee';
-	let lastThrow = 0;
-	const splat = (x, y) => {
-		const el = document.createElement('div');
-		el.className = 'ny-splat';
-		el.setAttribute('aria-hidden', 'true');
-		el.style.left = `${(x + scrollX).toFixed(0)}px`;
-		el.style.top = `${(y + scrollY).toFixed(0)}px`;
-		el.style.transform = `rotate(${Math.floor(rnd(0, 4)) * 90}deg)`;
-		el.innerHTML = Array.from({length: 7}, () => {
-			const a = rnd(0, Math.PI * 2);
-			const d = rnd(18, 34);
-			return `<i style="--x:${(Math.cos(a) * d).toFixed(0)}px;--y:${(Math.sin(a) * d).toFixed(0)}px"></i>`;
-		}).join('');
-		document.body.append(el);
-		snowSound();
-		// прилип, подержался и тает: сползает вниз и прозрачнеет
-		el.animate(
-			[
-				{transform: `${el.style.transform} scale(.3)`, opacity: 1},
-				{transform: `${el.style.transform} scale(1.12)`, opacity: 1, offset: 0.05},
-				{transform: `${el.style.transform} scale(1)`, opacity: 1, offset: 0.09},
-				{transform: `${el.style.transform} scale(1)`, opacity: 1, offset: 0.5},
-				{transform: `translateY(10px) ${el.style.transform} scale(.85, .55)`, opacity: 0},
-			],
-			{duration: reducedMotion ? 900 : 2900, easing: 'ease-in', fill: 'forwards'},
-		).onfinish = () => el.remove();
-	};
-	const throwBall = (tx, ty) => {
-		// персонаж кидает из руки; если его не видно — снежок прилетает сверху
-		const from = hero()?.throwSnowball?.(tx, ty) || {x: tx + rnd(-140, 140), y: -24, delay: 0};
-		const fly = () => {
-			if (reducedMotion) return splat(tx, ty);
-			const ball = document.createElement('div');
-			ball.className = 'ny-ball';
-			ball.setAttribute('aria-hidden', 'true');
-			document.body.append(ball);
-			const d = Math.hypot(tx - from.x, ty - from.y);
-			const arc = Math.min(160, d * 0.35);
-			const frames = [];
-			for (let i = 0; i <= 10; i++) {
-				const k = i / 10;
-				const x = from.x + (tx - from.x) * k;
-				const y = from.y + (ty - from.y) * k - Math.sin(Math.PI * k) * arc;
-				frames.push({transform: `translate(${x.toFixed(1)}px,${y.toFixed(1)}px) rotate(${(k * 360).toFixed(0)}deg) scale(${(1 + Math.sin(Math.PI * k) * 0.35).toFixed(2)})`});
-			}
-			ball.animate(frames, {duration: Math.min(650, 260 + d * 0.45), easing: 'linear', fill: 'forwards'}).onfinish = () => {
-				ball.remove();
-				splat(tx, ty);
-			};
-		};
-		setTimeout(fly, (from.delay || 0) * 1000);
-	};
-	document.addEventListener('click', (e) => {
-		if (e.defaultPrevented || e.button !== 0) return;
-		if (e.target.closest(SKIP)) return;
-		// на первом экране клик — это остров, надпись и портал; снежок — только по пустому небу
-		if (e.target.closest('.hero') && !hero()?.emptyAt?.(e.clientX, e.clientY)) return;
-		if (String(getSelection?.() || '').trim()) return;
-		const ms = performance.now();
-		if (ms - lastThrow < 280) return;
-		lastThrow = ms;
-		throwBall(e.clientX, e.clientY);
-	});
-
-	if (debug) window.__ny = {midnight: () => show(16), snowball: throwBall, burst: snowBurst};
+	if (debug) window.__ny = {midnight: () => show(16), burst: snowBurst};
 };
