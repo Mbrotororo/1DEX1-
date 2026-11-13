@@ -559,6 +559,10 @@ h2{font:400 clamp(26px,4vw,50px)/1.05 var(--font-display);letter-spacing:-.01em;
 }
 .field input::placeholder{color:var(--dim)}
 .field input:focus{outline:none;border-color:var(--purple)}
+.field__hint{margin:0;font-size:13px;line-height:1.35;color:var(--dim)}
+.field__hint:empty{display:none}
+.field__hint[data-state="free"]{color:var(--lime)}
+.field__hint[data-state="taken"],.field__hint[data-state="bad"]{color:var(--red)}
 .form__error{min-height:20px;font-size:14px;color:var(--red)}
 .form__error:empty{display:none}
 .form__note{font-size:12.5px;line-height:1.45;color:var(--dim)}

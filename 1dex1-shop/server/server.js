@@ -203,6 +203,16 @@ route('POST', 'register', async ({body, ip}) => {
 	return [200, {verify: true, login: nick, email}];
 });
 
+// --- свободен ли ник (подсказка при вводе; занятость ещё раз проверяет register) ---
+route('POST', 'nick', ({body, ip}) => {
+	const nick = String(body.nick || '').trim();
+	if (!NICK_RE.test(nick)) return [400, {error: 'nick'}];
+	if (limited(`nick:${ip}`, 120, 600e3)) return [429, {error: 'too_many'}];
+	// ник в базе без учёта регистра; неподтверждённый аккаунт старше суток ник не держит
+	const u = q('SELECT verified, created_at FROM users WHERE nick = ?').get(nick);
+	return [200, {free: !(u && (u.verified || Date.now() - u.created_at <= DAY))}];
+});
+
 // --- новый код на почту ---
 route('POST', 'resend', async ({body, ip}) => {
 	const login = String(body.login || body.email || '')

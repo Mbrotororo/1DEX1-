@@ -178,6 +178,15 @@ export const register = async ({nick, email, password}, lang) => {
 	return {user: cached};
 };
 
+// Свободен ли ник: {free: true | false} или {error}. Подсказка при вводе; саму занятость
+// ещё раз проверяет регистрация (большие и маленькие буквы не различаются: Nick = nick).
+export const nickFree = async (nick) => {
+	nick = String(nick || '').trim();
+	if (!NICK_RE.test(nick)) return {error: 'nick'};
+	if (serverMode) return api('nick', {nick});
+	return {free: !read(USERS, {})[nick.toLowerCase()]};
+};
+
 // Код из письма: заканчивает регистрацию или вход (только с сервером)
 export const verifyEmail = ({login, code}) => api('verify', {login, code: String(code || '').replace(/\D/g, '')});
 export const resendCode = ({login}, lang) => api('resend', {login, lang});

@@ -411,6 +411,30 @@ auth.onAuth(renderShop);
 	};
 	setInterval(() => mode === 'verify' && paintResend(), 1000);
 
+	// ник проверяется прямо при вводе: свободен или уже занят (регистрация проверит ещё раз)
+	const nickInput = $('#auth-nick');
+	const nickHint = $('#auth-nick-hint');
+	let nickTimer = 0;
+	let nickAsk = 0;
+	const paintNick = (state = '') => {
+		nickHint.dataset.state = state;
+		nickHint.textContent = state ? t(`auth.nick_${state}`) : '';
+	};
+	nickInput.addEventListener('input', () => {
+		clearTimeout(nickTimer);
+		nickAsk++;
+		paintNick();
+		const nick = nickInput.value.trim();
+		if (nick.length < 3) return;
+		const ask = nickAsk;
+		nickTimer = setTimeout(async () => {
+			const res = await auth.nickFree(nick);
+			if (ask !== nickAsk) return; // пока ждали ответ, ник уже поменяли
+			paintNick(res.error === 'nick' ? 'bad' : res.error ? '' : res.free ? 'free' : 'taken');
+		}, 350);
+	});
+	onLang(() => paintNick(nickHint.dataset.state));
+
 	const setMode = (next) => {
 		mode = next;
 		authDlg.dataset.mode = mode;
@@ -479,6 +503,7 @@ auth.onAuth(renderShop);
 		}
 		if (res.error) {
 			error.textContent = errText(res.error);
+			if (res.error === 'nick_taken') paintNick('taken');
 			if (res.field) $(`#auth-${res.field}`)?.focus();
 			return;
 		}
