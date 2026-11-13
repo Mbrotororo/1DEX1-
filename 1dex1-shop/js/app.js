@@ -617,6 +617,43 @@ auth.onAuth(renderShop);
 		$('#nick-box').open = false;
 		notify(t('nick.done'));
 	});
+	// --- смена почты: новая почта и пароль; с сервером — ещё код из письма на новую почту ---
+	const mailForm = $('#email-form');
+	const mailErr = $('#email-error');
+	let mailStep = 1;
+	const mailShow = (step, email = '') => {
+		mailStep = step;
+		$$('[data-mail-step]', mailForm).forEach((f) => (f.hidden = Number(f.dataset.mailStep) !== step));
+		$('#email-note').textContent = step === 2 ? t('mail.sent', {email}) : '';
+		$('#email-save').textContent = t(step === 2 ? 'mail.confirm' : 'mail.save');
+		mailErr.textContent = '';
+		if (step === 2) setTimeout(() => $('#email-code').focus(), 50);
+	};
+	$('#email-box').addEventListener('toggle', () => {
+		if (!$('#email-box').open) return;
+		mailForm.reset();
+		mailShow(1);
+	});
+	mailForm.addEventListener('submit', async (e) => {
+		e.preventDefault();
+		const btn = $('#email-save');
+		if (btn.disabled) return;
+		btn.disabled = true;
+		const data = Object.fromEntries(new FormData(mailForm));
+		const res = mailStep === 1 ? await auth.changeEmail(data, getLang()) : await auth.confirmEmail(data.code);
+		btn.disabled = false;
+		if (res.verify) return mailShow(2, res.email);
+		if (res.error) {
+			mailErr.textContent = errText(res.error);
+			return;
+		}
+		mailForm.reset();
+		mailShow(1);
+		$('#email-box').open = false;
+		notify(t('mail.done'));
+	});
+	onLang(() => $('#email-box').open && mailShow(mailStep, $('#email-new').value.trim()));
+
 	$('#admin-open').addEventListener('click', async () => {
 		const {openAdmin} = await import('./admin.js');
 		const reloadShop = async () => {

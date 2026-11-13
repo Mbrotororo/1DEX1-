@@ -339,6 +339,27 @@
 				</form>
 			</details>
 
+			<details class="pw" id="email-box">
+				<summary><span data-i18n="mail.change">Сменить почту</span><i aria-hidden="true"></i></summary>
+				<form class="form form--inline" id="email-form" novalidate>
+					<div class="field" data-mail-step="1">
+						<label for="email-new" data-i18n="mail.new">Новая почта</label>
+						<input id="email-new" name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+					</div>
+					<div class="field" data-mail-step="1">
+						<label for="email-pass" data-i18n="mail.pass">Пароль от аккаунта</label>
+						<input id="email-pass" name="password" type="password" autocomplete="current-password" required>
+					</div>
+					<div class="field" data-mail-step="2" hidden>
+						<label for="email-code" data-i18n="mail.code">Код из письма</label>
+						<input id="email-code" name="code" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000">
+					</div>
+					<p class="form__note" id="email-note"></p>
+					<p class="form__error" id="email-error" role="alert"></p>
+					<button class="btn btn--lime btn--sm" type="submit" id="email-save" data-i18n="mail.save">Сменить почту</button>
+				</form>
+			</details>
+
 			<details class="pw">
 				<summary><span data-i18n="pw.summary">Сменить пароль</span><i aria-hidden="true"></i></summary>
 				<form class="form form--inline" id="pw-form" novalidate>

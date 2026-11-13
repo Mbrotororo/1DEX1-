@@ -369,6 +369,60 @@ route(
 	{auth: true},
 );
 
+// --- смена почты: пароль от аккаунта, потом код из письма на НОВУЮ почту ---
+route(
+	'POST',
+	'email/change',
+	async ({body, user}) => {
+		const email = String(body.email || '')
+			.trim()
+			.toLowerCase();
+		if (!EMAIL_RE.test(email) || email.length > 120) return [400, {error: 'email', field: 'email'}];
+		if (email === user.email.toLowerCase()) return [400, {error: 'email_same', field: 'email'}];
+		if (!(await checkPass(body.password, user.pass))) return [400, {error: 'bad_password', field: 'password'}];
+		if (limited(`email:${user.id}`, 5, 3600e3)) return [429, {error: 'too_many'}];
+		const other = q('SELECT id, verified FROM users WHERE email = ? AND id != ?').get(email, user.id);
+		if (other?.verified) return [409, {error: 'email_taken', field: 'email'}];
+		const code = String(randomInt(0, 1e6)).padStart(6, '0');
+		q('INSERT INTO email_changes (user_id, email, code, expires_at, tries) VALUES (?, ?, ?, ?, 0) ON CONFLICT (user_id) DO UPDATE SET email = excluded.email, code = excluded.code, expires_at = excluded.expires_at, tries = 0').run(
+			user.id,
+			email,
+			sha(code),
+			Date.now() + CODE_TTL,
+		);
+		try {
+			await sendCode(email, user.nick, code, lang(body));
+		} catch (err) {
+			console.error('Письмо не отправлено:', err.message);
+			return [502, {error: 'mail'}];
+		}
+		return [200, {verify: true, email}];
+	},
+	{auth: true},
+);
+route(
+	'POST',
+	'email/confirm',
+	({body, user}) => {
+		const row = q('SELECT * FROM email_changes WHERE user_id = ?').get(user.id);
+		if (!row) return [400, {error: 'bad_code'}];
+		if (row.expires_at < Date.now()) return [400, {error: 'code_expired'}];
+		if (row.tries >= 5) return [429, {error: 'too_many'}];
+		if (sha(String(body.code || '').replace(/\D/g, '')) !== row.code) {
+			q('UPDATE email_changes SET tries = tries + 1 WHERE user_id = ?').run(user.id);
+			return [400, {error: 'bad_code'}];
+		}
+		const other = q('SELECT id, verified FROM users WHERE email = ? AND id != ?').get(row.email, user.id);
+		if (other?.verified) return [409, {error: 'email_taken'}];
+		if (other) q('DELETE FROM users WHERE id = ?').run(other.id); // брошенная неподтверждённая регистрация
+		q('UPDATE users SET email = ? WHERE id = ?').run(row.email, user.id);
+		q('DELETE FROM email_changes WHERE user_id = ?').run(user.id);
+		grantAdmins(); // если новая почта — из ADMIN_EMAILS, появится админка
+		return [200, {ok: true}];
+	},
+	{auth: true},
+);
+
 route(
 	'POST',
 	'avatar',

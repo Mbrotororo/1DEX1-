@@ -217,6 +217,22 @@ export const changeNick = async (nick) => {
 	return localSave(users) ? {ok: true, user: cached} : {error: 'save'};
 };
 
+// Сменить почту. С сервером: пароль → код на новую почту → confirmEmail(код).
+// Без сервера (превью сайта) писем нет — почта меняется сразу после проверки пароля.
+export const changeEmail = async ({email, password}, lang) => {
+	email = String(email || '').trim().toLowerCase();
+	if (!EMAIL_RE.test(email)) return {error: 'email', field: 'email'};
+	if (serverMode) return api('email/change', {email, password, lang});
+	const {users, user} = localSession();
+	if (!user) return {error: 'login'};
+	if (email === user.email) return {error: 'email_same', field: 'email'};
+	if (user.hash !== (await hashPassword(String(password || ''), user.salt))) return {error: 'bad_password', field: 'password'};
+	if (Object.values(users).some((u) => u !== user && u.email === email)) return {error: 'email_taken', field: 'email'};
+	user.email = email;
+	return localSave(users) ? {ok: true, user: cached} : {error: 'save'};
+};
+export const confirmEmail = (code) => api('email/confirm', {code: String(code || '').replace(/\D/g, '')});
+
 // Админка (только с сервером и только для админов): запросы к api/admin/…
 export const admin = (path, body) => api(`admin/${path}`, body);
 

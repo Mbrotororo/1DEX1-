@@ -26,6 +26,15 @@ CREATE TABLE IF NOT EXISTS email_codes (
 	tries INTEGER NOT NULL DEFAULT 0
 );
 
+-- Смена почты: код уходит на новую почту, почта меняется только после него
+CREATE TABLE IF NOT EXISTS email_changes (
+	user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+	email TEXT NOT NULL,                      -- новая почта
+	code TEXT NOT NULL,                       -- хэш кода
+	expires_at INTEGER NOT NULL,
+	tries INTEGER NOT NULL DEFAULT 0
+);
+
 -- Входы: в cookie браузера лежит токен, здесь — его хэш
 CREATE TABLE IF NOT EXISTS sessions (
 	token TEXT PRIMARY KEY,
