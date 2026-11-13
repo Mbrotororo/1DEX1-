@@ -153,7 +153,7 @@ const promos = async () => {
 		${r.promos.length ? `<div class="adm__table"><table><thead><tr><th>Код</th><th>Скидка</th><th>Применили</th><th>Срок</th><th></th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="adm__empty">Здесь ещё ничего не создано</p>'}
 		<h3 class="adm__h">Как применяли промокоды</h3>
 		${usage ? `<ul class="adm__usage">${usage}</ul>` : '<p class="adm__empty">Промокоды ещё не применяли</p>'}
-		${r.hidden ? `<p class="adm__note">Ещё ${r.hidden} ${plural(r.hidden, ['код', 'кода', 'кодов'])} записаны в js/data.js отпечатком — сам код там не виден, а применения видны в списке выше.</p>` : ''}`;
+		${r.hidden ? `<p class="adm__note">Ещё ${r.hidden} ${plural(r.hidden, ['код записан', 'кода записаны', 'кодов записаны'])} в js/data.js отпечатком — сам код там не виден, а применения видны в списке выше.</p>` : ''}`;
 };
 
 // ---------- Игроки ----------
