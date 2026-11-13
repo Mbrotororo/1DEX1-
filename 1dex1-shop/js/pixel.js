@@ -116,6 +116,8 @@ export const ICONS = {
 	card: ['.........', 'qqqqqqqqq', 'qpppppppq', 'qkkkkkkkq', 'qpppppppq', 'qggpppppq', 'qggpwwpwq', 'qqqqqqqqq', '.........'],
 	qr: ['lll.l.lll', 'l.l...l.l', 'lll.l.lll', '...l.l...', 'l.lll.l.l', '...l..l..', 'lll.l.ll.', 'l.l..l..l', 'lll.ll.l.'],
 	// злость: красное лицо, брови домиком вниз
+	// криппер: зелёное пятнистое лицо
+	creeper: ['lmlllmllm', 'lllmlllml', 'mkklllkkl', 'lkklmlkkl', 'llmkkkmll', 'lmlkkklml', 'llkkkkkll', 'mlkmlmkll', 'llklllklm'],
 	angry: ['.rrrrrrr.', 'rkrrrrrkr', 'rrkrrrkrr', 'rrkkrkkrr', 'rrrrrrrrr', 'rrrkkkrrr', 'rrkrrrkrr', 'rrrrrrrrr', '.rrrrrrr.'],
 	coin: ['..ggggg..', '.gGGGGGg.', 'gGGhhhGGg', 'gGhGGGGGg', 'gGhGGGGGg', 'gGhGGGGGg', 'gGGhhhGGg', '.gGGGGGg.', '..ggggg..'],
 	play: ['.........', '.rrrrrrr.', 'rrrwrrrrr', 'rrrwwrrrr', 'rrrwwwrrr', 'rrrwwrrrr', 'rrrwrrrrr', '.rrrrrrr.', '.........'],

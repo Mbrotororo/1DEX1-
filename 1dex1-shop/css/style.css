@@ -251,6 +251,9 @@ ul{padding:0;list-style:none}
 .dex-crack.is-fading{opacity:0;transition:opacity 1.7s ease}
 .dex-flash{position:fixed;inset:0;z-index:39;pointer-events:none;animation:crack-flash .6s ease-out forwards}
 /* вылезает из экрана: копия его кадра поверх стекла (по краю дыры); осколки падают поверх всего, с перспективой */
+/* взрыв криппера: воронка и блоки — под персонажем; салют — поверх сайта, под уведомлениями */
+.dex-boom{position:fixed;inset:0;z-index:34;width:100%;height:100%;pointer-events:none}
+.dex-fireworks{position:fixed;inset:0;z-index:45;width:100%;height:100%;pointer-events:none}
 .dex-front{position:fixed;inset:0;z-index:40;width:100%;height:100%;pointer-events:none}
 .dex-shards{position:fixed;inset:0;z-index:41;pointer-events:none;perspective:900px;overflow:hidden}
 .dex-shards canvas{position:absolute;transform-origin:50% 50%;will-change:transform,opacity}

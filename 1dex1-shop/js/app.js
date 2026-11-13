@@ -9,7 +9,8 @@ import {applyI18n, getLang, locale, onLang, setLang, t} from './i18n.js';
 import {getDoc} from './legal.js';
 import {fontReady} from './voxelword.js';
 import {caseArt, coverArt, icon, navIcon} from './pixel.js';
-import {breakSound, punchSound, shatterSound} from './sound.js';
+import {boomSound, breakSound, fireworkSound, hissSound, punchSound, shatterSound} from './sound.js';
+import {fireworks} from './fireworks.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -123,6 +124,12 @@ let openAuth = () => {}; // заполняется в блоке аккаунт�
 
 // ---------- магазин ----------
 let products = [];
+// покупка: салют над сайтом, а персонаж прыгает от радости
+let heroApi = null;
+const celebrate = () => {
+	fireworks({reducedMotion, onLaunch: () => fireworkSound('launch'), onPop: () => fireworkSound('pop')});
+	heroApi?.celebrate?.();
+};
 let filter = 'all';
 const seenTabs = new Set();
 const titleOf = (p) => (getLang() === 'en' && p.titleEn) || p.title;
@@ -291,6 +298,7 @@ coForm.addEventListener('submit', async (e) => {
 	if (res.url) return location.assign(res.url); // страница платёжного сервиса (когда он будет подключён)
 	closeDialog(checkout);
 	notify(t('toast.bought'));
+	celebrate();
 });
 const renderShop = () => {
 	renderPhoneShop();
@@ -332,6 +340,7 @@ document.addEventListener('click', async (e) => {
 	if (res.error === 'login') return openAuth('login');
 	if (res.error) return notify(errText(res.error));
 	notify(t('toast.bought'));
+	celebrate();
 });
 renderShop();
 onLang(renderShop);
@@ -1198,10 +1207,20 @@ Promise.all([import('./hero.js'), fontReady()])
 					case 'shatter':
 						shatterSound();
 						break;
+					case 'creeperHiss':
+						hissSound();
+						break;
+					case 'creeperBoom':
+						boomSound();
+						break;
+					case 'creeperScared':
+						unlock('creeper');
+						break;
 					default:
 				}
 			},
 		});
+		heroApi = ok || null;
 		document.documentElement.classList.add(ok ? 'has-gl' : 'no-gl');
 		// адрес с ?debug открывает доступ к сцене из консоли — нужно только для проверки
 		if (new URLSearchParams(location.search).has('debug')) window.__hero = ok;

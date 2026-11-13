@@ -18,6 +18,7 @@ import * as THREE from '../vendor/three.module.min.js';
 import {t} from './i18n.js';
 import {CROSSHAIR, icon} from './pixel.js';
 import {burst, cellIndex, rasterize, voxelState} from './voxelword.js';
+import {siteBoom} from './boom.js';
 
 // ---------- маленькие помощники ----------
 const rng = (seed) => {
@@ -2137,7 +2138,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	const WIDE = [0.5, 1.35];
 	const SIT = [0.42, 0.845];
 	const FLAT = [1.35, 0.6];
-	const POSE_BOX = {stand: TALL, wave: TALL, look: TALL, dance: TALL, rage: TALL, float: WIDE, held: WIDE, reach: WIDE, fly: WIDE, wall: WIDE, crouch: [0.42, 1.25], sit: SIT, sitHappy: SIT, doze: SIT, lie: FLAT, sleep: FLAT};
+	const POSE_BOX = {stand: TALL, wave: TALL, look: TALL, dance: TALL, rage: TALL, float: WIDE, held: WIDE, reach: WIDE, fly: WIDE, wall: WIDE, crouch: [0.42, 1.25], sit: SIT, sitHappy: SIT, doze: SIT, yawnSit: SIT, lie: FLAT, sleep: FLAT, stretch: TALL, cheer: TALL};
 	// perch — на каком виджете сидит; seek — к какому летит, чтобы сесть; auto — полёт к стене;
 	// calm — сколько секунд спокойно летает; idleT — сколько секунд его никто не трогал
 	const PB = {x: 0, y: 0, vx: 0, vy: 0, hw: 10, hh: 30, held: false, perch: null, perchX: 0, outT: 0, seek: null, seekAt: 0, seekTry: 0, auto: null, pose: 'float', poseT: 0, poseDur: 3, lieDir: 1, calm: 0, idleT: 0, spin: 0, spinV: 0, dizzy: 0, hop: 0, greetAt: -99, zzzAt: 0, lastPerch: null, lastPerchAt: -99, clearOfIsland: false, pickX: 0, pickY: 0};
@@ -2198,6 +2199,63 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		}
 	};
 
+	// ================= ДЕНЬ И НОЧЬ =================
+	// Живёт по часам посетителя. Ночью (23:00–6:00) не танцует, а зевает и ложится спать:
+	// на острове — прямо на траву (над ним «Zzz»), на тексте засыпает быстрее обычного.
+	// Кликнешь — проснётся: «Я не сплю!». Утром (6:00–11:00) при встрече потягивается.
+	let fakeHour = null; // для проверки из консоли: подменить час
+	const hourNow = () => fakeHour ?? new Date().getHours();
+	const isNight = () => hourNow() >= 23 || hourNow() < 6;
+	const isMorning = () => hourNow() >= 6 && hourNow() < 11;
+	// на острове: state — 'yawn' | 'sleep' | 'stretch' | null
+	const nap = {state: null, at: 0, dur: 1, next: 6 + Math.random() * 6, morning: false, zzzAt: 0};
+	const napStart = (state, dur = 0) => {
+		nap.state = state;
+		nap.at = now;
+		nap.dur = dur;
+		if (state === 'sleep') PB.lieDir = Math.random() < 0.5 ? -1 : 1;
+	};
+	// разбудили или занялся делом: какое-то время не спит
+	const napWake = (awake = 40) => {
+		nap.state = null;
+		nap.next = now + awake + Math.random() * 20;
+	};
+	// зевок: правая ладонь ко рту, левая рука тянется вверх, голова запрокинута
+	const yawnTarget = (k) => {
+		const e = Math.sin(Math.PI * clamp(k, 0, 1));
+		return {armRx: -2.25 * e, armRz: 0.42 * e, armLx: -2.7 * e, armLz: 0.55 * e, headPitch: -0.45 * e, tiltZ: 0.06 * e};
+	};
+	// потягивается: руки высоко вверх, прогибается назад и чуть качается в стороны
+	const stretchTarget = (k) => {
+		const c = clamp(k, 0, 1);
+		const e = Math.sin(Math.PI * c) ** 0.7;
+		return {armRx: -3.0 * e, armRz: -0.2 * e, armLx: -3.0 * e, armLz: 0.2 * e, headPitch: -0.35 * e, tiltZ: Math.sin(c * Math.PI * 2) * e * 0.12, drop: -0.08 * e, legRz: 0.05 * e, legLz: -0.05 * e};
+	};
+
+	// ================= РАДОСТЬ: ПОКУПКА =================
+	// Кто-то купил товар — персонаж прыгает от радости, руки вверх: «Ура!», потом сердечко.
+	const party = {until: -1, next: 0, heart: false};
+	const celebrate = () => {
+		party.until = now + 3.4;
+		party.next = now;
+		party.heart = false;
+		if (nap.state) napWake(60);
+		if (P.mode === 'free' && PB.perch && !rage) setPose('cheer', 3.4);
+		say('say.yay', 1.8);
+	};
+	const stepParty = () => {
+		if (now > party.until) return;
+		if (now >= party.next) {
+			party.next = now + 0.55;
+			if (P.mode === 'idle') jumpAt = now;
+			else if (P.mode === 'free' && !rage && !PB.held) PB.hop = 0.42;
+		}
+		if (!party.heart && now > party.until - 1.4) {
+			party.heart = true;
+			say('icon:heart', 1.4);
+		}
+	};
+
 	// ================= ЗЛОСТЬ =================
 	// Стена сломана, персонаж сидит на тексте, его 5 раз быстро тыкнули. Сцена как в кино,
 	// по ключевым кадрам с плавными кривыми:
@@ -2213,6 +2271,10 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	const startRage = (kind) => {
 		const breakout = kind === 'breakout' || (kind !== 'strikes' && Math.random() < BREAKOUT_CHANCE);
 		rage = {t: 0, plan: breakout ? planBreakout() : planStrikes(), next: 0, ev: 0, cracks: [], hole: null};
+		if (creeper && creeper.state !== 'flee') {
+			creeper.state = 'out';
+			creeper.t = 0;
+		}
 		PB.idleT = 0;
 		setPose('rage');
 		say('icon:angry', 1.1);
@@ -3321,15 +3383,21 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				// уже бесится: третий и четвёртый тычок — предупреждает
 				PB.hop = 0.42;
 				say(rageTaps.length === 3 ? '...' : 'icon:angry', 1.2);
-				if (PB.pose === 'sleep' || PB.pose === 'doze' || PB.pose === 'lie') setPose('sit', 5);
+				if (PB.pose === 'sleep' || PB.pose === 'doze' || PB.pose === 'lie' || PB.pose === 'yawnSit') setPose('sit', 5);
 				return;
 			}
 		}
 		if (PB.perch) {
 			PB.hop = 0.42;
-			if (PB.pose === 'sleep' || PB.pose === 'doze') {
-				say('!', 1);
-				setPose('sit', 5);
+			if (PB.pose === 'sleep' || PB.pose === 'doze' || PB.pose === 'yawnSit') {
+				// разбудили: утром — потягивается, иначе «Я не сплю!»
+				if (isMorning()) {
+					setPose('stretch', 2.8);
+					say('say.morning', 2);
+				} else {
+					setPose('sit', 5);
+					say('say.awake', 1.4);
+				}
 				return;
 			}
 			const r = Math.random();
@@ -3349,6 +3417,14 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		'pointerdown',
 		(e) => {
 			updatePointer(e.clientX, e.clientY);
+			if (hitCreeper()) {
+				// успел — криппер пугается и убегает
+				scareCreeper();
+				suppressClick = true;
+				e.preventDefault();
+				e.stopPropagation();
+				return;
+			}
 			if (!hitFree()) return;
 			drag = {x0: e.clientX, y0: e.clientY, started: false, free: true};
 			suppressClick = true;
@@ -3373,7 +3449,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			const t = e.touches[0];
 			if (!t) return;
 			updatePointer(t.clientX, t.clientY);
-			if (hitFree() || (pointerInHero && pickPlayer())) e.preventDefault();
+			if (hitFree() || hitCreeper() || (pointerInHero && pickPlayer())) e.preventDefault();
 		},
 		{passive: false, capture: true},
 	);
@@ -3411,7 +3487,10 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		else if (pickPlayer()) {
 			if (P.mode === 'idle') jumpAt = now;
 			if (++tickles === 5) on('tickle');
-			if (Math.random() < 0.6) say(oneOf('say.giggle', 'icon:heart', 'say.hi'), 1.4);
+			if (nap.state === 'sleep' || nap.state === 'yawn') {
+				napWake(45); // разбудили — подскакивает
+				say('say.awake', 1.6);
+			} else if (Math.random() < 0.6) say(oneOf('say.giggle', 'icon:heart', 'say.hi'), 1.4);
 		} else if (pickPortal()) enterPortal();
 		else {
 			const b = pickBlock();
@@ -3825,10 +3904,27 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 							PB.zzzAt = now + 2.8;
 							say('Zzz', 1.9);
 						}
-					} else if (PB.idleT > 30) {
-						// долго никто не трогал — засыпает
-						setPose(wideEnough(w) ? 'sleep' : 'doze');
-						PB.zzzAt = now + 0.6;
+					} else if (PB.pose === 'yawnSit' || PB.pose === 'cheer' || PB.pose === 'stretch') {
+						// зевает, радуется или потягивается — до конца движения
+						if (PB.poseT > PB.poseDur) {
+							if (PB.pose === 'yawnSit') {
+								setPose(wideEnough(w) ? 'sleep' : 'doze');
+								PB.zzzAt = now + 0.6;
+							} else perchPose();
+						}
+					} else if (!nap.morning && isMorning() && PB.poseT > 1) {
+						nap.morning = true;
+						setPose('stretch', 2.8);
+						say('say.morning', 2.2);
+					} else if (PB.idleT > (isNight() ? 9 : 30)) {
+						// долго никто не трогал — засыпает; ночью быстрее и сначала зевает
+						if (isNight()) {
+							setPose('yawnSit', 2.4);
+							say('say.yawn', 2);
+						} else {
+							setPose(wideEnough(w) ? 'sleep' : 'doze');
+							PB.zzzAt = now + 0.6;
+						}
 					} else if (near && now - PB.greetAt > 16 && PB.pose !== 'wave') {
 						PB.greetAt = now;
 						setPose('wave', 2.4);
@@ -3992,7 +4088,9 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const target = {armRx: 0, armRz: 0.04, armLx: 0, armLz: -0.04, legR: 0, legL: 0, legRz: 0, legLz: 0, hipX: 0, sneak: 0, drop: 0, roll: 0, tiltZ: 0, headPitch: 0, headYaw: 0};
 		const sway = Math.sin(idle * 2) * 0.05;
 		// на острове под музыку танцует, если ничем не занят
-		const state = P.mode === 'free' ? PB.pose : P.mode === 'idle' && !P.queue.length && !P.holding && dancingOnIsland() ? 'dance' : P.mode;
+		const islandIdle = P.mode === 'idle' && !P.queue.length && !P.holding;
+		const state = P.mode === 'free' ? PB.pose : islandIdle && nap.state ? nap.state : islandIdle && dancingOnIsland() ? 'dance' : P.mode;
+		const napK = P.mode === 'free' ? PB.poseT / Math.max(0.1, PB.poseDur) : (now - nap.at) / Math.max(0.1, nap.dur); // зевок и потягивание: 0 → 1
 		let snap = false; // «робот»: позы меняются рывком, без плавности
 		const swing = (period) => {
 			const ph = (P.actT / period) % 1;
@@ -4071,6 +4169,19 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				// радуется: упёрся руками сзади, быстро болтает ногами и качает головой
 				Object.assign(target, {armRx: 0.55, armLx: 0.55, armRz: 0.25, armLz: -0.25, legR: -1.3 + Math.sin(t * 7) * 0.5, legL: -1.3 - Math.sin(t * 7) * 0.5, drop: 1.01, headPitch: -0.15 + Math.sin(t * 3.5) * 0.1});
 				break;
+			case 'yawn':
+				Object.assign(target, yawnTarget(napK));
+				break;
+			case 'yawnSit':
+				Object.assign(target, {legR: -1.25, legL: -1.25, drop: 1.01}, yawnTarget(napK));
+				break;
+			case 'stretch':
+				Object.assign(target, stretchTarget(napK));
+				break;
+			case 'cheer':
+				// радуется: обе руки вверх и машет ими
+				Object.assign(target, {armRx: -2.9 + Math.sin(t * 11) * 0.22, armRz: -0.3, armLx: -2.9 - Math.sin(t * 11) * 0.22, armLz: 0.3, headPitch: -0.2});
+				break;
 			case 'doze':
 				// задремал сидя: голова клонится
 				Object.assign(target, {armRx: -0.2, armLx: -0.2, legR: -1.3, legL: -1.3, drop: 1.01, headPitch: 0.55 + Math.sin(t * 1.3) * 0.12});
@@ -4112,13 +4223,272 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const ly = pointerVec ? clamp((pointerVec.y - headPos.y) * 0.9, -0.5, 0.6) : cheer * 0.5;
 		const lookK = 1 - Math.exp(-dt * 6);
 		const busyHead = ['walk', 'mine', 'chest', 'lie', 'wall', 'sleep', 'doze'].includes(state);
-		const ownHead = state === 'look' || state === 'dance' || state === 'rage'; // голова двигается сама: осматривается, качает в такт, злится
+		const ownHead = state === 'look' || state === 'dance' || state === 'rage' || state === 'yawn' || state === 'yawnSit' || state === 'stretch'; // голова двигается сама: осматривается, качает в такт, злится
 		look.yaw = lerp(look.yaw, busyHead ? 0 : ownHead ? pose.headYaw : lx, ownHead && snap ? 1 : lookK);
 		look.pitch = lerp(look.pitch, busyHead || ownHead ? pose.headPitch : -ly + pose.sneak * 0.3 + pose.headPitch, lookK);
 		// после сильного удара кружится голова
 		const dizzy = P.mode === 'free' ? clamp(PB.dizzy, 0, 1) : 0;
 		p.head.rotation.set(look.pitch + Math.cos(t * 11) * 0.25 * dizzy, look.yaw + Math.sin(t * 11) * 0.55 * dizzy, 0);
 		return {jump, cheer};
+	};
+
+	// ================= КРИППЕР =================
+	// Стена сломана, персонаж сидит на тексте. Изредка по тому же тексту к нему подкрадывается
+	// криппер: короткими перебежками, замирая и поглядывая на тебя. Успеешь кликнуть по нему —
+	// подпрыгнет от испуга и убежит. Не успеешь — подойдёт вплотную, зашипит, замигает белым,
+	// раздуется и — взрыв: кусок сайта разлетается блоками, на его месте воронка, персонажа
+	// отбрасывает. Через пару секунд блоки слетаются обратно, и сайт снова целый.
+	const FUSE = 1.5; // сколько шипит перед взрывом
+	let creeper = null; // {m: модель, w: виджет, x, dir, state, t, phase, run}
+	let creeperModel = null;
+	let creeperNext = 45 + Math.random() * 50; // первая попытка — не раньше чем через ~минуту
+	const creeperS = () => PLAYER_SCALE * playerK; // пикселей на пиксель скина
+	const buildCreeper = () => {
+		// своя текстура 64×64: пятнистый зелёный, на передней грани головы — лицо
+		const c = document.createElement('canvas');
+		c.width = c.height = 64;
+		const g = c.getContext('2d');
+		const G = ['#4fae3e', '#5fc24b', '#3d8f31', '#6fd05a', '#357a2a', '#86da70', '#4a9e3a'];
+		for (let y = 0; y < 64; y++) {
+			for (let x = 0; x < 64; x++) {
+				g.fillStyle = Math.random() < 0.05 ? '#c2dcb4' : G[Math.floor(Math.random() * G.length)];
+				g.fillRect(x, y, 1, 1);
+			}
+		}
+		const face = ['........', '........', '.kk..kk.', '.kk..kk.', '...kk...', '..kkkk..', '..kkkk..', '..k..k..'];
+		face.forEach((row, y) =>
+			[...row].forEach((ch, x) => {
+				if (ch !== 'k') return;
+				g.fillStyle = (x + y) % 3 ? '#0c140b' : '#1d2b1a';
+				g.fillRect(8 + x, 8 + y, 1, 1);
+			}),
+		);
+		const tex = new THREE.CanvasTexture(c);
+		tex.magFilter = THREE.NearestFilter;
+		tex.minFilter = THREE.NearestFilter;
+		tex.colorSpace = THREE.SRGBColorSpace;
+		const mat = new THREE.MeshLambertMaterial({map: tex, transparent: true});
+		const pivot = new THREE.Group();
+		const root = new THREE.Group();
+		pivot.add(root);
+		const body = new THREE.Mesh(skinBox(8, 12, 4, 16, 16), mat);
+		body.position.set(0, 12, 0);
+		root.add(body);
+		const head = new THREE.Group();
+		head.position.set(0, 18, 0);
+		const headMesh = new THREE.Mesh(skinBox(8, 8, 8, 0, 0), mat);
+		headMesh.position.set(0, 4, 0);
+		head.add(headMesh);
+		root.add(head);
+		// ноги: две спереди, две сзади
+		const legs = [[-2, 4], [2, 4], [-2, -4], [2, -4]].map(([x, z]) => {
+			const leg = new THREE.Group();
+			leg.position.set(x, 6, z);
+			const m = new THREE.Mesh(skinBox(4, 6, 4, 0, 16), mat);
+			m.position.set(0, -3, 0);
+			leg.add(m);
+			root.add(leg);
+			return leg;
+		});
+		pivot.visible = false;
+		oScene.add(pivot);
+		return {pivot, root, head, legs, mat};
+	};
+	const spawnCreeper = () => {
+		const w = PB.perch;
+		if (!w || P.mode !== 'free') return false;
+		const s = creeperS();
+		const half = 6 * s; // полдлины криппера сбоку
+		const roomL = PB.x - PB.hw - w.left;
+		const roomR = w.right - (PB.x + PB.hw);
+		const need = half * 2 + 20; // на телефоне карточки узкие — хватит и короткой перебежки
+		const sides = [];
+		if (roomL > need) sides.push(-1);
+		if (roomR > need) sides.push(1);
+		if (!sides.length) return false;
+		const side = sides[Math.floor(Math.random() * sides.length)];
+		const room = side < 0 ? roomL : roomR;
+		const start = Math.min(room - half * 2 - 4, 26 * s * (5 + Math.random() * 3));
+		creeperModel ||= buildCreeper();
+		// идёт не быстрее, чем за ~5 секунд: есть время заметить и кликнуть
+		const speed = clamp(start / 5, 26 * s * 0.45, 26 * s * 1.1);
+		creeper = {m: creeperModel, w, x: PB.x + side * (PB.hw + half + 4 + start), dir: -side, speed, state: 'in', t: 0, phase: 0, run: 0, yaw: -side * (Math.PI / 2 - 0.45), hop: 0};
+		creeperModel.pivot.visible = true;
+		creeperModel.mat.opacity = 0;
+		creeperModel.mat.emissive.setScalar(0);
+		return true;
+	};
+	const hideCreeper = () => {
+		if (creeper) creeper.m.pivot.visible = false;
+		creeper = null;
+	};
+	// кликнули по нему?
+	const hitCreeper = () => {
+		if (!creeper || !['in', 'walk', 'wait', 'fuse'].includes(creeper.state)) return false;
+		const s = creeperS();
+		return Math.abs(pointerDoc.x - creeper.x) < 7 * s + 10 && pointerDoc.y > creeper.w.top - 27 * s - 10 && pointerDoc.y < creeper.w.top + 8;
+	};
+	const scareCreeper = () => {
+		const c = creeper;
+		c.state = 'flee';
+		c.t = 0;
+		c.dir = -c.dir; // разворачивается и убегает
+		c.m.mat.emissive.setScalar(0);
+		on('creeperScared');
+		if (P.mode === 'free') {
+			PB.hop = 0.42;
+			PB.idleT = 0;
+			PB.greetAt = now; // не перебивать «Фух» приветствием
+			if (PB.perch && ['sleep', 'doze', 'yawnSit', 'sit', 'crouch', 'look'].includes(PB.pose)) setPose('sitHappy', 3.5);
+			say('say.creeperFlee', 1.8);
+		}
+	};
+	const creeperBoom = () => {
+		const c = creeper;
+		const s = creeperS();
+		const cyDoc = c.w.top - 13 * s;
+		const cx = c.x - scrollX;
+		const cy = cyDoc - scrollY;
+		hideCreeper();
+		const R = clamp(26 * s * 2.2, 90, 170);
+		flashScreen(0.9, 650, cx, cy);
+		if (!reducedMotion) siteBoom(cx, cy, R, {lock: (onOff) => (onOff || !document.querySelector('canvas.dex-crack:not(.is-fading)')) && lockGlass(onOff)});
+		shake([overlay]);
+		on('creeperBoom');
+		// персонажа рядом отбрасывает взрывом
+		const dx = PB.x - c.x;
+		if (P.mode === 'free' && !PB.held && Math.hypot(dx, PB.y - cyDoc) < R * 1.7) {
+			const dir = Math.sign(dx) || 1;
+			if (PB.perch) unperch(3.5);
+			// в основном вбок и чуть вверх: остаётся рядом и потом снова садится на текст
+			PB.vx = dir * (700 + Math.random() * 250);
+			PB.vy = -(220 + Math.random() * 160);
+			PB.spinV = dir * 11;
+			PB.dizzy = 2.4;
+			PB.calm = 0;
+			PB.idleT = 0;
+			say('say.oops', 1.4);
+		}
+	};
+	const stepCreeper = (dt) => {
+		if (!creeper) {
+			const calm = PB.perch && !rage && !PB.held && !tp && !warp && freeWorld && PB.poseT > 2;
+			if (calm && now > creeperNext) {
+				creeperNext = now + 70 + Math.random() * 90;
+				if (Math.random() < 0.6) spawnCreeper();
+			}
+			return;
+		}
+		const c = creeper;
+		const m = c.m;
+		const s = creeperS();
+		const half = 6 * s;
+		c.t += dt;
+		const w = findWidget(c.w);
+		const gone = !w || P.mode !== 'free' || tp || warp || rage;
+		if (w) c.w = w;
+		// персонаж улетел, страницу пролистали, началась другая сцена — уходит
+		const lost = gone || PB.perch?.el !== c.w.el || w.top < scrollY + topbarH || w.top - 30 * s > scrollY + innerHeight;
+		if (lost && c.state !== 'flee' && c.state !== 'out') {
+			if (c.state === 'fuse' && !gone && w.top > scrollY && w.top < scrollY + innerHeight) {
+				// уже шипит — взорвётся и без персонажа
+			} else {
+				c.state = 'out';
+				c.t = 0;
+			}
+		}
+		const target = PB.x - c.dir * (PB.hw + half + 4); // где остановится вплотную
+		let moving = false;
+		switch (c.state) {
+			case 'in':
+				m.mat.opacity = clamp(c.t / 0.5, 0, 1);
+				if (c.t > 0.5) {
+					c.state = 'walk';
+					c.t = 0;
+					c.run = 0.6 + Math.random() * 0.7;
+				}
+				break;
+			case 'walk': {
+				// перебежка
+				c.x += c.dir * c.speed * dt;
+				moving = true;
+				if ((c.x - target) * c.dir >= 0) {
+					c.x = target;
+					c.state = 'fuse';
+					c.t = 0;
+					on('creeperHiss');
+					// персонаж заметил: «!» — и просыпается, если спал
+					if (PB.perch && ['sleep', 'doze', 'yawnSit', 'lie'].includes(PB.pose)) setPose('sit', 4);
+					say('!', 1.2);
+				} else if (c.t > c.run) {
+					c.state = 'wait';
+					c.t = 0;
+					c.run = 0.35 + Math.random() * 0.6;
+				}
+				break;
+			}
+			case 'wait':
+				// замер и поглядывает на тебя
+				if (c.t > c.run) {
+					c.state = 'walk';
+					c.t = 0;
+					c.run = 0.6 + Math.random() * 0.7;
+				}
+				break;
+			case 'fuse': {
+				const f = clamp(c.t / FUSE, 0, 1);
+				const blink = Math.sin(c.t * (9 + f * 26)) > 0.1 ? 0.5 + f * 0.4 : 0; // мигает всё чаще
+				m.mat.emissive.setScalar(blink);
+				if (c.t >= FUSE) {
+					creeperBoom();
+					return;
+				}
+				break;
+			}
+			case 'flee': {
+				// подпрыгнул от испуга, развернулся и удирает
+				const sp = 26 * s * 4;
+				if (c.t > 0.18) {
+					c.x += c.dir * sp * dt;
+					moving = true;
+				}
+				c.hop = Math.sin(clamp(c.t / 0.35, 0, 1) * Math.PI) * 10 * s;
+				m.mat.opacity = 1 - clamp((c.t - 0.7) / 0.5, 0, 1);
+				if (c.t > 1.25) {
+					hideCreeper();
+					return;
+				}
+				break;
+			}
+			default:
+				// 'out': тихо исчезает
+				m.mat.opacity = 1 - clamp(c.t / 0.5, 0, 1);
+				m.mat.emissive.setScalar(0);
+				if (c.t > 0.5) {
+					hideCreeper();
+					return;
+				}
+		}
+		if (c.state !== 'flee') c.x = clamp(c.x, c.w.left + half, c.w.right - half);
+		// ноги: по диагонали в такт шагам
+		c.phase += dt * (moving ? (c.state === 'flee' ? 20 : 9) : 0);
+		const a = moving ? Math.sin(c.phase) * 0.6 : 0;
+		m.legs[0].rotation.x = lerp(m.legs[0].rotation.x, a, 1 - Math.exp(-dt * 20));
+		m.legs[3].rotation.x = m.legs[0].rotation.x;
+		m.legs[1].rotation.x = -m.legs[0].rotation.x;
+		m.legs[2].rotation.x = -m.legs[0].rotation.x;
+		// повёрнут по ходу движения и чуть к тебе; замирая — смотрит прямо на тебя
+		const want = c.dir * (Math.PI / 2 - 0.45);
+		c.yaw = lerpAngle(c.yaw, want, 1 - Math.exp(-dt * (c.state === 'flee' ? 14 : 6)));
+		const look = c.state === 'wait' || c.state === 'fuse' ? -c.yaw * 0.85 : 0;
+		m.head.rotation.y = lerp(m.head.rotation.y, look, 1 - Math.exp(-dt * 6));
+		// шипит — раздувается и дрожит
+		const f = c.state === 'fuse' ? clamp(c.t / FUSE, 0, 1) : 0;
+		const jit = f > 0.6 ? Math.sin(c.t * 70) * 0.025 : 0;
+		m.root.scale.set(s * (1 + f * f * 0.24 + jit), s * (1 + f * f * 0.12), s * (1 + f * f * 0.24 + jit));
+		m.root.position.y = (moving && c.state !== 'flee' ? Math.abs(Math.sin(c.phase)) * 0.6 * s : 0) + c.hop;
+		m.pivot.position.set(c.x - scrollX, -(c.w.top - scrollY), 0);
+		m.pivot.rotation.set(0.12, c.yaw, 0);
 	};
 
 	// ================= ГЛАВНЫЙ ЦИКЛ =================
@@ -4191,13 +4561,39 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		worlds[worldId].tick?.(dt, idle);
 		// захотел потанцевать: на острове, когда ничем не занят, раз в полминуты-минуту, 6–12 секунд
 		const islandFree = P.mode === 'idle' && !P.queue.length && !P.holding && !warp;
-		if (islandFree && heroVisible && now > dance.next && !dancingOnIsland()) {
+		stepParty();
+		// день и ночь: ночью зевает и ложится на траву, утром при встрече потягивается
+		if (!islandFree) {
+			if (nap.state) napWake(25); // занялся делом — проснулся
+		} else if (heroVisible) {
+			if (nap.state === 'yawn' && now - nap.at > nap.dur) {
+				napStart('sleep');
+				nap.zzzAt = now + 0.9;
+			} else if (nap.state === 'stretch' && now - nap.at > nap.dur) napWake(60);
+			else if (nap.state === 'sleep') {
+				if (!isNight()) {
+					napStart('stretch', 2.8);
+					say('say.morning', 2.2);
+				} else if (now > nap.zzzAt) {
+					nap.zzzAt = now + 2.8;
+					say('Zzz', 1.9);
+				}
+			} else if (!nap.state && isNight() && now > nap.next && !dancingOnIsland() && now > party.until) {
+				napStart('yawn', 2.4);
+				say('say.yawn', 2);
+			} else if (!nap.state && !nap.morning && isMorning() && now > 2.5 && !dancingOnIsland()) {
+				nap.morning = true;
+				napStart('stretch', 2.8);
+				say('say.morning', 2.2);
+			}
+		}
+		if (islandFree && heroVisible && now > dance.next && !dancingOnIsland() && !nap.state && !isNight()) {
 			freshDance();
 			dance.until = now + 6 + Math.random() * 6;
 			dance.next = dance.until + 25 + Math.random() * 35;
 			say('icon:note', 1.8);
 		} else if (!islandFree && dancingOnIsland()) dance.until = -1; // занялся делом — танец закончился
-		if (worldId === 'over' && !visitedNether && P.mode === 'idle' && !P.queue.length && heroVisible && now > portalHintAt) {
+		if (worldId === 'over' && !visitedNether && P.mode === 'idle' && !P.queue.length && heroVisible && now > portalHintAt && !nap.state && now > party.until) {
 			// подсказка: что там, в портале?
 			portalHintAt = now + 32 + Math.random() * 20;
 			say('say.portal', 2.4);
@@ -4263,7 +4659,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			rig.root.position.x = pose.hipX;
 			const onGround = P.mode !== 'free';
 			const hop = onGround ? Math.sin(jump * Math.PI) * 0.55 + (P.mode === 'walk' ? Math.abs(Math.sin(P.walkPhase)) * 0.06 : 0) : 0;
-			rig.pivot.position.set(P.pos.x, BODY + hop, P.pos.z);
+			const lieK = Math.min(1, Math.abs(pose.roll) / (Math.PI / 2)); // спит на траве — опускается
+			rig.pivot.position.set(P.pos.x, lerp(BODY, 0.62, lieK) + hop, P.pos.z);
 			rig.pivot.rotation.set(0, lerpAngle(rig.pivot.rotation.y, P.face, 1 - Math.exp(-dt * 10)), pose.roll + pose.tiltZ);
 		} else {
 			pointerOverlay.set(((pointerDoc.x - scrollX) / vw) * 2 - 1, -(((pointerDoc.y - scrollY) / vh) * 2 - 1));
@@ -4279,7 +4676,9 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			oRig.pivot.rotation.set(0.12, 0.2, pose.roll + pose.tiltZ + PB.spin);
 			oRig.pivot.scale.setScalar(1);
 			stepRage(dt);
+			stepCreeper(dt);
 		}
+		if (creeper && P.mode !== 'free') hideCreeper();
 		if (rage && P.mode !== 'free') {
 			// вернулся домой посреди сцены — убираем трещины и осколки, чтобы ничего не зависло
 			for (const c of rage.cracks) fadeCrack(c, 600);
@@ -4312,6 +4711,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		// курсор: прицел над тем, что можно сломать или добыть
 		if (drag?.started) setGlobalCursor('grabbing');
 		else if (hitFree()) setGlobalCursor('grab');
+		else if (hitCreeper()) setGlobalCursor('pointer');
 		else setGlobalCursor('');
 		if (heroVisible && pointerInHero && !drag) {
 			const hovered = pickVoxel();
@@ -4458,7 +4858,26 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	return {
 		tier: () => TIERS[progress.tier].id,
 		world: () => worldId,
+		celebrate, // покупка: прыгает от радости
 		debug: {
+			// подменить час (ночь/утро); null — снова настоящие часы
+			clock: (h = null) => {
+				fakeHour = h;
+				nap.next = now + 0.5;
+				nap.morning = false;
+				return {night: isNight(), morning: isMorning()};
+			},
+			nap: () => ({...nap, night: isNight(), t: +now.toFixed(1)}),
+			creeper: () => {
+				if (creeper || P.mode !== 'free') return false;
+				const ok = spawnCreeper();
+				return ok || {perchW: PB.perch ? Math.round(PB.perch.right - PB.perch.left) : null, hw: Math.round(PB.hw), half: Math.round(6 * creeperS())};
+			},
+			creeperState: () => {
+				if (!creeper) return null;
+				const s = creeperS();
+				return {state: creeper.state, x: Math.round(creeper.x - scrollX), y: Math.round(creeper.w.top - 13 * s - scrollY), dist: Math.round(Math.abs(creeper.x - PB.x))};
+			},
 			portal: () => {
 				enterPortal();
 				return worldId;

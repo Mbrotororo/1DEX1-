@@ -97,3 +97,106 @@ export const shatterSound = () => {
 		// звук не обязателен
 	}
 };
+
+// общий звуковой контекст и «шум» нужной длины
+const audio = () => {
+	ctx ||= new (window.AudioContext || window.webkitAudioContext)();
+	if (ctx.state === 'suspended') ctx.resume();
+	return ctx;
+};
+const noise = (a, dur, shape) => {
+	const buf = a.createBuffer(1, Math.floor(a.sampleRate * dur), a.sampleRate);
+	const data = buf.getChannelData(0);
+	for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * shape(i / data.length);
+	const src = a.createBufferSource();
+	src.buffer = buf;
+	return src;
+};
+
+// криппер шипит перед взрывом: «ссссс», громче к концу
+export const hissSound = (dur = 1.5) => {
+	try {
+		const a = audio();
+		const src = noise(a, dur, (k) => Math.min(1, k * 1.6) * (k > 0.96 ? (1 - k) / 0.04 : 1));
+		const bp = a.createBiquadFilter();
+		bp.type = 'bandpass';
+		bp.frequency.value = 4200;
+		bp.Q.value = 0.9;
+		const gain = a.createGain();
+		gain.gain.value = 0.22;
+		src.connect(bp).connect(gain).connect(a.destination);
+		src.start();
+	} catch {
+		// звук не обязателен
+	}
+};
+
+// взрыв: глухой удар и долгий рокот
+export const boomSound = () => {
+	try {
+		const a = audio();
+		const t0 = a.currentTime;
+		const src = noise(a, 1.6, (k) => Math.exp(-k * 4.5));
+		const lp = a.createBiquadFilter();
+		lp.type = 'lowpass';
+		lp.frequency.setValueAtTime(1600, t0);
+		lp.frequency.exponentialRampToValueAtTime(180, t0 + 1.4);
+		const gain = a.createGain();
+		gain.gain.value = 0.7;
+		src.connect(lp).connect(gain).connect(a.destination);
+		src.start(t0);
+		const thump = a.createOscillator();
+		thump.type = 'sine';
+		thump.frequency.setValueAtTime(70, t0);
+		thump.frequency.exponentialRampToValueAtTime(28, t0 + 0.6);
+		const tg = a.createGain();
+		tg.gain.setValueAtTime(0.7, t0);
+		tg.gain.exponentialRampToValueAtTime(0.001, t0 + 0.7);
+		thump.connect(tg).connect(a.destination);
+		thump.start(t0);
+		thump.stop(t0 + 0.75);
+	} catch {
+		// звук не обязателен
+	}
+};
+
+// салют: 'launch' — свист взлетающей ракеты, 'pop' — хлопок и треск искр
+export const fireworkSound = (kind = 'pop') => {
+	try {
+		const a = audio();
+		const t0 = a.currentTime;
+		if (kind === 'launch') {
+			const o = a.createOscillator();
+			o.type = 'sine';
+			o.frequency.setValueAtTime(500 + Math.random() * 200, t0);
+			o.frequency.exponentialRampToValueAtTime(1700 + Math.random() * 400, t0 + 0.6);
+			const g = a.createGain();
+			g.gain.setValueAtTime(0.0001, t0);
+			g.gain.exponentialRampToValueAtTime(0.035, t0 + 0.08);
+			g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.65);
+			o.connect(g).connect(a.destination);
+			o.start(t0);
+			o.stop(t0 + 0.7);
+			return;
+		}
+		const src = noise(a, 0.5, (k) => Math.exp(-k * 9));
+		const lp = a.createBiquadFilter();
+		lp.type = 'lowpass';
+		lp.frequency.value = 1400;
+		const g = a.createGain();
+		g.gain.value = 0.3;
+		src.connect(lp).connect(g).connect(a.destination);
+		src.start(t0);
+		// треск: короткие щелчки чуть позже
+		const crackle = noise(a, 0.9, (k) => (Math.random() < 0.012 ? 1 : 0) * (1 - k));
+		const hp = a.createBiquadFilter();
+		hp.type = 'highpass';
+		hp.frequency.value = 2500;
+		const cg = a.createGain();
+		cg.gain.value = 0.25;
+		crackle.connect(hp).connect(cg).connect(a.destination);
+		crackle.start(t0 + 0.12);
+	} catch {
+		// звук не обязателен
+	}
+};
