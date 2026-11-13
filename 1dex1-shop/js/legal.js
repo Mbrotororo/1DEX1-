@@ -169,7 +169,7 @@ const RU = () => ({
 				items: [
 					'Цены указаны в рублях. Цена может меняться, но не для уже оплаченного заказа.',
 					'Баланс — внутренний счёт покупателя на Сайте. Он пополняется через платёжный сервис; данные карты Продавец не получает.',
-					'Товары оплачиваются с баланса. Деньги с баланса нельзя вывести или перевести другому пользователю — только вернуть по разделу «Возврат».',
+					'Товар оплачивается банковской картой или через СБП на странице платёжного сервиса либо с баланса. Деньги с баланса нельзя вывести или перевести другому пользователю — только вернуть по разделу «Возврат».',
 					'Рубли и купоны из кейсов, заданий и достижений — подарок Продавца: ими можно оплачивать товары, но их нельзя вывести или вернуть деньгами. Ресурс-пак можно получить бесплатно по купону из кейса.',
 				],
 			},
@@ -364,7 +364,7 @@ const EN = () => ({
 				items: [
 					'Prices are in rubles. A price may change, but not for an order that is already paid.',
 					'The balance is the buyer’s internal account on the Site. It is topped up through a payment service; the Seller never receives card details.',
-					'Products are paid from the balance. Money on the balance cannot be withdrawn or transferred to other users — only refunded under the Refunds section.',
+					'Products are paid by bank card or via SBP on the payment service page, or from the balance. Money on the balance cannot be withdrawn or transferred to other users — only refunded under the Refunds section.',
 					'Rubles and coupons from cases, quests and achievements are a gift from the Seller: they can pay for products but cannot be withdrawn or refunded as money. A resource pack can be taken for free with a case coupon.',
 				],
 			},

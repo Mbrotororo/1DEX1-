@@ -410,6 +410,21 @@ route(
 );
 // Пополнение баланса подключится вместе с платёжной системой
 route('POST', 'topup', () => [501, {error: 'payments_soon'}], {auth: true});
+// Оплата товара картой или по СБП: здесь будет создание платежа в платёжном сервисе
+// (ответ {url} — страница оплаты). Пока сервис не подключён — «скоро».
+route(
+	'POST',
+	'pay',
+	({body}) => {
+		const p = q('SELECT * FROM products WHERE id = ? AND active = 1').get(String(body.productId || ''));
+		if (!p || p.price === null || p.status !== 'ready') return [404, {error: 'server'}];
+		if (saleOver(p)) return [410, {error: 'ended'}];
+		return [501, {error: 'card_soon'}];
+	},
+	{auth: true},
+);
+// Промокоды: поле в окне покупки уже есть, самих промокодов пока нет
+route('POST', 'promo', ({body}) => [404, {error: String(body.code || '').trim() ? 'promo_bad' : 'promo_empty'}]);
 
 // --- скачивание: только тем, кто купил ---
 const download = (req, res, user, productId) => {

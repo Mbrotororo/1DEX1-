@@ -359,6 +359,42 @@
 	</div>
 </dialog>
 
+<!-- ============ ПОКУПКА: промокод, способ оплаты, итог (на телефоне выезжает снизу) ============ -->
+<dialog class="dialog dialog--checkout" id="checkout-dialog" aria-labelledby="co-title">
+	<div class="dialog__panel">
+		<header class="dialog__head co__head">
+			<span class="co__thumb" id="co-thumb"></span>
+			<div class="co__what"><span class="item__kind px" id="co-kind"></span><h2 id="co-title"></h2></div>
+			<button class="dialog__close" data-close aria-label="Закрыть" data-i18n-attr="aria-label:close"><span data-icon-x></span></button>
+		</header>
+		<form class="form co" id="co-form" novalidate>
+			<div class="field">
+				<label class="px" for="co-promo" data-i18n="co.promo">Промокод</label>
+				<div class="co__promo">
+					<input id="co-promo" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="32" placeholder="Например, 1DEX1" data-i18n-attr="placeholder:co.promoPh">
+					<button class="btn btn--ghost" type="button" id="co-apply" data-i18n="co.apply">Применить</button>
+				</div>
+				<p class="co__msg" id="co-promo-msg" aria-live="polite"></p>
+			</div>
+			<fieldset class="co__methods">
+				<legend class="px" data-i18n="co.method">Способ оплаты</legend>
+				<label class="co__method"><input type="radio" name="method" value="card" checked><span class="co__mi" data-icon="card"></span><span><b data-i18n="co.card">Банковская карта</b><small data-i18n="co.cardNote">Карты российских банков</small></span></label>
+				<label class="co__method"><input type="radio" name="method" value="sbp"><span class="co__mi" data-icon="qr"></span><span><b data-i18n="co.sbp">СБП</b><small data-i18n="co.sbpNote">По QR-коду в приложении банка</small></span></label>
+				<label class="co__method"><input type="radio" name="method" value="balance"><span class="co__mi" data-icon="coin"></span><span><b data-i18n="co.balance">Баланс сайта</b><small id="co-balance">0 ₽</small></span></label>
+				<label class="co__method" id="co-coupon-row" hidden><input type="radio" name="method" value="coupon"><span class="co__mi" data-icon="gem"></span><span><b data-i18n="co.coupon">Купон из кейса</b><small data-i18n="co.couponNote">Ресурс-пак бесплатно</small></span></label>
+			</fieldset>
+			<dl class="co__sum">
+				<div><dt data-i18n="co.price">Цена</dt><dd class="px" id="co-price"></dd></div>
+				<div class="co__total"><dt data-i18n="co.total">К оплате</dt><dd id="co-total"></dd></div>
+			</dl>
+			<p class="form__error" id="co-error" role="alert"></p>
+			<button class="btn btn--lime btn--wide co__pay" type="submit" id="co-pay"><span id="co-pay-text">Оплатить</span><b class="px" id="co-pay-sum"></b></button>
+			<p class="form__note co__note"><span data-icon="lock"></span><span data-i18n="co.note">Оплата картой или по СБП — на защищённой странице платёжного сервиса. Покупка сразу появится в профиле, в «Покупках» — оттуда её можно скачать.</span></p>
+			<p class="form__note co__offer"><span data-i18n="co.offer">Нажимая «Оплатить», ты принимаешь условия</span> <button class="co__link" type="button" data-legal="offer" data-i18n="co.offerLink">публичной оферты</button></p>
+		</form>
+	</div>
+</dialog>
+
 <!-- ============ ТОВАР (телефон): карточка выезжает снизу ============ -->
 <dialog class="dialog dialog--sheet" id="product-sheet" aria-label="Товар" data-i18n-attr="aria-label:sheet.aria">
 	<div class="dialog__panel">

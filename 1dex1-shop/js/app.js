@@ -138,20 +138,16 @@ const card = (p, i) => {
 	const order = user?.orders?.find((o) => o.productId === p.id);
 	const priceText = priceOf(p);
 	let action;
-	if (p.status !== 'ready' || p.price === null) action = `<span class="item__soon px">${t('item.soon')}</span>`;
+	if (p.status !== 'ready') action = `<span class="item__soon px">${t('item.soon')}</span>`;
 	else if (order) {
 		const url = auth.downloadUrl(order);
 		action = url ? `<a class="btn btn--lime btn--sm" href="${esc(url)}" target="_blank" rel="noopener">${t('item.download')}</a>` : '<span class="item__soon px">✓</span>';
 	} else if (p.price === 0) action = `<button class="btn btn--lime btn--sm" data-buy="${esc(p.id)}">${t('item.download')}</button>`;
-	else {
-		const coupon = p.kind === 'rp' && user?.coupons?.some((c) => c.kind === 'rp');
-		action = `${coupon ? `<button class="btn btn--gold btn--sm" data-buy="${esc(p.id)}" data-coupon>${t('item.coupon')}</button>` : ''}<button class="btn btn--lime btn--sm" data-buy="${esc(p.id)}">${t('item.buy')}</button>`;
-	}
+	else action = `<button class="btn btn--lime btn--sm" data-checkout="${esc(p.id)}">${t('item.buy')}</button>`;
 	const cover = p.cover ? `<img src="${esc(p.cover)}" alt="" loading="lazy">` : coverArt(p.kind, i);
 	return `<article class="item card" data-kind="${esc(p.kind)}" data-id="${esc(p.id)}" style="--i:${i}">
 		<div class="item__cover ${p.cover ? '' : 'is-art'}">${cover}
-			<span class="tag ${p.status === 'ready' ? 'tag--lime' : 'tag--gold'} px">${t(p.status === 'ready' ? 'status.ready' : 'status.soon')}</span>
-			${p.until ? `<span class="tag tag--excl px">${esc(untilText(p))}</span>` : ''}
+			<span class="item__badges">${p.status === 'ready' ? '' : `<span class="tag tag--gold px">${t('status.soon')}</span>`}${p.until ? `<span class="tag tag--excl px">${esc(untilText(p))}</span>` : ''}</span>
 		</div>
 		<div class="item__body">
 			<span class="item__kind px">${kindOf(p)}</span>
@@ -194,9 +190,89 @@ document.addEventListener('click', (e) => {
 	const c = e.target.closest('[data-product]');
 	if (c) openProduct(c.dataset.product);
 });
+// ---------- покупка: окно с промокодом, способом оплаты и итогом (как в приложении) ----------
+// Карта и СБП — через платёжный сервис: пока он не подключён, сервер отвечает «скоро».
+// Баланс и купон из кейса работают уже сейчас. Промокодов пока нет — поле есть, ответ «такого нет».
+const checkout = $('#checkout-dialog');
+const coForm = $('#co-form');
+let coId = null;
+const coMethod = () => coForm.elements.method.value;
+const coMsg = (text = '', bad = false) => {
+	const m = $('#co-promo-msg');
+	m.textContent = text;
+	m.classList.toggle('is-bad', bad);
+};
+const paintCheckout = () => {
+	const p = products.find((x) => x.id === coId);
+	if (!p) return false;
+	const user = auth.current();
+	$('#co-thumb').innerHTML = p.cover ? `<img src="${esc(p.cover)}" alt="">` : icon(p.kind === 'rp' ? 'gem' : 'pick');
+	$('#co-kind').innerHTML = kindOf(p);
+	$('#co-title').textContent = titleOf(p);
+	$('#co-balance').textContent = user ? `${money(user.balance)} ₽` : t('co.balanceLogin');
+	const coupon = p.kind === 'rp' && Boolean(user?.coupons?.some((c) => c.kind === 'rp'));
+	$('#co-coupon-row').hidden = !coupon;
+	if (!coupon && coMethod() === 'coupon') coForm.elements.method.value = 'card';
+	const total = p.price === null ? null : coMethod() === 'coupon' ? 0 : p.price;
+	$('#co-price').textContent = priceOf(p);
+	$('#co-total').textContent = total === null ? '—' : total === 0 ? t('price.free') : price(total);
+	const btn = $('#co-pay');
+	btn.disabled = total === null;
+	$('#co-pay-text').textContent = total === null ? t('co.payLater') : user ? t('co.pay') : t('co.payLogin');
+	$('#co-pay-sum').textContent = total ? price(total) : '';
+	return true;
+};
+const openCheckout = (id) => {
+	coId = id;
+	coForm.elements.method.value = 'card';
+	$('#co-promo').value = '';
+	coMsg();
+	$('#co-error').textContent = '';
+	if (!paintCheckout()) return;
+	if (sheet.open) closeDialog(sheet); // на телефоне карточка товара уступает место окну покупки
+	openDialog(checkout);
+};
+document.addEventListener('click', (e) => {
+	const b = e.target.closest('[data-checkout]');
+	if (b) openCheckout(b.dataset.checkout);
+});
+coForm.addEventListener('change', (e) => {
+	if (e.target.name !== 'method') return;
+	$('#co-error').textContent = '';
+	paintCheckout();
+});
+$('#co-apply').addEventListener('click', async () => {
+	const code = $('#co-promo').value.trim();
+	if (!code) return coMsg(t('err.promo_empty'), true);
+	const res = await auth.promo(code, coId);
+	coMsg(res.error ? errText(res.error) : '', Boolean(res.error));
+});
+$('#co-promo').addEventListener('keydown', (e) => {
+	if (e.key !== 'Enter') return;
+	e.preventDefault();
+	$('#co-apply').click();
+});
+coForm.addEventListener('submit', async (e) => {
+	e.preventDefault();
+	const p = products.find((x) => x.id === coId);
+	if (!p || p.price === null) return;
+	if (!auth.current()) return openAuth('register');
+	const method = coMethod();
+	const btn = $('#co-pay');
+	btn.disabled = true;
+	$('#co-error').textContent = '';
+	const res = method === 'card' || method === 'sbp' ? await auth.pay(p.id, method) : await auth.buy(p.id, {coupon: method === 'coupon'});
+	btn.disabled = false;
+	if (res.error === 'login') return openAuth('login');
+	if (res.error) return ($('#co-error').textContent = errText(res.error));
+	if (res.url) return location.assign(res.url); // страница платёжного сервиса (когда он будет подключён)
+	closeDialog(checkout);
+	notify(t('toast.bought'));
+});
 const renderShop = () => {
 	renderPhoneShop();
 	if (sheet.open) paintSheet();
+	if (checkout.open) paintCheckout();
 	const list = products.filter((p) => filter === 'all' || p.kind === filter);
 	$('#shop-grid').innerHTML = list.length
 		? list.map(card).join('')
@@ -222,13 +298,13 @@ $('#shop-grid').addEventListener('click', (e) => {
 	const item = e.target.closest('.item[data-id]');
 	if (item) openProduct(item.dataset.id);
 });
-// покупка: за баланс, по купону или бесплатно (в списке и в карточке товара)
+// бесплатный товар: «Скачать» сразу кладёт его в «Покупки»
 document.addEventListener('click', async (e) => {
 	const b = e.target.closest('[data-buy]');
 	if (!b) return;
 	if (!auth.current()) return openAuth('register');
 	b.disabled = true;
-	const res = await auth.buy(b.dataset.buy, {coupon: b.hasAttribute('data-coupon')});
+	const res = await auth.buy(b.dataset.buy);
 	b.disabled = false;
 	if (res.error === 'login') return openAuth('login');
 	if (res.error) return notify(errText(res.error));
@@ -836,14 +912,14 @@ let paintCase = () => {};
 		body.innerHTML = `<p class="doc__date">${esc(t('legal.updated', {date: date(`${LEGAL.updated}T12:00:00`, true)}))}</p>${sections.join('')}`;
 		body.scrollTop = 0;
 	};
-	$$('[data-legal]').forEach((b) =>
-		b.addEventListener('click', () => {
-			docId = b.dataset.legal;
-			render();
-			openDialog(dlg);
-			body.focus({preventScroll: true});
-		}),
-	);
+	document.addEventListener('click', (e) => {
+		const b = e.target.closest('[data-legal]');
+		if (!b) return;
+		docId = b.dataset.legal;
+		render();
+		openDialog(dlg);
+		body.focus({preventScroll: true});
+	});
 	onLang(() => dlg.open && render());
 }
 

@@ -305,6 +305,12 @@ export const loadProducts = async () => {
 	return data.products || [];
 };
 
+// Оплата картой или по СБП. С сервером — ссылка на страницу платёжного сервиса ({url}),
+// пока он не подключён — ошибка card_soon (без сервера оплаты картой нет вовсе).
+export const pay = async (productId, method) => (serverMode ? api('pay', {productId, method}) : {error: 'card_soon'});
+// Промокод. Промокодов пока нет: и сервер, и сайт без сервера отвечают «такого нет».
+export const promo = async (code, productId) => (serverMode ? api('promo', {code, productId}) : {error: 'promo_bad'});
+
 // Купить товар: за баланс, по купону (ресурс-пак) или бесплатно
 export const buy = async (productId, {coupon = false} = {}) => {
 	if (serverMode) return api('buy', {productId, coupon});
