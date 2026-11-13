@@ -48,6 +48,8 @@
 *,*::before,*::after{box-sizing:border-box}
 /* открыто окно (товар, покупка, профиль…) — страница под ним стоит на месте */
 html:has(dialog[open]){overflow:hidden}
+html.is-glass{overflow:hidden;overscroll-behavior:none}
+html.is-glass body{touch-action:none}
 /* место под полосу прокрутки остаётся и под окном — на компьютере страница не прыгает вбок */
 html{scrollbar-gutter:stable;-webkit-tap-highlight-color:transparent;scroll-behavior:smooth;scroll-padding-top:calc(var(--topbar) + var(--safe-top) + 16px);-webkit-text-size-adjust:100%}
 body{

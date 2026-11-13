@@ -2541,10 +2541,30 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		document.body.append(flash);
 		setTimeout(() => flash.remove(), ms + 100);
 	};
+	// Стекло разбито — сайт не листается: ни колесом, ни клавишами, ни полосой прокрутки,
+	// ни пальцем на телефоне. Отпускает, когда последняя трещина начинает таять.
+	let glassLocked = false;
+	const SCROLL_KEYS = new Set([' ', 'Spacebar', 'PageDown', 'PageUp', 'ArrowDown', 'ArrowUp', 'Home', 'End']);
+	const blockScroll = (e) => {
+		if (e.cancelable) e.preventDefault();
+	};
+	const blockKeys = (e) => {
+		if (SCROLL_KEYS.has(e.key) && !e.target.closest?.('input, textarea, select, [contenteditable]')) e.preventDefault();
+	};
+	const lockGlass = (on) => {
+		if (on === glassLocked) return;
+		glassLocked = on;
+		document.documentElement.classList.toggle('is-glass', on);
+		const m = on ? 'addEventListener' : 'removeEventListener';
+		window[m]('wheel', blockScroll, {passive: false});
+		window[m]('touchmove', blockScroll, {passive: false});
+		window[m]('keydown', blockKeys);
+	};
 	const fadeCrack = (cv, ms = 1700) => {
 		cv.style.transition = `opacity ${ms}ms ease`;
 		cv.classList.add('is-fading');
 		setTimeout(() => cv.remove(), ms + 100);
+		if (!document.querySelector('canvas.dex-crack:not(.is-fading)')) lockGlass(false);
 	};
 	const shake = (els) => {
 		if (reducedMotion) return;
@@ -2572,6 +2592,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const w = document.documentElement.clientWidth;
 		const h = window.innerHeight;
 		const dpr = Math.min(2, window.devicePixelRatio || 1);
+		lockGlass(true);
 		const cv = document.createElement('canvas');
 		cv.className = 'dex-crack';
 		cv.setAttribute('aria-hidden', 'true');
