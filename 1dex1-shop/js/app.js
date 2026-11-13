@@ -9,7 +9,7 @@ import {applyI18n, getLang, locale, onLang, setLang, t} from './i18n.js';
 import {getDoc} from './legal.js';
 import {fontReady} from './voxelword.js';
 import {caseArt, coverArt, icon, navIcon} from './pixel.js';
-import {breakSound} from './sound.js';
+import {breakSound, punchSound} from './sound.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -1192,11 +1192,53 @@ Promise.all([import('./hero.js'), fontReady()])
 					case 'tickle':
 						unlock('tickle');
 						break;
+					case 'rageHit':
+						punchSound();
+						break;
 					default:
 				}
 			},
 		});
 		document.documentElement.classList.add(ok ? 'has-gl' : 'no-gl');
+		// танцы под музыку: по нажатию — микрофон (с разрешения), такт считает js/groove.js
+		const btn = $('#groove');
+		if (ok && btn) {
+			btn.hidden = false;
+			let groove = null;
+			let busy = false;
+			let hintAt = 0;
+			const paint = () => {
+				const on = Boolean(groove);
+				btn.setAttribute('aria-pressed', String(on));
+				btn.classList.toggle('is-on', on);
+				btn.classList.toggle('is-hearing', on && groove.playing && !groove.manual);
+			};
+			setInterval(() => groove && paint(), 400);
+			btn.addEventListener('click', async () => {
+				if (busy) return;
+				if (groove) {
+					groove.stop();
+					groove = null;
+					ok.music(null);
+					paint();
+					return;
+				}
+				busy = true;
+				const {createGroove} = await import('./groove.js');
+				const g = createGroove();
+				const how = await g.start();
+				busy = false;
+				groove = g;
+				ok.music(g);
+				paint();
+				if (how === 'mic') {
+					if (Date.now() - hintAt > 60e3) notify(t('groove.on'));
+					hintAt = Date.now();
+				} else notify(t(how === 'denied' ? 'groove.denied' : 'groove.nomic'));
+			});
+			// ушёл со страницы — микрофон выключаем
+			addEventListener('pagehide', () => groove?.stop());
+		}
 		// адрес с ?debug открывает доступ к сцене из консоли — нужно только для проверки
 		if (new URLSearchParams(location.search).has('debug')) window.__hero = ok;
 	})

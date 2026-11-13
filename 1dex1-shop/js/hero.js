@@ -2137,7 +2137,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	const WIDE = [0.5, 1.35];
 	const SIT = [0.42, 0.845];
 	const FLAT = [1.35, 0.6];
-	const POSE_BOX = {stand: TALL, wave: TALL, look: TALL, dance: TALL, float: WIDE, held: WIDE, reach: WIDE, fly: WIDE, wall: WIDE, crouch: [0.42, 1.25], sit: SIT, sitHappy: SIT, doze: SIT, lie: FLAT, sleep: FLAT};
+	const POSE_BOX = {stand: TALL, wave: TALL, look: TALL, dance: TALL, rage: TALL, float: WIDE, held: WIDE, reach: WIDE, fly: WIDE, wall: WIDE, crouch: [0.42, 1.25], sit: SIT, sitHappy: SIT, doze: SIT, lie: FLAT, sleep: FLAT};
 	// perch — на каком виджете сидит; seek — к какому летит, чтобы сесть; auto — полёт к стене;
 	// calm — сколько секунд спокойно летает; idleT — сколько секунд его никто не трогал
 	const PB = {x: 0, y: 0, vx: 0, vy: 0, hw: 10, hh: 30, held: false, perch: null, perchX: 0, outT: 0, seek: null, seekAt: 0, seekTry: 0, auto: null, pose: 'float', poseT: 0, poseDur: 3, lieDir: 1, calm: 0, idleT: 0, spin: 0, spinV: 0, dizzy: 0, hop: 0, greetAt: -99, zzzAt: 0, lastPerch: null, lastPerchAt: -99, clearOfIsland: false, pickX: 0, pickY: 0};
@@ -2157,6 +2157,233 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		PB.poseDur = dur;
 		if (pose === 'lie' || pose === 'sleep') PB.lieDir = Math.random() < 0.5 ? -1 : 1;
 		fitPoseBox();
+	};
+
+	// ================= ТАНЦЫ ПОД МУЗЫКУ =================
+	// Такт приходит из js/groove.js (микрофон): music = {playing, beat()}. Без музыки танец
+	// в позах на тексте идёт в своём темпе — 120 ударов в минуту.
+	let music = null;
+	const grooving = () => Boolean(music?.playing);
+	// каждые 8 ударов — новое движение
+	const DANCES = ['bob', 'floss', 'shuffle', 'hands', 'robot', 'arms'];
+	const ROBOT = [
+		{armRx: -1.57, armRz: 0.05, armLx: 0, armLz: -0.05, headYaw: 0.55},
+		{armRx: 0, armRz: 0.05, armLx: -1.57, armLz: -0.05, headYaw: -0.55},
+		{armRx: -1.57, armRz: -0.9, armLx: -1.57, armLz: 0.9, headYaw: 0},
+		{armRx: -3.0, armRz: 0.05, armLx: 0.35, armLz: -0.05, headYaw: 0.3},
+	];
+	const danceTarget = (t) => {
+		const beat = grooving() ? music.beat() : t * 2;
+		const n = Math.floor(beat);
+		const hit = Math.exp(-(beat - n) * 7); // толчок на каждый удар
+		const sw = Math.sin(beat * Math.PI); // туда-сюда: полный цикл за две доли
+		const cw = Math.cos(beat * Math.PI);
+		switch (DANCES[Math.floor(beat / 8) % DANCES.length]) {
+			case 'bob': // качает головой и по очереди выбрасывает кулаки вверх
+				return {armRx: -1.7 - (n % 2 ? 0 : hit) * 1.1, armLx: -1.7 - (n % 2 ? hit : 0) * 1.1, armRz: 0.3, armLz: -0.3, drop: -hit * 0.1, headPitch: hit * 0.45 - 0.1, legRz: 0.06, legLz: -0.06};
+			case 'floss': // руки вместе вбок и то перед собой, то за спиной, бёдра в другую сторону
+				return {armRz: sw * 0.75, armLz: sw * 0.75, armRx: cw * 0.5, armLx: cw * 0.5, hipX: -sw * 0.2, tiltZ: -sw * 0.07, legRz: -sw * 0.1, legLz: -sw * 0.1, headYaw: sw * 0.2};
+			case 'shuffle': // «бегущий человек»: шаги на месте, руки в такт
+				return {legR: sw > 0 ? -sw * 0.85 : -sw * 0.2, legL: sw < 0 ? sw * 0.85 : sw * 0.2, armRx: -0.35 + sw * 0.85, armLx: -0.35 - sw * 0.85, armRz: 0.1, armLz: -0.1, drop: -Math.abs(cw) * 0.1, hipX: sw * 0.05, headPitch: hit * 0.2};
+			case 'hands': // руки вверх, как на концерте, качается
+				return {armRx: -2.75, armLx: -2.75, armRz: -0.2 + sw * 0.35, armLz: 0.2 + sw * 0.35, tiltZ: sw * 0.1, hipX: sw * 0.12, drop: -hit * 0.1, headPitch: -0.25 + hit * 0.25};
+			case 'robot': // робот: на каждый удар — новая поза рывком
+				return {...ROBOT[n % ROBOT.length], drop: -hit * 0.04, snap: true};
+			default: // волна руками: руки в стороны, волна бежит от одной к другой
+				return {armRz: -1.45 + Math.sin(beat * Math.PI * 2) * 0.35, armLz: 1.45 + Math.sin(beat * Math.PI * 2 - 1.4) * 0.35, armRx: 0, armLx: 0, tiltZ: sw * 0.1, hipX: sw * 0.08, headYaw: sw * 0.3, drop: -hit * 0.05};
+		}
+	};
+
+	// ================= ЗЛОСТЬ =================
+	// Стена сломана, персонаж сидит на тексте, его 5 раз быстро тыкнули: огненная аура, злое
+	// облачко, вырастает на весь экран и бьёт кулаком «в стекло» — экран трескается на 5 секунд.
+	const RAGE_HIT = 2.3; // секунда удара
+	const RAGE_END = 3.9;
+	let rage = null; // {t, hit}
+	const rageTaps = [];
+	const startRage = () => {
+		rage = {t: 0, hit: false};
+		PB.idleT = 0;
+		setPose('rage');
+		say('icon:angry', 0.8);
+		on('rage');
+	};
+	// поза: дрожит от злости → вырастает, руки в стороны → замах → удар кулаком прямо в экран
+	const ragePose = (t) => {
+		const T = rage ? rage.t : 0;
+		const shake = Math.sin(t * 46) * 0.035;
+		if (T < 0.8) return {armRx: -0.25, armLx: -0.25, armRz: 0.25, armLz: -0.25, headPitch: 0.22, tiltZ: shake, legRz: 0.08, legLz: -0.08};
+		if (T < 1.75) return {armRx: -0.4, armLx: -0.4, armRz: 0.75, armLz: -0.75, headPitch: 0.15, tiltZ: shake * 0.6, legRz: 0.12, legLz: -0.12};
+		if (T < 2.15) return {armRx: 1.05, armRz: 0.35, armLx: -1.35, armLz: -0.2, headPitch: 0.12, tiltZ: -0.05, legRz: 0.12, legLz: -0.12};
+		if (T < 3.0) return {armRx: -1.57, armRz: 0, armLx: 0.4, armLz: -0.25, headPitch: 0.05, tiltZ: 0.03, legRz: 0.12, legLz: -0.12};
+		return {armRx: -0.3, armLx: -0.3, armRz: 0.1, armLz: -0.1};
+	};
+	// огонь вокруг: спрайты в слое поверх сайта, позади и чуть впереди персонажа
+	const FLAMES = 90;
+	let flames = null;
+	const ensureFlames = () => {
+		if (flames) return flames;
+		const tex = glowTexture();
+		flames = Array.from({length: FLAMES}, () => {
+			const s = new THREE.Sprite(new THREE.SpriteMaterial({map: tex, color: 0xff7a1a, transparent: true, depthWrite: false, opacity: 0}));
+			s.visible = false;
+			oScene.add(s);
+			return {s, life: 0, max: 1, x: 0, y: 0, z: 0, vx: 0, vy: 0, size: 1};
+		});
+		return flames;
+	};
+	const FIRE = [new THREE.Color(0xfff2a8), new THREE.Color(0xffa424), new THREE.Color(0xff3d14), new THREE.Color(0x7a1206)];
+	const fireColor = new THREE.Color();
+	let tinted = false;
+	const tint = (v) => {
+		if (!v && !tinted) return;
+		tinted = v > 0;
+		oRig.root.traverse((o) => o.material?.emissive?.setRGB(0.26 * v, 0.025 * v, 0)); // лёгкий красный отсвет, скин остаётся узнаваемым
+	};
+	let spawnAcc = 0;
+	const stepRage = (dt) => {
+		const list = flames;
+		if (!rage) {
+			tint(0);
+			if (list) for (const f of list) f.s.visible = false;
+			return;
+		}
+		rage.t += dt;
+		const T = rage.t;
+		// сколько он вырос: на весь экран по высоте
+		const grow = smooth(T, 0.8, 1.7) * (1 - smooth(T, RAGE_END - 0.75, RAGE_END));
+		// во весь экран по высоте, но на узком телефоне — по ширине, чтобы голова не уходила под шапку
+		const bigK = Math.max(1, Math.min(vh * 1.05, vw * 1.6) / (2.7 * playerK));
+		const R = 1 + (bigK - 1) * grow;
+		const p = oRig.pivot.position;
+		p.set(lerp(p.x, vw / 2, grow), lerp(p.y, -vh * 0.6, grow), 0);
+		oRig.pivot.scale.setScalar(R);
+		oRig.pivot.rotation.set(lerp(0.12, 0, grow), lerp(0.2, 0, grow), oRig.pivot.rotation.z * (1 - grow));
+		const heat = smooth(T, 0, 0.35) * (1 - smooth(T, RAGE_END - 0.5, RAGE_END));
+		tint(heat * (0.75 + Math.sin(T * 18) * 0.25));
+		// огонь
+		const fl = ensureFlames();
+		const unit = playerK * R;
+		spawnAcc += dt * 120 * heat;
+		for (const f of fl) {
+			if (f.life <= 0 && spawnAcc >= 1) {
+				spawnAcc -= 1;
+				// языки пламени — по краям фигуры (плечи, бока, голова), снизу вверх
+				const side = Math.random() < 0.5 ? -1 : 1;
+				f.max = f.life = 0.35 + Math.random() * 0.4;
+				f.x = side * (0.42 + Math.random() * 0.28);
+				f.y = -BODY + Math.random() * 3.0;
+				if (f.y > 1.0) f.x *= 0.85; // у головы — ближе
+				f.z = Math.random() < 0.8 ? -40 : 40;
+				f.vx = side * Math.random() * 0.25;
+				f.vy = 1.8 + Math.random() * 1.8;
+				f.size = 0.22 + Math.random() * 0.3;
+			}
+			if (f.life > 0) {
+				f.life -= dt;
+				f.x += f.vx * dt;
+				f.y += f.vy * dt;
+				const a = 1 - f.life / f.max; // 0 — родился, 1 — погас
+				const i = Math.min(2.999, a * 3);
+				fireColor.copy(FIRE[Math.floor(i)]).lerp(FIRE[Math.floor(i) + 1], i % 1);
+				f.s.material.color.copy(fireColor);
+				f.s.material.opacity = Math.sin(Math.min(1, a * 1.4) * Math.PI) * (f.z > 0 ? 0.55 : 0.9);
+				f.s.position.set(p.x + f.x * unit, p.y + f.y * unit, f.z);
+				f.s.scale.setScalar(f.size * unit * (1 - a * 0.5));
+				f.s.visible = true;
+			} else f.s.visible = false;
+		}
+		// удар: точка кулака на экране — там трескается «стекло»
+		if (!rage.hit && T >= RAGE_HIT) {
+			rage.hit = true;
+			oRig.root.updateMatrixWorld(true);
+			const fist = oRig.parts.armR.localToWorld(tmp.set(0, -11, 0));
+			crackScreen(clamp(fist.x, 30, vw - 30), clamp(-fist.y, 30, vh - 30));
+			on('rageHit');
+		}
+		if (T >= RAGE_END) {
+			rage = null;
+			oRig.pivot.scale.setScalar(1);
+			tint(0);
+			for (const f of fl) {
+				f.life = 0;
+				f.s.visible = false;
+			}
+			setPose('sit', 6);
+			PB.idleT = 0;
+			say('say.phew', 1.8);
+		}
+	};
+	// трещина на экране: рисуем паутину из лучей и колец, держим 5 секунд, потом плавно убираем
+	const crackScreen = (cx, cy) => {
+		const w = document.documentElement.clientWidth;
+		const h = window.innerHeight;
+		const far = Math.hypot(Math.max(cx, w - cx), Math.max(cy, h - cy));
+		const rnd = Math.random;
+		const rays = [];
+		const n = 11 + Math.floor(rnd() * 5);
+		let lines = '';
+		for (let i = 0; i < n; i++) {
+			let a = (i / n) * Math.PI * 2 + (rnd() - 0.5) * 0.35;
+			let x = cx;
+			let y = cy;
+			const len = far * (0.3 + rnd() * 0.55);
+			const pts = [[x, y]];
+			for (let d = 0; d < len; ) {
+				const step = 16 + rnd() * 34;
+				d += step;
+				a += (rnd() - 0.5) * 0.32;
+				x += Math.cos(a) * step;
+				y += Math.sin(a) * step;
+				pts.push([x, y]);
+				// ответвление
+				if (rnd() < 0.12 && d > 40) {
+					let ba = a + (rnd() < 0.5 ? -1 : 1) * (0.4 + rnd() * 0.5);
+					let bx = x;
+					let by = y;
+					let b = `M${x.toFixed(1)} ${y.toFixed(1)}`;
+					for (let k = 0, bl = 30 + rnd() * 90; k < bl; ) {
+						const st = 12 + rnd() * 20;
+						k += st;
+						ba += (rnd() - 0.5) * 0.4;
+						bx += Math.cos(ba) * st;
+						by += Math.sin(ba) * st;
+						b += `L${bx.toFixed(1)} ${by.toFixed(1)}`;
+					}
+					lines += `<path d="${b}"/>`;
+				}
+			}
+			rays.push(pts);
+			lines += `<path d="M${pts.map((q) => `${q[0].toFixed(1)} ${q[1].toFixed(1)}`).join('L')}"/>`;
+		}
+		// кольца паутины между соседними лучами
+		const at = (pts, r) => pts.find((q) => Math.hypot(q[0] - cx, q[1] - cy) >= r) || null;
+		for (const r of [26, 62, 115, 190, 290]) {
+			for (let i = 0; i < rays.length; i++) {
+				if (rnd() < 0.3) continue;
+				const a = at(rays[i], r * (0.85 + rnd() * 0.3));
+				const b = at(rays[(i + 1) % rays.length], r * (0.85 + rnd() * 0.3));
+				if (a && b) lines += `<path d="M${a[0].toFixed(1)} ${a[1].toFixed(1)}L${((a[0] + b[0]) / 2 + (rnd() - 0.5) * 10).toFixed(1)} ${((a[1] + b[1]) / 2 + (rnd() - 0.5) * 10).toFixed(1)}L${b[0].toFixed(1)} ${b[1].toFixed(1)}"/>`;
+			}
+		}
+		const el = document.createElement('div');
+		el.className = 'dex-crack';
+		el.setAttribute('aria-hidden', 'true');
+		el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">
+			<defs><radialGradient id="crack-glow"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".35" stop-color="#fff" stop-opacity=".35"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient></defs>
+			<circle class="dex-crack__flash" cx="${cx}" cy="${cy}" r="${Math.max(w, h) * 0.6}" fill="url(#crack-glow)"/>
+			<g class="dex-crack__dark">${lines}</g><g class="dex-crack__light">${lines}</g>
+			<circle cx="${cx}" cy="${cy}" r="14" fill="rgba(255,255,255,.55)"/>
+		</svg>`;
+		document.body.append(el);
+		if (!reducedMotion) {
+			overlay.classList.remove('is-shake');
+			void overlay.offsetWidth;
+			overlay.classList.add('is-shake');
+			setTimeout(() => overlay.classList.remove('is-shake'), 500);
+		}
+		setTimeout(() => el.classList.add('is-fading'), 5000);
+		setTimeout(() => el.remove(), 6700);
 	};
 
 	// --- облачко с эмоцией над головой ---
@@ -2482,7 +2709,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	let drag = null;
 	let suppressClick = false;
 	const trail = []; // последние положения руки — из них скорость броска
-	const hitFree = () => P.mode === 'free' && !tp && Math.abs(pointerDoc.x - PB.x) < PB.hw + 8 && Math.abs(pointerDoc.y - PB.y) < PB.hh + 8;
+	const hitFree = () => P.mode === 'free' && !tp && !rage && Math.abs(pointerDoc.x - PB.x) < PB.hw + 8 && Math.abs(pointerDoc.y - PB.y) < PB.hh + 8;
 	const startDrag = () => {
 		if (P.mode !== 'free') leaveIsland();
 		if (PB.perch) {
@@ -2556,6 +2783,22 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	const poke = () => {
 		PB.idleT = 0;
 		if (++tickles === 5) on('tickle');
+		if (PB.perch && freeWorld && !rage) {
+			rageTaps.push(now);
+			while (rageTaps.length && now - rageTaps[0] > 3) rageTaps.shift();
+			if (rageTaps.length >= 5) {
+				rageTaps.length = 0;
+				startRage();
+				return;
+			}
+			if (rageTaps.length >= 3) {
+				// уже бесится: третий и четвёртый тычок — предупреждает
+				PB.hop = 0.42;
+				say(rageTaps.length === 3 ? '...' : 'icon:angry', 1.2);
+				if (PB.pose === 'sleep' || PB.pose === 'doze' || PB.pose === 'lie') setPose('sit', 5);
+				return;
+			}
+		}
 		if (PB.perch) {
 			PB.hop = 0.42;
 			if (PB.pose === 'sleep' || PB.pose === 'doze') {
@@ -3049,7 +3292,17 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				} else {
 					PB.poseT += dt;
 					const near = Math.hypot(pointerDoc.x - PB.x, pointerDoc.y - PB.y) < 170;
-					if (PB.pose === 'sleep' || PB.pose === 'doze') {
+					if (rage) {
+						// злится — ничего другого не делает
+					} else if (grooving()) {
+						// играет музыка — танцует, пока она не кончится
+						PB.idleT = 0;
+						if (PB.pose !== 'dance') {
+							setPose('dance', 1e9);
+							say('icon:note', 1.8);
+						}
+					} else if (PB.pose === 'dance' && PB.poseDur > 1e8) perchPose(); // музыка кончилась
+					else if (PB.pose === 'sleep' || PB.pose === 'doze') {
 						if (now > PB.zzzAt) {
 							PB.zzzAt = now + 2.8;
 							say('Zzz', 1.9);
@@ -3184,7 +3437,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	};
 
 	// ================= АНИМАЦИЯ СКЕЛЕТА =================
-	const pose = {armRx: 0, armRz: 0, armLx: 0, armLz: 0, legR: 0, legL: 0, sneak: 0, drop: 0, roll: 0, tiltZ: 0, headPitch: 0, headYaw: 0};
+	const pose = {armRx: 0, armRz: 0, armLx: 0, armLz: 0, legR: 0, legL: 0, legRz: 0, legLz: 0, hipX: 0, sneak: 0, drop: 0, roll: 0, tiltZ: 0, headPitch: 0, headYaw: 0};
 	const look = {yaw: 0, pitch: 0};
 	const headPos = new THREE.Vector3();
 	const CARRY = -0.38; // рука с киркой чуть вперёд
@@ -3218,9 +3471,11 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const p = R.parts;
 		const jump = clamp((now - jumpAt) / 0.42, 0, 1);
 		const cheer = jump < 1 && P.mode !== 'free' ? Math.sin(jump * Math.PI) : 0;
-		const target = {armRx: 0, armRz: 0.04, armLx: 0, armLz: -0.04, legR: 0, legL: 0, sneak: 0, drop: 0, roll: 0, tiltZ: 0, headPitch: 0, headYaw: 0};
+		const target = {armRx: 0, armRz: 0.04, armLx: 0, armLz: -0.04, legR: 0, legL: 0, legRz: 0, legLz: 0, hipX: 0, sneak: 0, drop: 0, roll: 0, tiltZ: 0, headPitch: 0, headYaw: 0};
 		const sway = Math.sin(idle * 2) * 0.05;
-		const state = P.mode === 'free' ? PB.pose : P.mode;
+		// на острове под музыку танцует, если ничем не занят
+		const state = P.mode === 'free' ? PB.pose : P.mode === 'idle' && !P.queue.length && !P.holding && grooving() ? 'dance' : P.mode;
+		let snap = false; // «робот»: позы меняются рывком, без плавности
 		const swing = (period) => {
 			const ph = (P.actT / period) % 1;
 			return ph < 0.45 ? -2.3 : -0.5;
@@ -3276,10 +3531,16 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				Object.assign(target, {armRx: -2.35, armRz: 0.55, armLx: -sway, headYaw: Math.sin(t * 1.7) * 0.9});
 				break;
 			case 'dance': {
-				const b = Math.sin(t * 7);
-				Object.assign(target, {armRx: -1.5 + b * 1.1, armLx: -1.5 - b * 1.1, armRz: 0.2, armLz: -0.2, legR: b * 0.3, legL: -b * 0.3, drop: -Math.abs(b) * 0.12, tiltZ: Math.sin(t * 3.5) * 0.16});
+				const d = danceTarget(t);
+				snap = Boolean(d.snap);
+				delete d.snap;
+				Object.assign(target, d);
 				break;
 			}
+			case 'rage':
+				Object.assign(target, ragePose(t));
+				snap = Boolean(rage && rage.t > 2.15 && rage.t < 2.45); // удар — резко
+				break;
 			case 'crouch':
 				Object.assign(target, {armRx: 0.45 + sway, armLx: 0.45 - sway, sneak: 1, drop: 0.13});
 				break;
@@ -3310,11 +3571,11 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		}
 		if (cheer > 0) Object.assign(target, {armRx: lerp(target.armRx, -2.9, cheer), armRz: lerp(target.armRz, -0.3, cheer), armLx: lerp(target.armLx, -2.9, cheer), armLz: lerp(target.armLz, 0.3, cheer), legR: cheer * 0.3, legL: -cheer * 0.3});
 		const fast = state === 'mine' || state === 'wall';
-		for (const key of Object.keys(pose)) pose[key] = lerp(pose[key], target[key], fast && key === 'armRx' ? 1 - Math.exp(-dt * 30) : k);
+		for (const key of Object.keys(pose)) pose[key] = lerp(pose[key], target[key], snap ? 1 - Math.exp(-dt * 40) : fast && key === 'armRx' ? 1 - Math.exp(-dt * 30) : k);
 		p.armR.rotation.set(pose.armRx, 0, pose.armRz);
 		p.armL.rotation.set(pose.armLx, 0, pose.armLz);
-		p.legR.rotation.x = pose.legR;
-		p.legL.rotation.x = pose.legL;
+		p.legR.rotation.set(pose.legR, 0, pose.legRz);
+		p.legL.rotation.set(pose.legL, 0, pose.legLz);
 		p.body.scale.y = 1 + Math.sin(idle * 2) * 0.012;
 		// присед: корпус наклоняется вперёд, плечи и голова уходят вперёд, бёдра назад
 		const lean = 0.45 * pose.sneak;
@@ -3332,8 +3593,9 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const ly = pointerVec ? clamp((pointerVec.y - headPos.y) * 0.9, -0.5, 0.6) : cheer * 0.5;
 		const lookK = 1 - Math.exp(-dt * 6);
 		const busyHead = ['walk', 'mine', 'chest', 'lie', 'wall', 'sleep', 'doze'].includes(state);
-		look.yaw = lerp(look.yaw, busyHead ? 0 : state === 'look' ? pose.headYaw : lx, lookK);
-		look.pitch = lerp(look.pitch, busyHead || state === 'look' ? pose.headPitch : -ly + pose.sneak * 0.3 + pose.headPitch, lookK);
+		const ownHead = state === 'look' || state === 'dance' || state === 'rage'; // голова двигается сама: осматривается, качает в такт, злится
+		look.yaw = lerp(look.yaw, busyHead ? 0 : ownHead ? pose.headYaw : lx, ownHead && snap ? 1 : lookK);
+		look.pitch = lerp(look.pitch, busyHead || ownHead ? pose.headPitch : -ly + pose.sneak * 0.3 + pose.headPitch, lookK);
 		// после сильного удара кружится голова
 		const dizzy = P.mode === 'free' ? clamp(PB.dizzy, 0, 1) : 0;
 		p.head.rotation.set(look.pitch + Math.cos(t * 11) * 0.25 * dizzy, look.yaw + Math.sin(t * 11) * 0.55 * dizzy, 0);
@@ -3471,6 +3733,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		if (P.mode !== 'free') {
 			const {jump} = animateRig(rig, dt, idle, camera, pointerInHero ? pointerNdc : null);
 			rig.root.position.y = -BODY - pose.drop;
+			rig.root.position.x = pose.hipX;
 			const onGround = P.mode !== 'free';
 			const hop = onGround ? Math.sin(jump * Math.PI) * 0.55 + (P.mode === 'walk' ? Math.abs(Math.sin(P.walkPhase)) * 0.06 : 0) : 0;
 			rig.pivot.position.set(P.pos.x, BODY + hop, P.pos.z);
@@ -3481,11 +3744,14 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			const s = PLAYER_SCALE * playerK * pop;
 			oRig.root.scale.setScalar(s);
 			oRig.root.position.y = (-BODY - pose.drop) * playerK;
+			oRig.root.position.x = pose.hipX * playerK;
 			const centerAbove = PB.pose === 'lie' || PB.pose === 'sleep' ? 0.6 : BODY;
 			const feetY = PB.y + PB.hh;
 			hopPx = PB.hop > 0 ? Math.sin((1 - PB.hop / 0.42) * Math.PI) * 0.45 * playerK : 0; // подпрыгнул от тычка
 			oRig.pivot.position.set(PB.x - scrollX, -(feetY - centerAbove * playerK - scrollY) + hopPx, 0);
 			oRig.pivot.rotation.set(0.12, 0.2, pose.roll + pose.tiltZ + PB.spin);
+			oRig.pivot.scale.setScalar(1);
+			stepRage(dt);
 		}
 
 		// облачко с эмоцией: над головой — и на острове, и в полёте
@@ -3493,7 +3759,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		if (tb < talk.dur) {
 			let bx = null;
 			let by = 0;
-			if (P.mode === 'free') {
+			if (P.mode === 'free' && rage && rage.t > 0.75) bx = null;
+			else if (P.mode === 'free') {
 				bx = PB.x - scrollX;
 				by = PB.y - PB.hh - scrollY - hopPx - 6;
 			} else if (heroVisible) {
@@ -3656,6 +3923,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	return {
 		tier: () => TIERS[progress.tier].id,
 		world: () => worldId,
+		// танцы под музыку: src = {playing, beat()} из js/groove.js, null — выключить
+		music: (src) => (music = src),
 		debug: {
 			portal: () => {
 				enterPortal();
@@ -3692,6 +3961,12 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				return true;
 			},
 			idle: (sec) => (PB.idleT = sec),
+			rage: () => {
+				if (P.mode !== 'free') return false;
+				startRage();
+				return true;
+			},
+			rageT: () => (rage ? +rage.t.toFixed(2) : null),
 			word: () => {
 				const c = page(toPx(bigGroup.localToWorld(new THREE.Vector3(0, 0, 0))));
 				return {blocks: bigVoxels.length, width: BIG.width, height: BIG.height, cell: +bigCell.toFixed(3), center: {x: Math.round(c.x), y: Math.round(c.y)}, broken: bigVoxels.filter((v) => v.brokenAt >= 0).length};
