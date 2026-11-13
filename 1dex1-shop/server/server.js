@@ -2,11 +2,12 @@
 // Запуск: npm start (из папки 1dex1-shop). Нужен Node.js 22.13 или новее, больше ничего.
 // Настройки — переменные окружения или файл server/.env (пример — server/.env.example).
 import {createHash, randomBytes, randomInt, scrypt, timingSafeEqual} from 'node:crypto';
-import {createReadStream, statSync} from 'node:fs';
+import {createReadStream, readFileSync, statSync} from 'node:fs';
 import {createServer} from 'node:http';
 import {extname, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
+import {brotliCompressSync, constants as ZLIB, gzipSync} from 'node:zlib';
 import {CASE, TASKS} from '../js/data.js';
 import {q, tx} from './db.js';
 import {mailConfigured, sendCode} from './mail.js';
@@ -483,16 +484,37 @@ const serveStatic = (req, res, pathname) => {
 		res.writeHead(404, {'Content-Type': 'text/plain; charset=utf-8'});
 		return res.end('Не найдено');
 	}
-	res.writeHead(200, {
-		'Content-Type': MIME[extname(file).toLowerCase()] || 'application/octet-stream',
-		'Content-Length': st.size,
+	const ext = extname(file).toLowerCase();
+	// повторный заход: файл не менялся — браузер берёт его из своего кэша
+	const etag = `"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"`;
+	const headers = {
+		'Content-Type': MIME[ext] || 'application/octet-stream',
 		'Cache-Control': rel === 'index.html' ? 'no-cache' : 'public, max-age=3600',
+		ETag: etag,
+		Vary: 'Accept-Encoding',
 		'X-Content-Type-Options': 'nosniff',
 		'Referrer-Policy': 'strict-origin-when-cross-origin',
-	});
+	};
+	if (req.headers['if-none-match'] === etag) {
+		res.writeHead(304, headers);
+		return res.end();
+	}
+	// текстовые файлы (страница, стили, скрипты) сжимаются в 4–5 раз; сжатые копии держим в памяти
+	const accept = String(req.headers['accept-encoding'] || '');
+	const kind = accept.includes('br') ? 'br' : accept.includes('gzip') ? 'gzip' : null;
+	if (kind && COMPRESSIBLE.has(ext) && st.size > 1024) {
+		let c = PACKED.get(file);
+		if (!c || c.mtime !== st.mtimeMs) PACKED.set(file, (c = {mtime: st.mtimeMs}));
+		c[kind] ||= kind === 'br' ? brotliCompressSync(readFileSync(file), {params: {[ZLIB.BROTLI_PARAM_QUALITY]: 9}}) : gzipSync(readFileSync(file), {level: 9});
+		res.writeHead(200, {...headers, 'Content-Encoding': kind, 'Content-Length': c[kind].length});
+		return res.end(req.method === 'HEAD' ? undefined : c[kind]);
+	}
+	res.writeHead(200, {...headers, 'Content-Length': st.size});
 	if (req.method === 'HEAD') return res.end();
 	createReadStream(file).pipe(res);
 };
+const COMPRESSIBLE = new Set(['.html', '.css', '.js', '.json', '.svg']);
+const PACKED = new Map(); // файл -> {mtime, br, gzip}
 
 const server = createServer(async (req, res) => {
 	const url = new URL(req.url, 'http://localhost');

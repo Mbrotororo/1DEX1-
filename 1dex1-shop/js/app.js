@@ -13,6 +13,8 @@ import {breakSound} from './sound.js';
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// телефон: сайт как приложение — отдельные экраны, плитки, карточка товара снизу
+const phoneMQ = matchMedia('(max-width: 700px)');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[c]);
 const money = (v) => Number(v || 0).toLocaleString(locale(), {minimumFractionDigits: 2, maximumFractionDigits: 2});
 const price = (v) => `${Number.isInteger(v) ? v : money(v)} ₽`;
@@ -125,10 +127,11 @@ const seenTabs = new Set();
 const titleOf = (p) => (getLang() === 'en' && p.titleEn) || p.title;
 const descOf = (p) => (getLang() === 'en' && p.descEn) || p.desc || '';
 
+const priceOf = (p) => (p.price === null ? t('price.later') : p.price === 0 ? t('price.free') : price(p.price));
 const card = (p, i) => {
 	const user = auth.current();
 	const order = user?.orders?.find((o) => o.productId === p.id);
-	const priceText = p.price === null ? t('price.later') : p.price === 0 ? t('price.free') : price(p.price);
+	const priceText = priceOf(p);
 	let action;
 	if (p.status !== 'ready' || p.price === null) action = `<span class="item__soon px">${t('item.soon')}</span>`;
 	else if (order) {
@@ -140,7 +143,7 @@ const card = (p, i) => {
 		action = `${coupon ? `<button class="btn btn--gold btn--sm" data-buy="${esc(p.id)}" data-coupon>${t('item.coupon')}</button>` : ''}<button class="btn btn--lime btn--sm" data-buy="${esc(p.id)}">${t('item.buy')}</button>`;
 	}
 	const cover = p.cover ? `<img src="${esc(p.cover)}" alt="" loading="lazy">` : coverArt(p.kind, i);
-	return `<article class="item card" data-kind="${esc(p.kind)}" style="--i:${i}">
+	return `<article class="item card" data-kind="${esc(p.kind)}" data-id="${esc(p.id)}" style="--i:${i}">
 		<div class="item__cover ${p.cover ? '' : 'is-art'}">${cover}
 			<span class="tag ${p.status === 'ready' ? 'tag--lime' : 'tag--gold'} px">${t(p.status === 'ready' ? 'status.ready' : 'status.soon')}</span>
 		</div>
@@ -156,7 +159,39 @@ const card = (p, i) => {
 		</div>
 	</article>`;
 };
+// телефон: лента товаров на Главной (первые 8) и счётчики на плитках
+const renderPhoneShop = () => {
+	$('#mcards').innerHTML = products.length
+		? products
+				.slice(0, 8)
+				.map(
+					(p) =>
+						`<button class="mcard" type="button" data-product="${esc(p.id)}"><span class="mcard__ic">${p.cover ? `<img src="${esc(p.cover)}" alt="" loading="lazy">` : icon(p.kind === 'rp' ? 'gem' : 'pick')}</span><b>${esc(titleOf(p))}</b><small>${t(`kind.${p.kind}`)}</small><span class="mcard__price px">${priceOf(p)}</span></button>`,
+				)
+				.join('')
+		: `<div class="mcard mcard--empty"><span class="mcard__ic">${icon('chest')}</span><b>${t('m.soonT')}</b><small>${t('m.soonP')}</small></div>`;
+	$$('[data-count]').forEach((el) => (el.textContent = products.filter((p) => p.kind === el.dataset.count).length));
+};
+// телефон: карточка товара выезжает снизу (описание и кнопки покупки)
+const sheet = $('#product-sheet');
+let sheetId = null;
+const paintSheet = () => {
+	const i = products.findIndex((p) => p.id === sheetId);
+	if (i < 0) return false;
+	$('#sheet-body').innerHTML = card(products[i], i);
+	return true;
+};
+const openProduct = (id) => {
+	sheetId = id;
+	if (paintSheet()) openDialog(sheet);
+};
+document.addEventListener('click', (e) => {
+	const c = e.target.closest('[data-product]');
+	if (c) openProduct(c.dataset.product);
+});
 const renderShop = () => {
+	renderPhoneShop();
+	if (sheet.open) paintSheet();
 	const list = products.filter((p) => filter === 'all' || p.kind === filter);
 	$('#shop-grid').innerHTML = list.length
 		? list.map(card).join('')
@@ -176,8 +211,21 @@ $('#shop-tabs').addEventListener('click', (e) => {
 	if (seenTabs.has('mod') && seenTabs.has('rp')) unlock('showcase');
 	renderShop();
 });
-// покупка: за баланс, по купону или бесплатно
-$('#shop-grid').addEventListener('click', async (e) => {
+// плитки «Моды» / «Ресурс-паки» / «Все товары» на Главной телефона открывают магазин с нужным фильтром
+document.addEventListener('click', (e) => {
+	const f = e.target.closest('[data-shop-filter]');
+	if (!f) return;
+	filter = f.dataset.shopFilter;
+	renderShop();
+});
+// телефон: нажатие на строку товара (не на кнопку) открывает его карточку
+$('#shop-grid').addEventListener('click', (e) => {
+	if (!phoneMQ.matches || e.target.closest('a, button')) return;
+	const item = e.target.closest('.item[data-id]');
+	if (item) openProduct(item.dataset.id);
+});
+// покупка: за баланс, по купону или бесплатно (в списке и в карточке товара)
+document.addEventListener('click', async (e) => {
 	const b = e.target.closest('[data-buy]');
 	if (!b) return;
 	if (!auth.current()) return openAuth('register');
@@ -527,15 +575,34 @@ auth.onAuth(renderShop);
 	// Главная (первый экран, сотрудничество, каналы), Магазин и Кейсы показываются по одному,
 	// у каждого своя граница прокрутки. Кнопка «Назад» в телефоне возвращает на прошлый экран.
 	// На компьютере сайт листается целиком.
-	const phone = matchMedia('(max-width: 700px)');
-	const PAGE_SLOT = {home: 'top', shop: 'shop', cases: 'cases'};
+	const phone = phoneMQ;
+	// Главная, Магазин, Кейсы — вкладки хотбара; Сотрудничество, Каналы, Вопросы открываются с Главной
+	const PAGE_SLOT = {home: 'top', shop: 'shop', cases: 'cases', collab: 'top', social: 'top', faq: 'top'};
+	const PAGE_TITLE = {shop: 'shop.label', cases: 'cases.title', collab: 'collab.title', social: 'social.title', faq: 'faq.title'};
+	const INNER = new Set(['collab', 'social', 'faq']);
+	let depth = 0; // сколько шагов можно вернуться кнопкой «назад» внутри сайта
 	const pageOf = (el) => el?.closest('[data-page]')?.dataset.page || 'home';
+	const paintTop = () => {
+		const page = document.documentElement.dataset.page;
+		$('#page-title').textContent = PAGE_TITLE[page] ? t(PAGE_TITLE[page]) : '';
+		$('#page-back').hidden = !INNER.has(page);
+	};
+	onLang(paintTop);
+	$('#page-back').addEventListener('click', () => {
+		if (depth > 0) history.back();
+		else {
+			history.pushState(null, '', '#top');
+			showPage('home');
+		}
+	});
 	const showPage = (page, target) => {
 		const html = document.documentElement;
 		const changed = html.dataset.page !== page;
 		// персонаж (hero.js) телепортируется: ему нужно знать, где он был, пока экран старый
 		if (changed) dispatchEvent(new CustomEvent('dex:page', {detail: {from: html.dataset.page, to: page}}));
 		html.dataset.page = page;
+		$$('body [data-page]').forEach((el) => el.classList.toggle('page-off', el.dataset.page !== page));
+		paintTop();
 		sectionSlot = PAGE_SLOT[page];
 		select(sectionSlot);
 		// другой экран открывается сразу с начала; на том же экране — плавно к нужному месту
@@ -555,17 +622,26 @@ auth.onAuth(renderShop);
 		const target = a && document.getElementById(a.hash.slice(1));
 		if (!target) return;
 		e.preventDefault();
-		if (location.hash !== a.hash) history.pushState(null, '', a.hash);
+		if (location.hash !== a.hash) {
+			history.pushState(null, '', a.hash);
+			depth++;
+		}
 		showPage(pageOf(target), target);
 	});
 	const fromHash = () => {
 		const target = document.getElementById(location.hash.slice(1));
 		showPage(pageOf(target), target);
 	};
-	addEventListener('popstate', () => phone.matches && fromHash());
+	addEventListener('popstate', () => {
+		depth = Math.max(0, depth - 1);
+		if (phone.matches) fromHash();
+	});
 	const syncMode = () => {
 		if (phone.matches) fromHash();
-		else delete document.documentElement.dataset.page;
+		else {
+			delete document.documentElement.dataset.page;
+			$$('.page-off').forEach((el) => el.classList.remove('page-off'));
+		}
 	};
 	phone.addEventListener('change', syncMode);
 	syncMode();
@@ -578,6 +654,7 @@ let paintCase = () => {};
 	const prizeBox = $('#case-prize');
 	const btn = $('#case-open');
 	const dots = [$('.hotbar__dot'), $('.topnav__dot')].filter(Boolean);
+	const mCase = $('#m-case-state');
 	const LOOT_ICON = {money: 'coin', rp: 'gem'};
 	art.innerHTML = caseArt();
 	const total = CASE.loot.reduce((sum, l) => sum + l.chance, 0);
@@ -609,6 +686,7 @@ let paintCase = () => {};
 		const ms = left();
 		const bonus = user?.bonusCases || 0;
 		dots.forEach((d) => (d.hidden = Boolean(user) && ms > 0 && !bonus));
+		set(mCase, 'textContent', !user ? t('m.caseLogin') : ms === 0 || bonus > 0 ? t('m.caseReady') : t('m.caseIn', {t: clock(ms)}));
 		if (!user) {
 			set(btn, 'disabled', false);
 			set(btn, 'textContent', t('case.login'));
@@ -726,6 +804,18 @@ let paintCase = () => {};
 		breakSound();
 		notify(t('toast.taskClaimed'));
 	});
+}
+
+// ---------- частые вопросы (экран телефона): раскрываются по нажатию ----------
+{
+	const render = () => {
+		const contact = SITE.contact.trim().replace(/^@?/, '@');
+		$('#faq-list').innerHTML = [1, 2, 3, 4, 5]
+			.map((n) => `<details class="faq__item"><summary>${esc(t(`faq.q${n}`))}</summary><p>${esc(t(`faq.a${n}`, {contact}))}</p></details>`)
+			.join('');
+	};
+	render();
+	onLang(render);
 }
 
 // ---------- подвал: документы (соглашение, политика, оферта) ----------

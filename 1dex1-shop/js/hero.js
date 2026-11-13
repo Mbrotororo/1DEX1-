@@ -2209,6 +2209,14 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		['.social .btn', false],
 		['.foot__word', false],
 		['.foot__links button', false],
+		// телефон: плитки, лента товаров, список разделов, вопросы
+		['.mtile', false],
+		['.mcard', false],
+		['.mrows', false],
+		['.mhead h2', true],
+		['.faq__item', false],
+		['.case h3', true],
+		['.tasks__head h3', true],
 	];
 	const collectWidgets = () => {
 		const out = [];
@@ -2720,7 +2728,9 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		PB.seekAt = now + 3;
 		PB.calm = 1;
 		PB.idleT = 0;
-		PB.clearOfIsland = true;
+		PB.clearOfIsland = false; // появился над островом — сам на него не спрыгивает
+		PB.pickX = PB.x;
+		PB.pickY = PB.y;
 		popAt = now;
 		flash(PB.x - scrollX, PB.y - scrollY);
 		if (Math.random() < 0.6) say(oneOf('say.tp', 'say.hi', 'icon:heart'), 1.4);
@@ -3360,7 +3370,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			}
 		}
 		// завеса портала: переливается только та, что сейчас на экране
-		if (frameNo % 4 === 0) (portalHere().kind === 'nether' ? paintPortal : paintVoid)(idle);
+		if (frameNo % 6 === 0) (portalHere().kind === 'nether' ? paintPortal : paintVoid)(idle);
 		const ph = portalHere();
 		ph.sp.forEach((sp, i) => {
 			sp.y += sp.v * dt;
@@ -3591,8 +3601,14 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	let last = performance.now();
 	let frameNo = 0;
 	const perf = {frames: 0, time: 0};
+	// Телефон в покое рисует 30 кадров в секунду — вдвое меньше работы видеочипу и батарее.
+	// Пока персонажа тянут или он летает по сайту — все 60, чтобы двигался плавно.
+	const coarse = matchMedia('(pointer: coarse)').matches;
+	let lastDraw = 0;
 	const loop = (t) => {
 		requestAnimationFrame(loop);
+		if (coarse && !drag && P.mode !== 'free' && !warp && t - lastDraw < 30) return;
+		lastDraw = t;
 		const raw = (t - last) / 1000;
 		const dt = Math.min(0.05, Math.max(0.001, raw));
 		last = t;
@@ -3651,6 +3667,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				return {x: c.x - scrollX, y: c.y - scrollY};
 			},
 			progress: () => ({...progress}),
+			frames: () => frameNo,
 			pick: (x, y) => {
 				updatePointer(x, y);
 				return {voxel: !!pickVoxel(), player: pickPlayer(), portal: pickPortal(), busy: busy(), mode: P.mode, warp: !!warp};

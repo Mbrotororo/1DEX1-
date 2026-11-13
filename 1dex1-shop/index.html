@@ -25,6 +25,11 @@
 	<a class="logo" href="#top" aria-label="1DEX1 SHOP — наверх" data-i18n-attr="aria-label:logo.aria">
 		<span class="logo__name">1DEX1 SHOP</span>
 	</a>
+	<!-- телефон: название экрана вместо надписи, на внутренних экранах — стрелка «назад» -->
+	<div class="topbar__page">
+		<button class="topbar__back" id="page-back" type="button" aria-label="Назад" data-i18n-attr="aria-label:back" hidden><svg viewBox="0 0 6 9" aria-hidden="true"><path d="M4 0h2v1H4zM3 1h2v1H3zM2 2h2v1H2zM1 3h2v1H1zM0 4h2v1H0zM1 5h2v1H1zM2 6h2v1H2zM3 7h2v1H3zM4 8h2v1H4z"/></svg></button>
+		<b class="topbar__title" id="page-title"></b>
+	</div>
 	<nav class="topnav px" aria-label="Разделы сайта" data-i18n-attr="aria-label:nav.aria">
 		<a href="#shop" data-i18n="nav.shop">Магазин</a>
 		<a href="#collab" data-i18n="nav.collab">Сотрудничество</a>
@@ -54,6 +59,8 @@
 		<div class="hero__fallback" aria-hidden="true">1DEX1</div>
 		<div class="hero__content">
 			<h1 class="visually-hidden" data-i18n="hero.h1">1DEX1 SHOP — моды и ресурс-паки для Minecraft</h1>
+			<p class="hero__hint px m-only" data-i18n="m.hint">Нажми на блок — он сломается</p>
+			<p class="hero__tagline m-only" data-i18n="m.tagline">Моды и ресурс-паки из моих роликов</p>
 			<div class="hero__cta">
 				<a class="btn btn--lime btn--hero" href="#shop"><span data-i18n="hero.cta">В магазин</span>
 					<svg class="arr" viewBox="0 0 7 7" aria-hidden="true"><path d="M3 0h1v4h1v1H4v1H3V5H2V4h1z"/><path d="M1 3h1v1H1zM5 3h1v1H5z"/></svg>
@@ -63,6 +70,26 @@
 	</section>
 
 	<div class="marquee px" id="marquee" aria-hidden="true" data-page="home"></div>
+
+	<!-- ============ ГЛАВНАЯ НА ТЕЛЕФОНЕ: плитки, лента товаров, разделы ============ -->
+	<section class="mhome m-only" id="mhome" data-page="home" aria-label="Главная" data-i18n-attr="aria-label:m.home">
+		<div class="mtiles">
+			<a class="mtile" href="#shop" data-shop-filter="mod"><span class="mtile__ic" data-icon="pick"></span><span><b data-i18n="shop.mods">Моды</b><small class="px" data-count="mod">0</small></span></a>
+			<a class="mtile" href="#shop" data-shop-filter="rp"><span class="mtile__ic" data-icon="gem"></span><span><b data-i18n="m.rp">Ресурс-паки</b><small class="px" data-count="rp">0</small></span></a>
+			<a class="mtile" href="#cases"><span class="mtile__ic" data-icon="chest"></span><span><b data-i18n="m.case">Кейс</b><small class="px" id="m-case-state">—</small></span></a>
+			<button class="mtile" type="button" data-open-ach><span class="mtile__ic" data-icon="trophy"></span><span><b data-i18n="m.ach">Достижения</b><small class="px" data-ach-count>0/12</small></span></button>
+		</div>
+		<div class="mhead">
+			<h2 data-i18n="shop.label">Магазин</h2>
+			<a href="#shop" data-shop-filter="all" data-i18n="m.all">Все товары</a>
+		</div>
+		<div class="mcards" id="mcards"></div>
+		<nav class="mrows" aria-label="Разделы" data-i18n-attr="aria-label:hb.aria">
+			<a class="mrow" href="#collab"><span class="mrow__ic" data-icon="plane"></span><span data-i18n="collab.title">Сотрудничество</span></a>
+			<a class="mrow" href="#social"><span class="mrow__ic" data-icon="play"></span><span data-i18n="social.title">Каналы</span></a>
+			<a class="mrow" href="#faq"><span class="mrow__ic" data-icon="faq"></span><span data-i18n="faq.title">Частые вопросы</span></a>
+		</nav>
+	</section>
 
 	<!-- ============ МАГАЗИН ============ -->
 	<section class="section" id="shop" data-page="shop">
@@ -111,7 +138,7 @@
 	</section>
 
 	<!-- ============ СОТРУДНИЧЕСТВО ============ -->
-	<section class="section" id="collab" data-page="home">
+	<section class="section" id="collab" data-page="collab">
 		<div class="wrap">
 			<header class="head" data-reveal>
 				<h2 data-i18n="collab.title">Сотрудничество</h2>
@@ -136,7 +163,7 @@
 	</section>
 
 	<!-- ============ КАНАЛЫ ============ -->
-	<section class="section" id="social" data-page="home">
+	<section class="section" id="social" data-page="social">
 		<div class="wrap">
 			<header class="head" data-reveal>
 				<h2 data-i18n="social.title">Каналы</h2>
@@ -158,6 +185,11 @@
 				</article>
 			</div>
 		</div>
+	</section>
+
+	<!-- ============ ЧАСТЫЕ ВОПРОСЫ (экран телефона) ============ -->
+	<section class="section mfaq m-only" id="faq" data-page="faq">
+		<div class="wrap"><div class="faq" id="faq-list"></div></div>
 	</section>
 </main>
 
@@ -333,6 +365,17 @@
 			<button class="dialog__close" data-close aria-label="Закрыть" data-i18n-attr="aria-label:close"><span data-icon-x></span></button>
 		</header>
 		<div class="doc" id="legal-body" tabindex="0"></div>
+	</div>
+</dialog>
+
+<!-- ============ ТОВАР (телефон): карточка выезжает снизу ============ -->
+<dialog class="dialog dialog--sheet" id="product-sheet" aria-label="Товар" data-i18n-attr="aria-label:sheet.aria">
+	<div class="dialog__panel">
+		<header class="dialog__head">
+			<span></span>
+			<button class="dialog__close" data-close aria-label="Закрыть" data-i18n-attr="aria-label:close"><span data-icon-x></span></button>
+		</header>
+		<div class="sheet__body" id="sheet-body"></div>
 	</div>
 </dialog>
 

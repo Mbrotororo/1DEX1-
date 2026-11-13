@@ -191,6 +191,8 @@ export const initCollab = (space, avatar, items, {reducedMotion = false} = {}) =
 	};
 
 	place();
+	// на телефоне «Сотрудничество» — отдельный экран и при загрузке скрыт: расставим, когда откроют
+	let placed = W > 10;
 	draw();
 	// пиксельный шрифт подписей грузится позже — тогда подписи шире, перемеряем
 	document.fonts?.ready.then(() => {
@@ -214,6 +216,10 @@ export const initCollab = (space, avatar, items, {reducedMotion = false} = {}) =
 		const was = visible;
 		visible = e.isIntersecting;
 		if (visible && !was) {
+			if (!placed) {
+				place();
+				placed = W > 10;
+			}
 			measure(); // раздел мог быть скрыт (другой экран на телефоне) — размеры обновляем
 			last = performance.now();
 			requestAnimationFrame(loop);

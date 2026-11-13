@@ -698,18 +698,131 @@ h2{font:400 clamp(26px,4vw,50px)/1.05 var(--font-display);letter-spacing:-.01em;
 	.hotbar__slot{height:60px;font-size:11.5px}
 }
 
-/* ============ телефон: разделы — отдельные экраны ============
-   Главная (первый экран, сотрудничество, каналы), Магазин и Кейсы показываются по одному,
-   у каждого своя граница прокрутки. На компьютере сайт листается целиком. */
+/* ============ телефон: сайт как приложение ============
+   Главная, Магазин, Кейсы — вкладки хотбара; Сотрудничество, Каналы и Частые вопросы открываются
+   с Главной. Каждый экран показывается отдельно, со своей прокруткой; в шапке — название экрана.
+   На компьютере всё как было. */
+.m-only,.topbar__page{display:none}
 @media (max-width:700px){
 	html{overscroll-behavior-y:none}
-	html[data-page="home"] [data-page]:not([data-page="home"]),
-	html[data-page="shop"] [data-page]:not([data-page="shop"]),
-	html[data-page="cases"] [data-page]:not([data-page="cases"]){display:none}
-	html[data-page] [data-page]{animation:page-in .35s var(--ease) both}
-	/* на отдельной странице раздел начинается сразу под шапкой */
-	html[data-page="shop"] #shop,html[data-page="cases"] #cases{padding-top:calc(var(--topbar) + var(--safe-top) + 24px)}
+	.page-off{display:none!important}
+	html[data-page] [data-page]:not(.page-off){animation:page-in .3s var(--ease) both}
+
+	/* шапка: на Главной — надпись, на остальных экранах — название экрана, на внутренних — «назад» */
+	html[data-page]:not([data-page="home"]) .logo{display:none}
+	html[data-page]:not([data-page="home"]) .topbar__page{display:flex;align-items:center;gap:10px;min-width:0}
+	.topbar__title{overflow:hidden;font:400 19px/1.15 var(--font-display);word-spacing:-.3em;white-space:nowrap;text-overflow:ellipsis}
+	.topbar__back{display:grid;place-items:center;flex:none;width:34px;height:34px;padding:0;color:var(--ink);cursor:pointer;background:var(--surface-2);border:2px solid var(--line)}
+	.topbar__back[hidden]{display:none}
+	/* на экранах кроме Главной в шапке только название (язык и достижения — на Главной) */
+	html[data-page]:not([data-page="home"]) .topbar__right{display:none}
+	.topbar__back svg{width:9px;height:14px;fill:currentColor}
+
+	/* первый экран — компактный: остров с надписью, подсказка и слоган */
+	.hero{padding-bottom:4px}
+	.hero__gl{height:min(52svh,420px)}
+	.hero__content{width:100%;margin:0}
+	.hero__cta{display:none}
+	.hero__hint{display:block;margin-top:-4px;font-size:12px;letter-spacing:.04em;text-align:center;color:var(--dim)}
+	.hero__tagline{display:block;margin:10px 0 2px;font:400 clamp(19px,5.6vw,24px)/1.15 var(--font-display);word-spacing:-.35em}
+	.marquee{padding:10px 0}
+
+	/* Главная: плитки 2×2 */
+	.mhome{display:block;padding:18px var(--gutter) 6px}
+	.mtiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+	.mtile{display:flex;align-items:center;gap:12px;min-width:0;padding:10px;color:var(--ink);font:inherit;text-align:left;text-decoration:none;cursor:pointer;background:var(--surface);border:2px solid var(--line);box-shadow:var(--bevel);transition:border-color .15s,transform .15s}
+	.mtile:active{transform:translateY(2px);border-color:var(--line-2)}
+	.mtile__ic{display:grid;place-items:center;flex:none;width:42px;height:42px;font-size:22px;background:var(--well)}
+	.mtile>span:last-child{min-width:0}
+	.mtile b{display:block;overflow:hidden;font-size:15px;font-weight:600;line-height:1.2;white-space:nowrap;text-overflow:ellipsis}
+	.mtile small{display:block;margin-top:3px;font-size:12px;color:var(--dim)}
+	/* лента товаров */
+	.mhead{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:26px 0 12px}
+	.mhead h2{font:400 20px/1 var(--font-display);word-spacing:-.3em}
+	.mhead a{font-size:14px;color:var(--muted);text-decoration:none}
+	.mcards{display:flex;gap:10px;overflow-x:auto;margin:0 calc(var(--gutter)*-1);padding:0 var(--gutter) 4px;scroll-snap-type:x mandatory;scroll-padding-inline:var(--gutter);scrollbar-width:none}
+	.mcards::-webkit-scrollbar{display:none}
+	.mcard{flex:none;display:grid;justify-items:start;gap:4px;width:44%;padding:12px;color:var(--ink);font:inherit;text-align:left;cursor:pointer;scroll-snap-align:start;background:var(--surface);border:2px solid var(--line);box-shadow:var(--bevel)}
+	.mcard__ic{display:grid;place-items:center;width:46px;height:46px;margin-bottom:6px;overflow:hidden;font-size:26px;background:var(--well);border:2px solid var(--line)}
+	.mcard__ic img{width:100%;height:100%;object-fit:cover}
+	.mcard b{font-size:15px;font-weight:600;line-height:1.2}
+	.mcard small{font-size:12.5px;color:var(--dim)}
+	.mcard__price{margin-top:6px;font-size:16px;color:var(--gold)}
+	.mcard--empty{width:100%;cursor:default}
+	/* список разделов */
+	.mrows{display:grid;margin-top:18px;background:var(--surface);border:2px solid var(--line);box-shadow:var(--bevel)}
+	.mrow{display:flex;align-items:center;gap:14px;min-height:56px;padding:0 14px;color:var(--ink);font-size:16px;text-decoration:none}
+	.mrow+.mrow{border-top:2px solid var(--line)}
+	.mrow:active{background:rgba(255,255,255,.03)}
+	.mrow::after{content:"";flex:none;width:8px;height:8px;margin-left:auto;border:solid var(--dim);border-width:2px 2px 0 0;transform:rotate(45deg)}
+	.mrow__ic{display:grid;place-items:center;flex:none;width:34px;height:34px;font-size:18px;background:var(--well)}
+
+	/* отдельные экраны: заголовок раздела — в шапке */
+	.section{padding:calc(var(--topbar) + var(--safe-top) + 14px) 0 28px}
+	.section .head{display:none}
+	.mfaq{display:block}
+
+	/* Магазин: фильтры лентой, товары строками (картинка, название, цена, кнопка) */
+	.tabs{display:flex;flex-wrap:nowrap;width:100%;margin-bottom:14px;overflow-x:auto;scrollbar-width:none}
+	.tabs::-webkit-scrollbar{display:none}
+	.tabs button{flex:none}
+	#shop-grid{gap:10px}
+	#shop-grid .item{flex-direction:row;align-items:center;gap:12px;padding:10px;cursor:pointer;animation-delay:calc(var(--i)*35ms)}
+	#shop-grid .item:hover{transform:none;box-shadow:var(--bevel)}
+	#shop-grid .item__cover{flex:none;width:60px;height:60px;aspect-ratio:auto;border:2px solid var(--line)}
+	#shop-grid .item__cover .tag,#shop-grid .item__desc{display:none}
+	#shop-grid .item__body{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"kind foot" "title foot" "tags foot";align-items:center;column-gap:10px;padding:0}
+	#shop-grid .item__kind{grid-area:kind;font-size:11px}
+	#shop-grid .item__title{grid-area:title;margin-top:2px;font-size:16px}
+	#shop-grid .item__tags{grid-area:tags;margin-top:5px;font-size:10.5px}
+	#shop-grid .item__foot{grid-area:foot;flex-direction:column;align-items:flex-end;gap:6px;margin:0;padding:0}
+	#shop-grid .item__price.has-price{font-size:17px}
+	#shop-grid .empty{padding:44px 20px}
+
+	/* Кейсы: сундук в лучах, награды лентой, кнопка во всю ширину */
+	.case__stage{min-height:220px;background:repeating-conic-gradient(from 0deg at 50% 52%,rgba(255,200,61,.09) 0 7deg,transparent 7deg 20deg),radial-gradient(60% 60% at 50% 52%,rgba(255,200,61,.16),transparent 70%),var(--well)}
+	.case>*{min-width:0}
+	.case__body{padding:18px 16px}
+	.case__loot{display:flex;gap:8px;margin:16px -16px 18px;padding:0 16px 4px;overflow-x:auto;scrollbar-width:none}
+	.case__loot::-webkit-scrollbar{display:none}
+	.case__loot li{flex:none;min-width:156px}
+	.tasks{padding:16px}
+
+	/* Частые вопросы */
+	.faq{display:grid;gap:10px}
+	.faq__item{background:var(--surface);border:2px solid var(--line);box-shadow:var(--bevel)}
+	.faq__item summary{display:flex;align-items:center;gap:12px;min-height:56px;padding:12px 16px;font-size:16px;font-weight:600;list-style:none;cursor:pointer}
+	.faq__item summary::-webkit-details-marker{display:none}
+	.faq__item summary::after{content:"+";flex:none;margin-left:auto;font:700 24px/1 var(--font-pixel);color:var(--lime);transition:transform .2s}
+	.faq__item[open] summary::after{transform:rotate(45deg)}
+	.faq__item p{padding:0 16px 16px;font-size:14.5px;line-height:1.55;color:var(--muted)}
+
+	/* подвал: без 3D-надписи (на телефоне она только тратила бы батарею) */
+	.foot{padding:22px 0 26px}
+	.foot__word{display:none}
+	.foot__row{margin-top:0}
+
+	/* окна выезжают снизу, как в приложении (документы — маленьким окошком посередине) */
+	.dialog::backdrop{backdrop-filter:none;-webkit-backdrop-filter:none}
+	.dialog:not(.dialog--doc){width:100%;max-width:100%;margin:auto 0 0;max-height:min(92dvh,780px)}
+	.dialog:not(.dialog--doc) .dialog__panel{max-height:min(92dvh,780px);border-width:2px 0 0;padding-bottom:env(safe-area-inset-bottom,0px)}
+	.dialog:not(.dialog--doc) .dialog__panel::before{content:"";flex:none;align-self:center;width:44px;height:5px;margin-top:10px;background:var(--line-2)}
+	.dialog:not(.dialog--doc)[open]{animation:sheet-in .36s var(--ease)}
+	.dialog:not(.dialog--doc).is-closing{animation:sheet-out .24s ease-in forwards}
+
+	/* карточка товара */
+	.sheet__body{overflow-y:auto;padding:0 16px}
+	.sheet__body .item{border:0;background:none;box-shadow:none;animation:none}
+	.sheet__body .item:hover{transform:none;box-shadow:none}
+	.sheet__body .item__cover{aspect-ratio:16/9;border:2px solid var(--line)}
+	.sheet__body .item__body{padding:14px 0 0}
+	.sheet__body .item__title{font-size:24px}
+	.sheet__body .item__foot{position:sticky;bottom:0;margin:18px -16px 0;padding:14px 16px;background:var(--surface);border-top:2px solid var(--line)}
+	.sheet__body .item__price.has-price{font-size:26px}
+	.sheet__body .item__actions .btn{min-height:46px;padding-inline:20px}
 }
+@keyframes sheet-in{from{transform:translateY(100%)}}
+@keyframes sheet-out{to{transform:translateY(100%)}}
 @keyframes page-in{from{opacity:0;transform:translateY(14px)}}
 
 /* ============ узкий телефон ============ */
