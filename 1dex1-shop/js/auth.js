@@ -8,7 +8,7 @@
 //    живут в браузере посетителя (localStorage), почта не проверяется.
 // Режим определяется сам: если по адресу api/health отвечает сервер магазина — с сервером.
 
-import {CASE, PRODUCTS, PROMOS, TASKS} from './data.js';
+import {CASE, CASHBACK, PRODUCTS, PROMOS, TASKS} from './data.js';
 
 export let serverMode = false;
 let cached = null; // текущий пользователь (или null), чтобы current() отвечал мгновенно
@@ -83,6 +83,7 @@ const makeSalt = () => {
 	return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
 };
 const NICK_RE = /^[A-Za-z0-9_]{3,16}$/;
+const NICK_GAP = 30 * 864e5; // ник можно менять раз в 30 дней
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const money = (v) => Math.round(v * 100) / 100;
 const localProducts = () => PRODUCTS.map((p) => ({...p, price: typeof p.price === 'number' ? p.price : null}));
@@ -116,6 +117,7 @@ const publicUser = (u, users = read(USERS, {})) =>
 		bonusCases: u.bonusCases || 0,
 		caseAt: u.caseAt || 0,
 		createdAt: u.createdAt,
+		nickNextAt: u.nickChangedAt ? u.nickChangedAt + NICK_GAP : 0,
 		history: u.history || [],
 		coupons: (u.coupons || []).filter((c) => !c.used),
 		orders: u.orders || [],
@@ -157,14 +159,16 @@ export const init = async () => {
 };
 
 // Регистрация. С сервером ответ {verify: true, login, email} — дальше нужен код из письма.
-export const register = async ({nick, email, password}, lang) => {
+export const register = async ({nick, email, password, challenge, nonce, extra}, lang) => {
 	nick = String(nick || '').trim();
 	email = String(email || '').trim().toLowerCase();
 	password = String(password || '');
 	if (!NICK_RE.test(nick)) return {error: 'nick', field: 'nick'};
 	if (!EMAIL_RE.test(email)) return {error: 'email', field: 'email'};
 	if (password.length < 6) return {error: 'password', field: 'password'};
-	if (serverMode) return api('register', {nick, email, password, lang});
+	if (!challenge || !nonce) return {error: 'robot_check'};
+	if (serverMode) return api('register', {nick, email, password, lang, challenge, nonce, website: extra});
+	if (extra) return {error: 'robot'};
 
 	const users = read(USERS, {});
 	const key = nick.toLowerCase();
@@ -186,6 +190,35 @@ export const nickFree = async (nick) => {
 	if (serverMode) return api('nick', {nick});
 	return {free: !read(USERS, {})[nick.toLowerCase()]};
 };
+
+// Задача для галочки «Я не робот». С сервером её выдаёт и потом проверяет сервер;
+// без сервера (превью сайта) — задача попроще, только чтобы галочка работала так же.
+export const robotChallenge = async () => {
+	if (serverMode) return api('challenge');
+	return {challenge: `local.${Date.now()}.${Math.random().toString(36).slice(2)}`, bits: 12};
+};
+
+// Сменить ник: не чаще раза в 30 дней, новый ник должен быть свободен
+export const changeNick = async (nick) => {
+	nick = String(nick || '').trim();
+	if (!NICK_RE.test(nick)) return {error: 'nick'};
+	if (serverMode) return api('nick/change', {nick});
+	const {key, users, user} = localSession();
+	if (!user) return {error: 'login'};
+	if (nick === user.nick) return {error: 'nick_same'};
+	if (user.nickChangedAt && Date.now() < user.nickChangedAt + NICK_GAP) return {error: 'nick_wait', next: user.nickChangedAt + NICK_GAP};
+	const next = nick.toLowerCase();
+	if (next !== key && users[next]) return {error: 'nick_taken'};
+	user.nick = nick;
+	user.nickChangedAt = Date.now();
+	delete users[key];
+	users[next] = user;
+	if (!write(USERS, users) || !write(SESSION, next)) return {error: 'save'};
+	return localSave(users) ? {ok: true, user: cached} : {error: 'save'};
+};
+
+// Админка (только с сервером и только для админов): запросы к api/admin/…
+export const admin = (path, body) => api(`admin/${path}`, body);
 
 // Код из письма: заканчивает регистрацию или вход (только с сервером)
 export const verifyEmail = ({login, code}) => api('verify', {login, code: String(code || '').replace(/\D/g, '')});
@@ -357,9 +390,11 @@ export const buy = async (productId, {coupon = false, promo: promoCode = ''} = {
 	} else if (price > 0) {
 		if (promoHit) price = discounted(price, promoHit.percent);
 		if ((user.balance || 0) < price) return {error: 'balance'};
-		user.balance = money(user.balance - price);
+		const cashback = Math.round((Math.round(price * 100) * CASHBACK) / 100) / 100; // кэшбэк в копейках, как на сервере
+		user.balance = money(user.balance - price + cashback);
 		user.history ||= [];
 		user.history.unshift({id: `buy-${Date.now()}`, amount: -price, kind: 'purchase', title: p.title, at});
+		if (cashback) user.history.unshift({id: `cb-${Date.now()}`, amount: cashback, kind: 'cashback', title: p.title, at});
 	}
 	user.orders.unshift({id: `o-${Date.now()}`, productId, title: p.title, titleEn: p.titleEn, price: p.price && price, link: p.link, at});
 	return localSave(users) ? {user: cached} : {error: 'save'};

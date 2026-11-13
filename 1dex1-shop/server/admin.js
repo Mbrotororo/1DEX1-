@@ -12,6 +12,10 @@
 //   npm run admin -- product hide <id>  |  product show <id>  |  product remove <id>
 //   npm run admin -- product price <id> <рубли>
 //
+//   npm run admin -- user admin <ник>             дать доступ в админку на сайте (unadmin — забрать)
+//   npm run admin -- telegram chatid              номер чата для уведомлений (сначала напиши боту)
+//   npm run admin -- telegram test                тестовое уведомление в Telegram
+//
 //   npm run admin -- user list
 //   npm run admin -- user topup <ник> <рубли>     пополнение (пока нет оплаты — вручную)
 //   npm run admin -- user credit <ник> <рубли> [--note "за конкурс"]   начисление
@@ -24,6 +28,7 @@ import {copyFileSync, existsSync, mkdirSync} from 'node:fs';
 import {basename, extname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {DB_PATH, q} from './db.js';
+import {hasToken, recentChats, telegramConfigured, tellOwner} from './telegram.js';
 
 const FILES = resolve(fileURLToPath(new URL('.', import.meta.url)), 'files');
 const [, , what, action, ...rest] = process.argv;
@@ -151,6 +156,18 @@ if (what === 'product' && action === 'add') {
 	const r = q('UPDATE products SET price = ? WHERE id = ?').run(value === 'later' ? null : kop(value), id);
 	if (!r.changes) fail('товар не найден');
 	console.log('Цена изменена.');
+} else if (what === 'user' && (action === 'admin' || action === 'unadmin')) {
+	const u = userBy(args[0] || fail('укажи ник'));
+	q('UPDATE users SET role = ? WHERE id = ?').run(action === 'admin' ? 'admin' : null, u.id);
+	console.log(action === 'admin' ? `${u.nick} теперь админ: в профиле на сайте появится кнопка «Админка».` : `${u.nick} больше не админ.`);
+} else if (what === 'telegram' && action === 'chatid') {
+	if (!hasToken) fail('сначала впиши TELEGRAM_BOT_TOKEN в server/.env (токен даёт @BotFather)');
+	const chats = await recentChats().catch((err) => fail(err.message));
+	if (!chats.length) console.log('Боту ещё никто не писал. Напиши ему /start в Telegram и запусти команду снова.');
+	else chats.forEach((c) => console.log(`TELEGRAM_CHAT_ID=${c.id}    ${c.name}`));
+} else if (what === 'telegram' && action === 'test') {
+	if (!telegramConfigured) fail('нужны TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID в server/.env');
+	console.log((await tellOwner('✅ 1DEX1 SHOP: уведомления о покупках работают.')) ? 'Отправлено — проверь Telegram.' : 'Не отправилось, причина выше.');
 } else if (what === 'user' && action === 'list') {
 	table(q("SELECT num AS id, nick, email, CASE verified WHEN 1 THEN 'да' ELSE 'нет' END AS verified, balance / 100.0 AS rub, bonus_cases AS cases, datetime(created_at / 1000, 'unixepoch') AS created FROM users ORDER BY num IS NULL, num, id").all());
 } else if (what === 'user' && (action === 'topup' || action === 'credit')) {

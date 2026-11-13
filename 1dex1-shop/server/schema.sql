@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS users (
 	balance INTEGER NOT NULL DEFAULT 0,       -- баланс в копейках
 	bonus_cases INTEGER NOT NULL DEFAULT 0,   -- бесплатные кейсы за задания
 	case_at INTEGER,                          -- когда открыт ежедневный кейс
+	role TEXT,                                -- admin — доступ в админку (npm run admin -- user admin Ник)
+	nick_changed_at INTEGER,                  -- когда последний раз меняли ник (менять можно раз в 30 дней)
 	created_at INTEGER NOT NULL
 );
 
@@ -68,9 +70,21 @@ CREATE TABLE IF NOT EXISTS orders (
 	user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 	product_id TEXT NOT NULL REFERENCES products(id),
 	price INTEGER NOT NULL,                   -- сколько заплачено, копейки
-	paid_with TEXT NOT NULL,                  -- balance | coupon | free
+	paid_with TEXT NOT NULL,                  -- balance | coupon | free | card | sbp
+	promo TEXT,                               -- промокод, если был
+	cashback INTEGER NOT NULL DEFAULT 0,      -- сколько вернулось на баланс, копейки
 	created_at INTEGER NOT NULL,
 	UNIQUE (user_id, product_id)
+);
+
+-- Промокоды из админки (ещё есть коды-отпечатки в js/data.js; код из этой таблицы главнее)
+CREATE TABLE IF NOT EXISTS promos (
+	code TEXT PRIMARY KEY COLLATE NOCASE,     -- большими буквами, например WINTER
+	percent INTEGER NOT NULL CHECK (percent BETWEEN 1 AND 90),
+	max_uses INTEGER,                         -- сколько раз всего можно применить; NULL — без лимита
+	until TEXT,                               -- действует до этого дня включительно (по Москве); NULL — без срока
+	active INTEGER NOT NULL DEFAULT 1,
+	created_at INTEGER NOT NULL
 );
 
 -- Купоны из кейса (ресурс-пак бесплатно); order_id — на что потрачен

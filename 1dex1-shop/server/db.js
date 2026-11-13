@@ -21,6 +21,14 @@ if (!db.prepare('PRAGMA table_info(users)').all().some((c) => c.name === 'num'))
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_num ON users (num)');
 // База, созданная до эксклюзивов: добавить срок продажи товара
 if (!db.prepare('PRAGMA table_info(products)').all().some((c) => c.name === 'sale_until')) db.exec('ALTER TABLE products ADD COLUMN sale_until TEXT');
+// Новые колонки для баз, созданных раньше: роль и смена ника, промокод и кэшбэк в покупке
+const addColumn = (table, column, type) => {
+	if (!db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+};
+addColumn('users', 'role', 'TEXT');
+addColumn('users', 'nick_changed_at', 'INTEGER');
+addColumn('orders', 'promo', 'TEXT');
+addColumn('orders', 'cashback', 'INTEGER NOT NULL DEFAULT 0');
 // Эксклюзив продаётся до дня sale_until включительно (по Москве); после — не виден в магазине и не продаётся
 export const saleOver = (p) => Boolean(p.sale_until) && Date.now() > Date.parse(`${p.sale_until}T23:59:59.999+03:00`);
 // Адской фермы больше нет: убрать её таблицу и счётчик наростов, если остались

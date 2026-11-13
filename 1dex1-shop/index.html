@@ -96,6 +96,7 @@
 				<button data-filter="mod" role="tab"><span data-i18n="shop.mods">Моды</span> <b class="px">0</b></button>
 				<button data-filter="rp" role="tab"><span data-i18n="shop.rp">РП</span> <b class="px">0</b></button>
 			</div>
+			<p class="shop__ver px" id="shop-ver"></p>
 			<div class="grid" id="shop-grid" aria-live="polite"></div>
 		</div>
 	</section>
@@ -252,6 +253,13 @@
 				<label for="auth-password" data-i18n="auth.password">Пароль</label>
 				<input id="auth-password" name="password" type="password" autocomplete="new-password" minlength="6" placeholder="Минимум 6 символов" data-i18n-attr="placeholder:auth.passwordPh" required>
 			</div>
+			<!-- защита от ботов: галочка (браузер решает задачку) и поле-ловушка, которое видят только боты -->
+			<div class="robot" data-only="register">
+				<button class="robot__box" id="robot-box" type="button" role="checkbox" aria-checked="false" aria-labelledby="robot-label"><span class="robot__tick" aria-hidden="true"></span></button>
+				<span class="robot__label" id="robot-label" data-i18n="robot.label">Я не робот</span>
+				<small class="robot__state" id="robot-state" aria-live="polite"></small>
+			</div>
+			<div class="hp" aria-hidden="true"><label for="auth-extra">Не заполняй это поле</label><input id="auth-extra" name="extra" type="text" tabindex="-1" autocomplete="off"></div>
 			<div class="field" data-only="verify">
 				<label for="auth-code" data-i18n="auth.code">Код из письма</label>
 				<input id="auth-code" class="code-input px" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="••••••" required>
@@ -318,6 +326,20 @@
 				</div>
 			</section>
 
+			<details class="pw" id="nick-box">
+				<summary><span data-i18n="nick.change">Сменить ник</span><i aria-hidden="true"></i></summary>
+				<form class="form form--inline" id="nick-form" novalidate>
+					<div class="field">
+						<label for="nick-new" data-i18n="nick.new">Новый ник</label>
+						<input id="nick-new" name="nick" type="text" maxlength="16" autocomplete="off" spellcheck="false" required>
+						<p class="field__hint" id="nick-hint" aria-live="polite"></p>
+					</div>
+					<p class="form__note" id="nick-note"></p>
+					<p class="form__error" id="nick-error" role="alert"></p>
+					<button class="btn btn--lime btn--sm" type="submit" id="nick-save" data-i18n="nick.save">Сохранить ник</button>
+				</form>
+			</details>
+
 			<details class="pw">
 				<summary><span data-i18n="pw.summary">Сменить пароль</span><i aria-hidden="true"></i></summary>
 				<form class="form form--inline" id="pw-form" novalidate>
@@ -339,6 +361,7 @@
 					<span data-icon="trophy"></span>
 					<span><b class="px" data-ach-count>0/10</b><span data-i18n="profile.ach">Достижения</span></span>
 				</button>
+				<button class="btn btn--purple btn--sm" id="admin-open" type="button" hidden>Админка</button>
 				<button class="btn btn--ghost btn--sm" id="logout" data-i18n="profile.logout">Выйти</button>
 			</div>
 		</div>
@@ -357,6 +380,23 @@
 			<button class="dialog__close" data-close aria-label="Закрыть" data-i18n-attr="aria-label:close"><span data-icon-x></span></button>
 		</header>
 		<div class="doc" id="legal-body" tabindex="0"></div>
+	</div>
+</dialog>
+
+<!-- ============ АДМИНКА: только для владельца (роль admin на сервере), содержимое рисует js/admin.js ============ -->
+<dialog class="dialog dialog--admin" id="admin-dialog" aria-labelledby="adm-title">
+	<div class="dialog__panel">
+		<header class="dialog__head adm__head">
+			<h2 id="adm-title">Админка</h2>
+			<nav class="tabs adm__tabs" role="tablist" aria-label="Разделы админки">
+				<button type="button" role="tab" data-adm-tab="sales">Продажи</button>
+				<button type="button" role="tab" data-adm-tab="products">Товары</button>
+				<button type="button" role="tab" data-adm-tab="promos">Промокоды</button>
+				<button type="button" role="tab" data-adm-tab="users">Игроки</button>
+			</nav>
+			<button class="dialog__close" data-close aria-label="Закрыть" data-i18n-attr="aria-label:close"><span data-icon-x></span></button>
+		</header>
+		<div class="adm" id="adm-body"></div>
 	</div>
 </dialog>
 
@@ -388,6 +428,7 @@
 				<div><dt data-i18n="co.price">Цена</dt><dd class="px" id="co-price"></dd></div>
 				<div class="co__disc" id="co-disc-row" hidden><dt data-i18n="co.discount">Скидка</dt><dd class="px" id="co-disc"></dd></div>
 				<div class="co__total"><dt data-i18n="co.total">К оплате</dt><dd id="co-total"></dd></div>
+				<div class="co__cb" id="co-cb-row" hidden><dt data-i18n="co.cashback">Кэшбэк на баланс</dt><dd class="px" id="co-cb"></dd></div>
 			</dl>
 			<p class="form__error" id="co-error" role="alert"></p>
 			<button class="btn btn--lime btn--wide co__pay" type="submit" id="co-pay"><span id="co-pay-text">Оплатить</span><b class="px" id="co-pay-sum"></b></button>

@@ -1,16 +1,17 @@
 // Сервер 1DEX1 SHOP: отдаёт сайт и обслуживает аккаунты, баланс, кейсы, задания и покупки.
 // Запуск: npm start (из папки 1dex1-shop). Нужен Node.js 22.13 или новее, больше ничего.
 // Настройки — переменные окружения или файл server/.env (пример — server/.env.example).
-import {createHash, randomBytes, randomInt, scrypt, timingSafeEqual} from 'node:crypto';
-import {createReadStream, readFileSync, statSync} from 'node:fs';
+import {createHash, createHmac, randomBytes, randomInt, scrypt, timingSafeEqual} from 'node:crypto';
+import {createReadStream, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync} from 'node:fs';
 import {createServer} from 'node:http';
-import {extname, resolve, sep} from 'node:path';
+import {extname, relative, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 import {brotliCompressSync, constants as ZLIB, gzipSync} from 'node:zlib';
-import {CASE, PROMOS, TASKS} from '../js/data.js';
+import {CASE, CASHBACK, PROMOS, TASKS} from '../js/data.js';
 import {q, saleOver, tx} from './db.js';
 import {mailConfigured, sendCode} from './mail.js';
+import {tellOwner} from './telegram.js';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const FILES = resolve(ROOT, 'server', 'files');
@@ -23,6 +24,10 @@ const CODE_TTL = 15 * 60e3; // код из письма действует 15 м
 const RESEND_GAP = 60e3; // новый код — не чаще раза в минуту
 const LINK_TASK_DELAY = 5e3; // «подписаться»: забрать кейс можно через 5 секунд после перехода
 const NICK_RE = /^[A-Za-z0-9_]{3,16}$/;
+const NICK_GAP = 30 * DAY; // ник можно менять раз в 30 дней
+const MSK = 3 * 3600e3;
+const dayStart = (t) => Math.floor((t + MSK) / DAY) * DAY - MSK; // начало суток по Москве
+const money = (kop) => (kop / 100).toFixed(2).replace('.', ',').replace(',00', '');
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 const scryptAsync = promisify(scrypt);
@@ -135,6 +140,8 @@ const userJson = (id) => {
 		bonusCases: u.bonus_cases,
 		caseAt: u.case_at || 0,
 		createdAt: iso(u.created_at),
+		admin: u.role === 'admin' || undefined,
+		nickNextAt: u.nick_changed_at ? u.nick_changed_at + NICK_GAP : 0, // раньше этого времени ник не сменить
 		history: q('SELECT id, amount, kind, title, created_at FROM ledger WHERE user_id = ? ORDER BY id DESC LIMIT 50')
 			.all(u.id)
 			.map((h) => ({id: `l${h.id}`, amount: rub(h.amount), kind: h.kind, title: h.title, at: iso(h.created_at)})),
@@ -166,12 +173,47 @@ const productJson = (p) => ({
 //  API: каждый обработчик возвращает [код ответа, данные]
 // =====================================================================
 const routes = new Map();
-const route = (method, path, handler, {auth = false} = {}) => routes.set(`${method} ${path}`, {handler, auth});
+const route = (method, path, handler, {auth = false, admin = false, maxBody = 600_000} = {}) => routes.set(`${method} ${path}`, {handler, auth, admin, maxBody});
+const isAdmin = (user) => user?.role === 'admin';
 
 route('GET', 'health', () => [200, {ok: true, app: '1dex1-shop', mail: mailConfigured}]);
 route('GET', 'me', ({user}) => [200, {user: user ? userJson(user.id) : null}]);
 
 // --- регистрация: аккаунт создаётся неподтверждённым, на почту уходит код ---
+// =====================================================================
+//  ЗАЩИТА ОТ БОТОВ при регистрации. Галочка «Я не робот»: браузер получает задачу и
+//  перебирает числа, пока отпечаток sha-256 не начнётся с POW_BITS нулевых битов
+//  (человеку — доля секунды, боту на тысячи аккаунтов — дорого). Плюс скрытое поле-ловушка:
+//  люди его не видят, а боты заполняют. Плюс не больше 10 регистраций в час с одного адреса.
+// =====================================================================
+const POW_BITS = 15; // в среднем ~33 тысячи попыток: телефон справляется меньше чем за секунду
+const POW_TTL = 10 * 60e3;
+const POW_SECRET = process.env.POW_SECRET || randomBytes(32).toString('hex');
+const powSig = (s) => createHmac('sha256', POW_SECRET).update(s).digest('hex').slice(0, 32);
+const powUsed = new Map(); // задача -> до какого времени помнить, чтобы не решали одну дважды
+const zeroBits = (buf, bits) => {
+	for (let i = 0; i < bits; i++) if (buf[i >> 3] & (0x80 >> (i & 7))) return false;
+	return true;
+};
+const powOk = (challenge, nonce) => {
+	const [salt, exp, bits, sig] = String(challenge || '').split('.');
+	if (!salt || !sig || !/^\d{1,12}$/.test(String(nonce ?? ''))) return false;
+	const good = Buffer.from(powSig(`${salt}.${exp}.${bits}`));
+	if (sig.length !== good.length || !timingSafeEqual(Buffer.from(sig), good)) return false;
+	if (Number(exp) < Date.now() || Number(bits) < POW_BITS || powUsed.has(salt)) return false;
+	if (!zeroBits(createHash('sha256').update(`${challenge}:${nonce}`).digest(), Number(bits))) return false;
+	powUsed.set(salt, Number(exp));
+	return true;
+};
+setInterval(() => {
+	for (const [salt, exp] of powUsed) if (exp < Date.now()) powUsed.delete(salt);
+}, 600e3).unref();
+route('GET', 'challenge', ({ip}) => {
+	if (limited(`challenge:${ip}`, 60, 600e3)) return [429, {error: 'too_many'}];
+	const head = `${randomBytes(12).toString('hex')}.${Date.now() + POW_TTL}.${POW_BITS}`;
+	return [200, {challenge: `${head}.${powSig(head)}`, bits: POW_BITS}];
+});
+
 route('POST', 'register', async ({body, ip}) => {
 	const nick = String(body.nick || '').trim();
 	const email = String(body.email || '')
@@ -181,7 +223,9 @@ route('POST', 'register', async ({body, ip}) => {
 	if (!NICK_RE.test(nick)) return [400, {error: 'nick', field: 'nick'}];
 	if (!EMAIL_RE.test(email) || email.length > 120) return [400, {error: 'email', field: 'email'}];
 	if (password.length < 6 || password.length > 200) return [400, {error: 'password', field: 'password'}];
+	if (body.website) return [400, {error: 'robot'}]; // поле-ловушка заполнено — это бот
 	if (limited(`reg:${ip}`, 10, 3600e3)) return [429, {error: 'too_many'}];
+	if (!powOk(body.challenge, body.nonce)) return [400, {error: 'robot'}];
 	const byEmail = q('SELECT * FROM users WHERE email = ?').get(email);
 	if (byEmail?.verified) return [409, {error: 'email_taken', field: 'email'}];
 	const byNick = q('SELECT * FROM users WHERE nick = ?').get(nick);
@@ -212,6 +256,27 @@ route('POST', 'nick', ({body, ip}) => {
 	const u = q('SELECT verified, created_at FROM users WHERE nick = ?').get(nick);
 	return [200, {free: !(u && (u.verified || Date.now() - u.created_at <= DAY))}];
 });
+
+// --- смена ника: раз в 30 дней, ник свободен (без учёта регистра) ---
+route(
+	'POST',
+	'nick/change',
+	({body, user}) => {
+		const nick = String(body.nick || '').trim();
+		if (!NICK_RE.test(nick)) return [400, {error: 'nick'}];
+		const me = q('SELECT nick, nick_changed_at FROM users WHERE id = ?').get(user.id);
+		if (nick === me.nick) return [400, {error: 'nick_same'}];
+		if (me.nick_changed_at && Date.now() < me.nick_changed_at + NICK_GAP) return [429, {error: 'nick_wait', next: me.nick_changed_at + NICK_GAP}];
+		const other = q('SELECT id, verified, created_at FROM users WHERE nick = ? AND id != ?').get(nick, user.id);
+		if (other) {
+			if (!other.verified && Date.now() - other.created_at > DAY) q('DELETE FROM users WHERE id = ?').run(other.id);
+			else return [409, {error: 'nick_taken'}];
+		}
+		q('UPDATE users SET nick = ?, nick_changed_at = ? WHERE id = ?').run(nick, Date.now(), user.id);
+		return [200, {ok: true}];
+	},
+	{auth: true},
+);
 
 // --- новый код на почту ---
 route('POST', 'resend', async ({body, ip}) => {
@@ -394,25 +459,52 @@ route('GET', 'products', () => [
 const promoOf = (code) => {
 	const c = String(code || '').trim().toUpperCase();
 	if (!c) return null;
+	const row = q('SELECT * FROM promos WHERE code = ?').get(c);
+	if (row) {
+		// код из админки главнее: можно выключить, ограничить сроком и числом применений
+		if (!row.active) return null;
+		if (row.until && Date.now() > Date.parse(`${row.until}T23:59:59.999+03:00`)) return null;
+		if (row.max_uses && q('SELECT COUNT(*) AS n FROM orders WHERE promo = ?').get(c).n >= row.max_uses) return null;
+		return {code: c, percent: row.percent};
+	}
 	const hash = sha(`1dex1-promo:${c}`);
 	const p = PROMOS.find((x) => x.hash === hash);
 	return p ? {code: c, percent: p.percent} : null;
 };
+// Сообщение владельцу в Telegram о покупке (если бот настроен — см. server/telegram.js)
+const PAID_WITH = {balance: 'с баланса', coupon: 'купоном из кейса', card: 'картой', sbp: 'по СБП'};
+const tellPurchase = (user, s) => {
+	const today = q("SELECT COUNT(*) AS n, COALESCE(SUM(price), 0) AS s FROM orders WHERE created_at >= ? AND paid_with != 'free'").get(dayStart(Date.now()));
+	tellOwner(
+		[
+			`🛒 Покупка: ${s.title}`,
+			`Игрок: ${user.nick}${user.num ? ` (ID ${user.num})` : ''}`,
+			`Оплата: ${PAID_WITH[s.paidWith] || s.paidWith} — ${money(s.price)} ₽${s.promo ? ` (промокод ${s.promo.code}, −${s.promo.percent}%)` : ''}`,
+			s.cashback ? `Кэшбэк игроку: +${money(s.cashback)} ₽` : '',
+			`Сегодня продаж: ${today.n} на ${money(today.s)} ₽`,
+		]
+			.filter(Boolean)
+			.join('\n'),
+	);
+};
 route(
 	'POST',
 	'buy',
-	({body, user}) =>
-		tx(() => {
+	({body, user}) => {
+		let sold = null; // что продали — для уведомления после успешной покупки
+		const result = tx(() => {
 			const p = q('SELECT * FROM products WHERE id = ? AND active = 1').get(String(body.productId || ''));
 			if (!p || p.price === null || p.status !== 'ready') return [404, {error: 'server'}];
 			if (saleOver(p)) return [410, {error: 'ended'}];
 			if (q('SELECT 1 FROM orders WHERE user_id = ? AND product_id = ?').get(user.id, p.id)) return [409, {error: 'owned'}];
-			const promo = promoOf(body.promo);
-			if (body.promo && !promo) return [404, {error: 'promo_bad'}];
+			const coupon = body.coupon && p.kind === 'rp' ? q("SELECT id FROM coupons WHERE user_id = ? AND kind = 'rp' AND order_id IS NULL ORDER BY id LIMIT 1").get(user.id) : null;
+			const usePromo = Boolean(body.promo) && !coupon && p.price > 0;
+			const promo = usePromo ? promoOf(body.promo) : null;
+			if (usePromo && !promo) return [404, {error: 'promo_bad'}];
 			const now = Date.now();
 			let paidWith = 'balance';
 			let price = p.price;
-			const coupon = body.coupon && p.kind === 'rp' ? q("SELECT id FROM coupons WHERE user_id = ? AND kind = 'rp' AND order_id IS NULL ORDER BY id LIMIT 1").get(user.id) : null;
+			let cashback = 0;
 			if (price === 0) paidWith = 'free';
 			else if (coupon) {
 				paidWith = 'coupon';
@@ -420,13 +512,19 @@ route(
 			} else {
 				if (promo) price = Math.round((price * (100 - promo.percent)) / 100); // копейки
 				if (q('SELECT balance FROM users WHERE id = ?').get(user.id).balance < price) return [402, {error: 'balance'}];
-				q('UPDATE users SET balance = balance - ? WHERE id = ?').run(price, user.id);
+				cashback = Math.round((price * CASHBACK) / 100);
+				q('UPDATE users SET balance = balance - ? + ? WHERE id = ?').run(price, cashback, user.id);
 				q("INSERT INTO ledger (user_id, amount, kind, title, created_at) VALUES (?, ?, 'purchase', ?, ?)").run(user.id, -price, p.title, now);
+				if (cashback) q("INSERT INTO ledger (user_id, amount, kind, title, created_at) VALUES (?, ?, 'cashback', ?, ?)").run(user.id, cashback, p.title, now);
 			}
-			const order = q('INSERT INTO orders (user_id, product_id, price, paid_with, created_at) VALUES (?, ?, ?, ?, ?)').run(user.id, p.id, price, paidWith, now);
+			const order = q('INSERT INTO orders (user_id, product_id, price, paid_with, promo, cashback, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(user.id, p.id, price, paidWith, promo?.code ?? null, cashback, now);
 			if (coupon) q('UPDATE coupons SET order_id = ? WHERE id = ?').run(order.lastInsertRowid, coupon.id);
+			if (paidWith !== 'free') sold = {title: p.title, price, paidWith, promo, cashback};
 			return [200, {ok: true}];
-		}),
+		});
+		if (sold) tellPurchase(user, sold);
+		return result;
+	},
 	{auth: true},
 );
 // Пополнение баланса подключится вместе с платёжной системой
@@ -451,6 +549,252 @@ route('POST', 'promo', ({body}) => {
 	const promo = promoOf(body.code);
 	return promo ? [200, promo] : [404, {error: 'promo_bad'}];
 });
+
+// =====================================================================
+//  АДМИНКА — только для аккаунтов с ролью admin (выдаёт команда на сервере:
+//  npm run admin -- user admin Ник). Продажи, товары, промокоды, игроки.
+// =====================================================================
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const ID_RE = /^[a-z0-9-]{2,40}$/;
+const PROMO_RE = /^[A-Z0-9_-]{3,24}$/;
+const kopIn = (v) => {
+	if (v === null || v === undefined || v === '') return null;
+	const n = Number(String(v).replace(',', '.').replace(/\s/g, ''));
+	return Number.isFinite(n) && n >= 0 && n <= 1e6 ? Math.round(n * 100) : NaN;
+};
+const textIn = (v, max) => String(v ?? '').trim().slice(0, max);
+const urlOk = (v) => !v || /^https:\/\/[^\s"'<>]+$/.test(v);
+
+route(
+	'GET',
+	'admin/summary',
+	() => {
+		const now = Date.now();
+		const sales = (from) => {
+			const r = q("SELECT COUNT(*) AS n, COALESCE(SUM(price), 0) AS s FROM orders WHERE created_at >= ? AND paid_with != 'free'").get(from);
+			return {count: r.n, sum: rub(r.s)};
+		};
+		return [
+			200,
+			{
+				sales: {today: sales(dayStart(now)), week: sales(dayStart(now) - 6 * DAY), month: sales(dayStart(now) - 29 * DAY), all: sales(0)},
+				users: {
+					all: q('SELECT COUNT(*) AS n FROM users WHERE verified = 1').get().n,
+					today: q('SELECT COUNT(*) AS n FROM users WHERE verified = 1 AND created_at >= ?').get(dayStart(now)).n,
+				},
+				orders: q(
+					'SELECT o.id, o.price, o.paid_with, o.promo, o.cashback, o.created_at, u.nick, u.num, p.title FROM orders o JOIN users u ON u.id = o.user_id JOIN products p ON p.id = o.product_id ORDER BY o.id DESC LIMIT 50',
+				)
+					.all()
+					.map((o) => ({id: o.id, price: rub(o.price), paidWith: o.paid_with, promo: o.promo, cashback: rub(o.cashback), at: iso(o.created_at), nick: o.nick, num: o.num, title: o.title})),
+			},
+		];
+	},
+	{admin: true},
+);
+
+route(
+	'GET',
+	'admin/products',
+	() => [
+		200,
+		{
+			products: q(
+				"SELECT p.*, (SELECT COUNT(*) FROM orders o WHERE o.product_id = p.id AND o.paid_with != 'free') AS sold, (SELECT COALESCE(SUM(o.price), 0) FROM orders o WHERE o.product_id = p.id) AS revenue FROM products p ORDER BY p.sort, p.created_at DESC",
+			)
+				.all()
+				.map((p) => ({...productJson(p), until: p.sale_until || '', link: p.link || '', file: p.file || '', active: Boolean(p.active), sort: p.sort, sold: p.sold, revenue: rub(p.revenue)})),
+		},
+	],
+	{admin: true},
+);
+route(
+	'POST',
+	'admin/product',
+	({body}) => {
+		const id = textIn(body.id, 40);
+		if (!ID_RE.test(id)) return [400, {error: 'admin_id'}];
+		const old = q('SELECT * FROM products WHERE id = ?').get(id);
+		if (body.isNew && old) return [409, {error: 'admin_exists'}];
+		const kind = body.kind === 'rp' ? 'rp' : 'mod';
+		const title = textIn(body.title, 80);
+		if (!title) return [400, {error: 'admin_title'}];
+		const price = kopIn(body.price);
+		if (Number.isNaN(price)) return [400, {error: 'admin_price'}];
+		const until = textIn(body.until, 10) || null;
+		if (until && !DAY_RE.test(until)) return [400, {error: 'admin_date'}];
+		// картинку и ссылку форма может не прислать (картинка грузится отдельно) — тогда остаются прежние
+		const link = body.link === undefined ? old?.link ?? null : textIn(body.link, 500) || null;
+		const cover = body.cover === undefined ? old?.cover ?? null : textIn(body.cover, 300) || null;
+		if (!urlOk(link) || (cover && !cover.startsWith('img/') && !urlOk(cover))) return [400, {error: 'admin_url'}];
+		const tags = (Array.isArray(body.tags) ? body.tags : String(body.tags || '').split(','))
+			.map((t) => textIn(t, 24))
+			.filter(Boolean)
+			.slice(0, 8);
+		q(`INSERT INTO products (id, kind, status, title, title_en, descr, descr_en, tags, price, cover, link, sale_until, active, sort, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT (id) DO UPDATE SET kind = excluded.kind, status = excluded.status, title = excluded.title, title_en = excluded.title_en,
+				descr = excluded.descr, descr_en = excluded.descr_en, tags = excluded.tags, price = excluded.price, cover = excluded.cover,
+				link = excluded.link, sale_until = excluded.sale_until, active = excluded.active, sort = excluded.sort`).run(
+			id,
+			kind,
+			body.status === 'soon' ? 'soon' : 'ready',
+			title,
+			textIn(body.titleEn, 80) || null,
+			textIn(body.desc, 600),
+			textIn(body.descEn, 600) || null,
+			JSON.stringify(tags),
+			price,
+			cover,
+			link,
+			until,
+			body.active === false ? 0 : 1,
+			Number.isInteger(Number(body.sort)) ? Number(body.sort) : 0,
+			old?.created_at || Date.now(),
+		);
+		return [200, {ok: true}];
+	},
+	{admin: true},
+);
+// Загрузка из админки: файл товара (отдаётся только купившим) или картинка-обложка
+const UPLOAD = {
+	file: {exts: ['.jar', '.zip', '.mrpack', '.7z', '.rar'], max: 30 * 1024 * 1024},
+	cover: {exts: ['.webp', '.png', '.jpg', '.jpeg', '.gif'], max: 5 * 1024 * 1024},
+};
+route(
+	'POST',
+	'admin/upload',
+	({body}) => {
+		const kind = UPLOAD[body.what] ? body.what : null;
+		const p = q('SELECT * FROM products WHERE id = ?').get(String(body.id || ''));
+		if (!kind || !p) return [400, {error: 'admin_upload'}];
+		const ext = extname(String(body.name || '')).toLowerCase();
+		if (!UPLOAD[kind].exts.includes(ext)) return [400, {error: 'admin_ext', exts: UPLOAD[kind].exts}];
+		const data = Buffer.from(String(body.data || ''), 'base64');
+		if (!data.length || data.length > UPLOAD[kind].max) return [400, {error: 'admin_size'}];
+		if (kind === 'file') {
+			mkdirSync(FILES, {recursive: true});
+			const name = `${p.id}${ext}`;
+			writeFileSync(resolve(FILES, name), data);
+			if (p.file && p.file !== name) {
+				try {
+					unlinkSync(resolve(FILES, p.file));
+				} catch {
+					// старого файла уже нет
+				}
+			}
+			q('UPDATE products SET file = ? WHERE id = ?').run(name, p.id);
+			return [200, {ok: true, file: name}];
+		}
+		const dir = resolve(ROOT, 'img', 'products');
+		mkdirSync(dir, {recursive: true});
+		const name = `${p.id}-${Date.now().toString(36)}${ext}`; // новое имя — браузеры сразу покажут новую картинку
+		writeFileSync(resolve(dir, name), data);
+		if (p.cover?.startsWith(`img/products/${p.id}-`)) {
+			try {
+				unlinkSync(resolve(ROOT, p.cover));
+			} catch {
+				// старой картинки уже нет
+			}
+		}
+		const cover = `img/products/${name}`;
+		q('UPDATE products SET cover = ? WHERE id = ?').run(cover, p.id);
+		return [200, {ok: true, cover}];
+	},
+	{admin: true, maxBody: 42 * 1024 * 1024},
+);
+
+route(
+	'GET',
+	'admin/promos',
+	() => [
+		200,
+		{
+			promos: q('SELECT * FROM promos ORDER BY created_at DESC')
+				.all()
+				.map((r) => ({code: r.code, percent: r.percent, maxUses: r.max_uses, until: r.until || '', active: Boolean(r.active), used: q('SELECT COUNT(*) AS n FROM orders WHERE promo = ?').get(r.code).n})),
+			// как часто применяли коды (и из админки, и из js/data.js)
+			usage: q('SELECT promo AS code, COUNT(*) AS n, COALESCE(SUM(price), 0) AS s FROM orders WHERE promo IS NOT NULL GROUP BY promo ORDER BY n DESC')
+				.all()
+				.map((r) => ({code: r.code, count: r.n, sum: rub(r.s)})),
+			hidden: PROMOS.length, // сколько кодов-отпечатков в js/data.js
+		},
+	],
+	{admin: true},
+);
+route(
+	'POST',
+	'admin/promo',
+	({body}) => {
+		const code = textIn(body.code, 24).toUpperCase();
+		if (!PROMO_RE.test(code)) return [400, {error: 'admin_code'}];
+		const percent = Number(body.percent);
+		if (!Number.isInteger(percent) || percent < 1 || percent > 90) return [400, {error: 'admin_percent'}];
+		const maxUses = body.maxUses === '' || body.maxUses === null || body.maxUses === undefined ? null : Number(body.maxUses);
+		if (maxUses !== null && (!Number.isInteger(maxUses) || maxUses < 1)) return [400, {error: 'admin_uses'}];
+		const until = textIn(body.until, 10) || null;
+		if (until && !DAY_RE.test(until)) return [400, {error: 'admin_date'}];
+		q(`INSERT INTO promos (code, percent, max_uses, until, active, created_at) VALUES (?, ?, ?, ?, ?, ?)
+			ON CONFLICT (code) DO UPDATE SET percent = excluded.percent, max_uses = excluded.max_uses, until = excluded.until, active = excluded.active`).run(
+			code,
+			percent,
+			maxUses,
+			until,
+			body.active === false ? 0 : 1,
+			Date.now(),
+		);
+		return [200, {ok: true}];
+	},
+	{admin: true},
+);
+route(
+	'POST',
+	'admin/promo/delete',
+	({body}) => {
+		q('DELETE FROM promos WHERE code = ?').run(String(body.code || ''));
+		return [200, {ok: true}];
+	},
+	{admin: true},
+);
+
+route(
+	'GET',
+	'admin/users',
+	({query}) => {
+		const s = textIn(query.get('q'), 60);
+		const like = `%${s.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
+		const rows = s
+			? q("SELECT * FROM users WHERE nick LIKE ? ESCAPE '\\' OR email LIKE ? ESCAPE '\\' OR num = ? ORDER BY id DESC LIMIT 50").all(like, like, Number(s) || -1)
+			: q('SELECT * FROM users ORDER BY id DESC LIMIT 50').all();
+		return [
+			200,
+			{
+				users: rows.map((u) => {
+					const o = q("SELECT COUNT(*) AS n, COALESCE(SUM(price), 0) AS s FROM orders WHERE user_id = ? AND paid_with != 'free'").get(u.id);
+					return {num: u.num, nick: u.nick, email: u.email, verified: Boolean(u.verified), admin: u.role === 'admin', balance: rub(u.balance), createdAt: iso(u.created_at), orders: o.n, spent: rub(o.s)};
+				}),
+			},
+		];
+	},
+	{admin: true},
+);
+route(
+	'POST',
+	'admin/user/balance',
+	({body}) =>
+		tx(() => {
+			const u = q('SELECT * FROM users WHERE nick = ?').get(String(body.nick || ''));
+			if (!u) return [404, {error: 'admin_user'}];
+			const sign = Number(body.amount) < 0 ? -1 : 1;
+			const amount = kopIn(Math.abs(Number(body.amount)));
+			if (!amount || Number.isNaN(amount)) return [400, {error: 'admin_price'}];
+			if (sign < 0 && u.balance < amount) return [400, {error: 'balance'}];
+			q('UPDATE users SET balance = balance + ? WHERE id = ?').run(sign * amount, u.id);
+			q("INSERT INTO ledger (user_id, amount, kind, title, created_at) VALUES (?, ?, 'admin', ?, ?)").run(u.id, sign * amount, textIn(body.note, 80) || null, Date.now());
+			return [200, {ok: true, balance: rub(u.balance + sign * amount)}];
+		}),
+	{admin: true},
+);
 
 // --- скачивание: только тем, кто купил ---
 const download = (req, res, user, productId) => {
@@ -490,13 +834,13 @@ const json = (res, status, data) => {
 	res.writeHead(status, {'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(body), 'Cache-Control': 'no-store'});
 	res.end(body);
 };
-const readBody = (req) =>
+const readBody = (req, max = 600_000) =>
 	new Promise((ok, fail) => {
 		let size = 0;
 		const chunks = [];
 		req.on('data', (c) => {
 			size += c.length;
-			if (size > 600_000) {
+			if (size > max) {
 				fail(new Error('too big'));
 				req.destroy();
 			} else chunks.push(c);
@@ -522,9 +866,13 @@ const serveStatic = (req, res, pathname) => {
 		return json(res, 400, {error: 'bad path'});
 	}
 	const file = resolve(ROOT, rel);
-	const allowed = PUBLIC.some((p) => (p.endsWith('/') ? rel.startsWith(p) : rel === p));
+	// после раскодирования «..%2f» превращается в «../» — такие пути не отдаём совсем,
+	// и проверяем уже итоговый путь: он должен лежать внутри разрешённой папки сайта
+	const safe = !rel.includes('\0') && !rel.includes('\\') && !rel.split('/').includes('..');
+	const real = relative(ROOT, file).split(sep).join('/');
+	const allowed = safe && PUBLIC.some((p) => (p.endsWith('/') ? real.startsWith(p) : real === p));
 	let st = null;
-	if (allowed && !rel.includes('\0') && file.startsWith(ROOT + sep)) {
+	if (allowed && file.startsWith(ROOT + sep)) {
 		try {
 			st = statSync(file);
 		} catch {
@@ -580,16 +928,18 @@ const server = createServer(async (req, res) => {
 		if (req.method === 'GET' && path.startsWith('download/')) return download(req, res, user, decodeURIComponent(path.slice(9)));
 		const r = routes.get(`${req.method} ${path}`);
 		if (!r) return json(res, 404, {error: 'not_found'});
+		// админка: проверяем права до чтения тела запроса (там бывают большие файлы)
+		if (r.admin && !isAdmin(user)) return json(res, user ? 403 : 401, {error: user ? 'forbidden' : 'login'});
 		let body = {};
 		if (req.method === 'POST') {
 			// защита от подделки запросов с чужих сайтов: только JSON и только со своего адреса
 			if (!String(req.headers['content-type'] || '').includes('application/json')) return json(res, 415, {error: 'json'});
 			const origin = req.headers.origin;
 			if (origin && new URL(origin).host !== req.headers.host) return json(res, 403, {error: 'origin'});
-			body = await readBody(req);
+			body = await readBody(req, r.maxBody);
 		}
 		if (r.auth && !user) return json(res, 401, {error: 'login'});
-		const [status, data] = await r.handler({req, res, body, user, ip});
+		const [status, data] = await r.handler({req, res, body, user, ip, query: url.searchParams});
 		// после изменений сразу отдаём свежие данные пользователя
 		if (status < 400 && user && r.auth && !('user' in data)) data.user = userJson(user.id);
 		return json(res, status, data);

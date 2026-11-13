@@ -68,7 +68,7 @@ export const PRODUCTS = [
 		title: 'PvP AI',
 		desc: 'PvP AI — мод, который анализирует, кто победит.',
 		descEn: 'PvP AI is a mod that analyzes who is going to win.',
-		tags: [],
+		tags: ['1.21.11', 'Fabric'],
 		price: 29,
 		cover: 'img/products/pvp-ai.webp',
 		link: null,
@@ -81,7 +81,7 @@ export const PRODUCTS = [
 		titleEn: 'New Year mod',
 		desc: 'Визуальный новогодний мод: делает мир в новогоднем настроении.',
 		descEn: 'A visual New Year mod that puts the whole world in a New Year mood.',
-		tags: [],
+		tags: ['1.21.11', 'Fabric'],
 		price: 49,
 		cover: 'img/products/new-year.webp',
 		link: null,
@@ -95,12 +95,16 @@ export const PRODUCTS = [
 		titleEn: '1DEX1 resource pack',
 		desc: 'Мой ресурс-пак из роликов: новые текстуры оружия, брони и зелий.',
 		descEn: 'My resource pack from the videos: new textures for weapons, armor and potions.',
-		tags: [],
+		tags: ['1.21.11', 'Fabric'],
 		price: 19,
 		cover: 'img/products/rp-1dex1.webp',
 		link: null,
 	},
 ];
+
+// КЭШБЭК: сколько процентов от покупки возвращается на баланс сайта (0 — выключить).
+// Начисляется за платные покупки (с баланса, а потом и картой / по СБП), не за купон из кейса.
+export const CASHBACK = 5;
 
 // ------------------------------------------------------------
 //  ПРОМОКОДЫ — скидка на любой платный товар (в окне покупки поле «Промокод»).

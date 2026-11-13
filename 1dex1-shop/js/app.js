@@ -2,7 +2,8 @@
 import {ACHIEVEMENTS, count, notify, onChange, renderList, unlock} from './achievements.js';
 import * as auth from './auth.js';
 import {initCollab} from './collab.js';
-import {CASE, LEGAL, MARQUEE, SITE, TASKS, VISUALS} from './data.js';
+import {CASE, CASHBACK, LEGAL, MARQUEE, SITE, TASKS, VISUALS} from './data.js';
+import {solve as solveRobot} from './pow.js';
 import {initFootWord} from './footer.js';
 import {applyI18n, getLang, locale, onLang, setLang, t} from './i18n.js';
 import {getDoc} from './legal.js';
@@ -220,6 +221,9 @@ const paintCheckout = () => {
 	$('#co-disc-row').hidden = !promo;
 	$('#co-disc').textContent = promo ? `−${price(Math.round((p.price - total) * 100) / 100)}` : '';
 	$('#co-total').textContent = total === null ? '—' : total === 0 ? t('price.free') : price(total);
+	const cb = total ? Math.round((Math.round(total * 100) * CASHBACK) / 100) / 100 : 0; // в копейках, как на сервере
+	$('#co-cb-row').hidden = !cb;
+	$('#co-cb').textContent = cb ? `+${price(cb)}` : '';
 	const btn = $('#co-pay');
 	btn.disabled = total === null;
 	$('#co-pay-text').textContent = total === null ? t('co.payLater') : user ? t('co.pay') : t('co.payLogin');
@@ -289,6 +293,8 @@ coForm.addEventListener('submit', async (e) => {
 	notify(t('toast.bought'));
 });
 const renderShop = () => {
+	const common = products.length ? (products[0].tags || []).filter((tag) => products.every((p) => p.tags?.includes(tag))) : [];
+	$('#shop-ver').textContent = common.length ? t('shop.ver', {v: common.join(' · ')}) : '';
 	renderPhoneShop();
 	if (sheet.open) paintSheet();
 	if (checkout.open) paintCheckout();
@@ -435,6 +441,41 @@ auth.onAuth(renderShop);
 	});
 	onLang(() => paintNick(nickHint.dataset.state));
 
+	// галочка «Я не робот»: задача от сервера, браузер решает её за долю секунды
+	const robotBox = $('#robot-box');
+	const robotState = $('#robot-state');
+	let robot = null; // {challenge, nonce} — решённая задача, годится на одну регистрацию
+	let robotBusy = false;
+	let robotLabel = '';
+	const paintRobot = (state = '') => {
+		robotLabel = state;
+		robotBox.dataset.state = state;
+		robotBox.setAttribute('aria-checked', state === 'done' ? 'true' : 'false');
+		robotState.textContent = state ? t(`robot.${state}`) : '';
+	};
+	const resetRobot = () => {
+		robot = null;
+		paintRobot();
+	};
+	robotBox.addEventListener('click', async () => {
+		if (robotBusy || robot) return;
+		robotBusy = true;
+		paintRobot('checking');
+		try {
+			const task = await auth.robotChallenge();
+			if (task.error) throw new Error(task.error);
+			robot = {challenge: task.challenge, nonce: await solveRobot(task.challenge, task.bits)};
+			paintRobot('done');
+			error.textContent = '';
+		} catch {
+			robot = null;
+			paintRobot('fail');
+		} finally {
+			robotBusy = false;
+		}
+	});
+	onLang(() => paintRobot(robotLabel));
+
 	const setMode = (next) => {
 		mode = next;
 		authDlg.dataset.mode = mode;
@@ -487,6 +528,7 @@ auth.onAuth(renderShop);
 		if (submit.disabled) return;
 		error.textContent = '';
 		const data = Object.fromEntries(new FormData(form));
+		if (mode === 'register') Object.assign(data, robot || {});
 		submit.disabled = true;
 		let res;
 		try {
@@ -501,8 +543,10 @@ auth.onAuth(renderShop);
 			fromRegister = mode === 'register';
 			return toVerify(res);
 		}
+		if (mode === 'register' && !res.error) resetRobot(); // задача одноразовая
 		if (res.error) {
 			error.textContent = errText(res.error);
+			if (res.error === 'robot') resetRobot();
 			if (res.error === 'nick_taken') paintNick('taken');
 			if (res.field) $(`#auth-${res.field}`)?.focus();
 			return;
@@ -522,8 +566,71 @@ auth.onAuth(renderShop);
 		paintResend();
 	});
 
-	const HIST_ICON = {case: 'chest', reward: 'trophy', topup: 'coin', admin: 'coin', purchase: 'cube'};
-	const histTitle = (h) => (h.kind === 'purchase' || (h.kind === 'admin' && h.title) ? h.title : t(`hist.${h.kind}`));
+	// --- смена ника: раз в 30 дней, с проверкой «свободен / занят» при вводе ---
+	const nickForm = $('#nick-form');
+	const nickNew = $('#nick-new');
+	const nickHint2 = $('#nick-hint');
+	const nickErr = $('#nick-error');
+	let nickTimer2 = 0;
+	let nickAsk2 = 0;
+	const hint2 = (state = '') => {
+		nickHint2.dataset.state = state;
+		nickHint2.textContent = state ? t(`auth.nick_${state}`) : '';
+	};
+	const paintNickBox = (user) => {
+		const wait = user.nickNextAt && user.nickNextAt > Date.now();
+		$('#nick-note').textContent = wait ? t('nick.wait', {date: date(new Date(user.nickNextAt).toISOString(), true)}) : t('nick.rule');
+		// пока ждать — только надпись, когда можно сменить; поле и кнопку прячем
+		nickNew.closest('.field').hidden = Boolean(wait);
+		$('#nick-save').hidden = Boolean(wait);
+	};
+	nickNew.addEventListener('input', () => {
+		clearTimeout(nickTimer2);
+		nickAsk2++;
+		hint2();
+		nickErr.textContent = '';
+		const nick = nickNew.value.trim();
+		if (nick.length < 3) return;
+		if (nick === auth.current()?.nick) return hint2('same');
+		const ask = nickAsk2;
+		nickTimer2 = setTimeout(async () => {
+			const res = await auth.nickFree(nick);
+			if (ask !== nickAsk2) return;
+			// тот же ник другими буквами (rodiondex → RodionDex) — это свой ник, его можно
+			const own = nick.toLowerCase() === auth.current()?.nick.toLowerCase();
+			hint2(res.error === 'nick' ? 'bad' : res.error ? '' : res.free || own ? 'free' : 'taken');
+		}, 350);
+	});
+	nickForm.addEventListener('submit', async (e) => {
+		e.preventDefault();
+		const btn = $('#nick-save');
+		if (btn.disabled) return;
+		btn.disabled = true;
+		const res = await auth.changeNick(nickNew.value);
+		btn.disabled = false;
+		if (res.error) {
+			nickErr.textContent = res.error === 'nick_wait' ? t('nick.wait', {date: date(new Date(res.next).toISOString(), true)}) : errText(res.error);
+			if (res.error === 'nick_taken') hint2('taken');
+			return;
+		}
+		nickNew.value = '';
+		hint2();
+		nickErr.textContent = '';
+		$('#nick-box').open = false;
+		notify(t('nick.done'));
+	});
+	$('#admin-open').addEventListener('click', async () => {
+		const {openAdmin} = await import('./admin.js');
+		const reloadShop = async () => {
+			products = (await auth.loadProducts()).filter(onSale);
+			renderShop();
+		};
+		openAdmin({openDialog, closeDialog, notify, esc, price, date, reloadShop});
+	});
+
+	const HIST_ICON = {case: 'chest', reward: 'trophy', topup: 'coin', admin: 'coin', purchase: 'cube', cashback: 'coin'};
+	const histTitle = (h) =>
+		h.kind === 'cashback' ? t('hist.cashback', {p: CASHBACK, title: h.title || ''}) : h.kind === 'purchase' || (h.kind === 'admin' && h.title) ? h.title : t(`hist.${h.kind}`);
 	const paint = () => {
 		const user = auth.current();
 		document.documentElement.classList.toggle('is-authed', Boolean(user));
@@ -535,6 +642,8 @@ auth.onAuth(renderShop);
 		}
 		$('#profile-avatar').innerHTML = avatarHtml(user);
 		$('#profile-nick').textContent = user.nick;
+		paintNickBox(user);
+		$('#admin-open').hidden = !user.admin;
 		$('#profile-email').textContent = user.email;
 		$('#profile-since').textContent = t('profile.since', {date: date(user.createdAt, true)});
 		$('#profile-balance').textContent = money(user.balance);
