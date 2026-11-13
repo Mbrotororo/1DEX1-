@@ -196,6 +196,7 @@ document.addEventListener('click', (e) => {
 const checkout = $('#checkout-dialog');
 const coForm = $('#co-form');
 let coId = null;
+let coPromo = null; // применённый промокод {code, percent}
 const coMethod = () => coForm.elements.method.value;
 const coMsg = (text = '', bad = false) => {
 	const m = $('#co-promo-msg');
@@ -213,8 +214,11 @@ const paintCheckout = () => {
 	const coupon = p.kind === 'rp' && Boolean(user?.coupons?.some((c) => c.kind === 'rp'));
 	$('#co-coupon-row').hidden = !coupon;
 	if (!coupon && coMethod() === 'coupon') coForm.elements.method.value = 'card';
-	const total = p.price === null ? null : coMethod() === 'coupon' ? 0 : p.price;
+	const promo = coPromo && p.price && coMethod() !== 'coupon' ? coPromo : null;
+	const total = p.price === null ? null : coMethod() === 'coupon' ? 0 : promo ? auth.discounted(p.price, promo.percent) : p.price;
 	$('#co-price').textContent = priceOf(p);
+	$('#co-disc-row').hidden = !promo;
+	$('#co-disc').textContent = promo ? `−${price(Math.round((p.price - total) * 100) / 100)}` : '';
 	$('#co-total').textContent = total === null ? '—' : total === 0 ? t('price.free') : price(total);
 	const btn = $('#co-pay');
 	btn.disabled = total === null;
@@ -224,6 +228,7 @@ const paintCheckout = () => {
 };
 const openCheckout = (id) => {
 	coId = id;
+	coPromo = null;
 	coForm.elements.method.value = 'card';
 	$('#co-promo').value = '';
 	coMsg();
@@ -243,9 +248,22 @@ coForm.addEventListener('change', (e) => {
 });
 $('#co-apply').addEventListener('click', async () => {
 	const code = $('#co-promo').value.trim();
-	if (!code) return coMsg(t('err.promo_empty'), true);
+	coPromo = null;
+	if (!code) {
+		paintCheckout();
+		return coMsg(t('err.promo_empty'), true);
+	}
 	const res = await auth.promo(code, coId);
-	coMsg(res.error ? errText(res.error) : '', Boolean(res.error));
+	if (!res.error) coPromo = {code: res.code, percent: res.percent};
+	coMsg(res.error ? errText(res.error) : t('co.promoOk', {p: res.percent}), Boolean(res.error));
+	paintCheckout();
+});
+// поменял код после «Применить» — скидка снимается, пока не применишь снова
+$('#co-promo').addEventListener('input', () => {
+	if (!coPromo || $('#co-promo').value.trim().toUpperCase() === coPromo.code) return;
+	coPromo = null;
+	coMsg();
+	paintCheckout();
 });
 $('#co-promo').addEventListener('keydown', (e) => {
 	if (e.key !== 'Enter') return;
@@ -261,7 +279,8 @@ coForm.addEventListener('submit', async (e) => {
 	const btn = $('#co-pay');
 	btn.disabled = true;
 	$('#co-error').textContent = '';
-	const res = method === 'card' || method === 'sbp' ? await auth.pay(p.id, method) : await auth.buy(p.id, {coupon: method === 'coupon'});
+	const promo = method === 'coupon' ? '' : coPromo?.code || '';
+	const res = method === 'card' || method === 'sbp' ? await auth.pay(p.id, method, promo) : await auth.buy(p.id, {coupon: method === 'coupon', promo});
 	btn.disabled = false;
 	if (res.error === 'login') return openAuth('login');
 	if (res.error) return ($('#co-error').textContent = errText(res.error));

@@ -69,7 +69,7 @@ export const PRODUCTS = [
 		desc: 'PvP AI — мод, который анализирует, кто победит.',
 		descEn: 'PvP AI is a mod that analyzes who is going to win.',
 		tags: [],
-		price: null,
+		price: 29,
 		cover: 'img/products/pvp-ai.webp',
 		link: null,
 	},
@@ -82,7 +82,7 @@ export const PRODUCTS = [
 		desc: 'Визуальный новогодний мод: делает мир в новогоднем настроении.',
 		descEn: 'A visual New Year mod that puts the whole world in a New Year mood.',
 		tags: [],
-		price: null,
+		price: 49,
 		cover: 'img/products/new-year.webp',
 		link: null,
 		until: '2027-02-20',
@@ -96,10 +96,21 @@ export const PRODUCTS = [
 		desc: 'Мой ресурс-пак из роликов: новые текстуры оружия, брони и зелий.',
 		descEn: 'My resource pack from the videos: new textures for weapons, armor and potions.',
 		tags: [],
-		price: null,
+		price: 19,
 		cover: 'img/products/rp-1dex1.webp',
 		link: null,
 	},
+];
+
+// ------------------------------------------------------------
+//  ПРОМОКОДЫ — скидка на любой платный товар (в окне покупки поле «Промокод»).
+//  На сайте нигде не перечислены: о коде знают те, кому ты его сказал.
+//  Код хранится не текстом, а отпечатком (hash), чтобы его не было видно в коде сайта.
+//  Отпечаток нового кода: npm run admin -- promo hash КОД  (большие и маленькие буквы не важны)
+//  percent — скидка в процентах.
+// ------------------------------------------------------------
+export const PROMOS = [
+	{hash: '358f8eb92fc8894a2b4f717b5ceee5deb0abe9542ec48df6bb29086eef31da6f', percent: 10},
 ];
 
 // ------------------------------------------------------------

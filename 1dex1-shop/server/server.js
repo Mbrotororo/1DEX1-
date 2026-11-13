@@ -8,7 +8,7 @@ import {extname, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 import {brotliCompressSync, constants as ZLIB, gzipSync} from 'node:zlib';
-import {CASE, TASKS} from '../js/data.js';
+import {CASE, PROMOS, TASKS} from '../js/data.js';
 import {q, saleOver, tx} from './db.js';
 import {mailConfigured, sendCode} from './mail.js';
 
@@ -380,6 +380,14 @@ route('GET', 'products', () => [
 			.map(productJson),
 	},
 ]);
+// Промокод из data.js (там он хранится отпечатком): {code, percent} или null
+const promoOf = (code) => {
+	const c = String(code || '').trim().toUpperCase();
+	if (!c) return null;
+	const hash = sha(`1dex1-promo:${c}`);
+	const p = PROMOS.find((x) => x.hash === hash);
+	return p ? {code: c, percent: p.percent} : null;
+};
 route(
 	'POST',
 	'buy',
@@ -389,6 +397,8 @@ route(
 			if (!p || p.price === null || p.status !== 'ready') return [404, {error: 'server'}];
 			if (saleOver(p)) return [410, {error: 'ended'}];
 			if (q('SELECT 1 FROM orders WHERE user_id = ? AND product_id = ?').get(user.id, p.id)) return [409, {error: 'owned'}];
+			const promo = promoOf(body.promo);
+			if (body.promo && !promo) return [404, {error: 'promo_bad'}];
 			const now = Date.now();
 			let paidWith = 'balance';
 			let price = p.price;
@@ -398,6 +408,7 @@ route(
 				paidWith = 'coupon';
 				price = 0;
 			} else {
+				if (promo) price = Math.round((price * (100 - promo.percent)) / 100); // копейки
 				if (q('SELECT balance FROM users WHERE id = ?').get(user.id).balance < price) return [402, {error: 'balance'}];
 				q('UPDATE users SET balance = balance - ? WHERE id = ?').run(price, user.id);
 				q("INSERT INTO ledger (user_id, amount, kind, title, created_at) VALUES (?, ?, 'purchase', ?, ?)").run(user.id, -price, p.title, now);
@@ -419,12 +430,17 @@ route(
 		const p = q('SELECT * FROM products WHERE id = ? AND active = 1').get(String(body.productId || ''));
 		if (!p || p.price === null || p.status !== 'ready') return [404, {error: 'server'}];
 		if (saleOver(p)) return [410, {error: 'ended'}];
+		if (body.promo && !promoOf(body.promo)) return [404, {error: 'promo_bad'}];
 		return [501, {error: 'card_soon'}];
 	},
 	{auth: true},
 );
-// Промокоды: поле в окне покупки уже есть, самих промокодов пока нет
-route('POST', 'promo', ({body}) => [404, {error: String(body.code || '').trim() ? 'promo_bad' : 'promo_empty'}]);
+// Промокод: проверить и сказать скидку (саму скидку сервер считает при покупке)
+route('POST', 'promo', ({body}) => {
+	if (!String(body.code || '').trim()) return [400, {error: 'promo_empty'}];
+	const promo = promoOf(body.code);
+	return promo ? [200, promo] : [404, {error: 'promo_bad'}];
+});
 
 // --- скачивание: только тем, кто купил ---
 const download = (req, res, user, productId) => {

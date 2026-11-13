@@ -7,6 +7,7 @@
 //        [--until 2027-02-20]   эксклюзив: продаётся до этого дня включительно, потом пропадает
 //   npm run admin -- product import     перенести товары из js/data.js в базу
 //        (обновляет название, описание, цену, картинку и срок; загруженные файлы не трогает)
+//   npm run admin -- promo hash КОД     отпечаток промокода для PROMOS в js/data.js
 //   npm run admin -- product list
 //   npm run admin -- product hide <id>  |  product show <id>  |  product remove <id>
 //   npm run admin -- product price <id> <рубли>
@@ -18,6 +19,7 @@
 //   npm run admin -- user delete <ник> --yes      удалить аккаунт со всеми данными (по просьбе игрока)
 //
 // --price без значения или 0 — бесплатно; --price later — «цена позже».
+import {createHash} from 'node:crypto';
 import {copyFileSync, existsSync, mkdirSync} from 'node:fs';
 import {basename, extname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -131,6 +133,11 @@ if (what === 'product' && action === 'add') {
 		console.log(`  ${p.id} — ${p.title}${p.until ? ` (до ${p.until})` : ''}`);
 	});
 	console.log(`Готово: ${PRODUCTS.length} товар(ов) из js/data.js в базе.`);
+} else if (what === 'promo' && action === 'hash') {
+	const code = String(args[0] || '').trim().toUpperCase();
+	if (!code) fail('укажи код: promo hash КОД');
+	const hash = createHash('sha256').update(`1dex1-promo:${code}`).digest('hex');
+	console.log(`Добавь в PROMOS (js/data.js), percent — скидка в процентах:\n\t{hash: '${hash}', percent: 10},`);
 } else if (what === 'product' && action === 'list') {
 	table(q('SELECT id, kind, status, title, price / 100.0 AS rub, active, COALESCE(sale_until, \'—\') AS until, COALESCE(file, link, \'—\') AS download FROM products ORDER BY sort, created_at DESC').all());
 } else if (what === 'product' && ['hide', 'show', 'remove'].includes(action)) {

@@ -8,7 +8,7 @@
 //    живут в браузере посетителя (localStorage), почта не проверяется.
 // Режим определяется сам: если по адресу api/health отвечает сервер магазина — с сервером.
 
-import {CASE, PRODUCTS, TASKS} from './data.js';
+import {CASE, PRODUCTS, PROMOS, TASKS} from './data.js';
 
 export let serverMode = false;
 let cached = null; // текущий пользователь (или null), чтобы current() отвечал мгновенно
@@ -307,13 +307,32 @@ export const loadProducts = async () => {
 
 // Оплата картой или по СБП. С сервером — ссылка на страницу платёжного сервиса ({url}),
 // пока он не подключён — ошибка card_soon (без сервера оплаты картой нет вовсе).
-export const pay = async (productId, method) => (serverMode ? api('pay', {productId, method}) : {error: 'card_soon'});
-// Промокод. Промокодов пока нет: и сервер, и сайт без сервера отвечают «такого нет».
-export const promo = async (code, productId) => (serverMode ? api('promo', {code, productId}) : {error: 'promo_bad'});
+export const pay = async (productId, method, promoCode) => (serverMode ? api('pay', {productId, method, promo: promoCode}) : {error: 'card_soon'});
+
+// Промокод: ответ {code, percent} или ошибка promo_bad. Коды в data.js хранятся отпечатком
+// (sha-256 от «1dex1-promo:КОД»), сервер проверяет так же — и сам считает скидку при покупке.
+const promoCodeOf = (code) => String(code || '').trim().toUpperCase();
+const findPromo = async (code) => {
+	const c = promoCodeOf(code);
+	if (!c || !window.crypto?.subtle) return null;
+	const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`1dex1-promo:${c}`));
+	const hash = [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+	const p = PROMOS.find((x) => x.hash === hash);
+	return p ? {code: c, percent: p.percent} : null;
+};
+export const promo = async (code, productId) => {
+	if (!promoCodeOf(code)) return {error: 'promo_empty'};
+	if (serverMode) return api('promo', {code, productId});
+	return (await findPromo(code)) || {error: 'promo_bad'};
+};
+// Цена со скидкой, до копеек (так же считает сервер)
+export const discounted = (price, percent) => Math.round(price * (100 - percent)) / 100;
 
 // Купить товар: за баланс, по купону (ресурс-пак) или бесплатно
-export const buy = async (productId, {coupon = false} = {}) => {
-	if (serverMode) return api('buy', {productId, coupon});
+export const buy = async (productId, {coupon = false, promo: promoCode = ''} = {}) => {
+	if (serverMode) return api('buy', {productId, coupon, promo: promoCode});
+	const promoHit = promoCode ? await findPromo(promoCode) : null;
+	if (promoCode && !promoHit) return {error: 'promo_bad'};
 	const {users, user} = localSession();
 	if (!user) return {error: 'login'};
 	const p = localProducts().find((x) => x.id === productId);
@@ -327,6 +346,7 @@ export const buy = async (productId, {coupon = false} = {}) => {
 		free.used = productId;
 		price = 0;
 	} else if (price > 0) {
+		if (promoHit) price = discounted(price, promoHit.percent);
 		if ((user.balance || 0) < price) return {error: 'balance'};
 		user.balance = money(user.balance - price);
 		user.history ||= [];

@@ -46,7 +46,10 @@
 }
 
 *,*::before,*::after{box-sizing:border-box}
-html{-webkit-tap-highlight-color:transparent;scroll-behavior:smooth;scroll-padding-top:calc(var(--topbar) + var(--safe-top) + 16px);-webkit-text-size-adjust:100%}
+/* открыто окно (товар, покупка, профиль…) — страница под ним стоит на месте */
+html:has(dialog[open]){overflow:hidden}
+/* место под полосу прокрутки остаётся и под окном — на компьютере страница не прыгает вбок */
+html{scrollbar-gutter:stable;-webkit-tap-highlight-color:transparent;scroll-behavior:smooth;scroll-padding-top:calc(var(--topbar) + var(--safe-top) + 16px);-webkit-text-size-adjust:100%}
 body{
 	margin:0;min-height:100vh;overflow-x:hidden;
 	font:400 16px/1.55 var(--font-body);color:var(--ink);
@@ -456,7 +459,7 @@ h2{font:400 clamp(26px,4vw,50px)/1.05 var(--font-display);letter-spacing:-.01em;
 .dialog[open]::backdrop{animation:fade-in .3s ease}
 .dialog.is-closing{animation:pop-out .2s ease-in forwards}
 .dialog.is-closing::backdrop{animation:fade-out .2s ease-in forwards}
-.dialog__panel{display:flex;flex-direction:column;max-height:min(760px,calc(100dvh - 24px));overflow:auto;background:var(--surface);border:2px solid var(--line-2);box-shadow:var(--bevel),0 10px 0 rgba(0,0,0,.5)}
+.dialog__panel{display:flex;flex-direction:column;max-height:min(760px,calc(100dvh - 24px));overflow:auto;overscroll-behavior:contain;background:var(--surface);border:2px solid var(--line-2);box-shadow:var(--bevel),0 10px 0 rgba(0,0,0,.5)}
 .dialog__head{display:flex;align-items:center;gap:14px;padding:18px 20px 14px}
 .dialog__head h2{font-size:22px}
 .dialog__head>b{font-size:15px;color:var(--gold)}
@@ -529,6 +532,8 @@ h2{font:400 clamp(26px,4vw,50px)/1.05 var(--font-display);letter-spacing:-.01em;
 .co__sum>div{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
 .co__sum dt{font-size:15px;color:var(--muted)}
 .co__sum dd{margin:0}
+.co__disc dd{color:var(--lime)}
+.co__disc[hidden]{display:none}
 .co__total dt{font-size:17px;font-weight:600;color:var(--ink)}
 .co__total dd{font:800 28px/1 var(--font-body);color:var(--gold)}
 .co__pay{justify-content:space-between;min-height:56px;padding:0 20px;font-size:17px}

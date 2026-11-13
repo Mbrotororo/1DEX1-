@@ -371,7 +371,7 @@
 			<div class="field">
 				<label class="px" for="co-promo" data-i18n="co.promo">Промокод</label>
 				<div class="co__promo">
-					<input id="co-promo" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="32" placeholder="Например, 1DEX1" data-i18n-attr="placeholder:co.promoPh">
+					<input id="co-promo" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="32" placeholder="Если есть" data-i18n-attr="placeholder:co.promoPh">
 					<button class="btn btn--ghost" type="button" id="co-apply" data-i18n="co.apply">Применить</button>
 				</div>
 				<p class="co__msg" id="co-promo-msg" aria-live="polite"></p>
@@ -385,6 +385,7 @@
 			</fieldset>
 			<dl class="co__sum">
 				<div><dt data-i18n="co.price">Цена</dt><dd class="px" id="co-price"></dd></div>
+				<div class="co__disc" id="co-disc-row" hidden><dt data-i18n="co.discount">Скидка</dt><dd class="px" id="co-disc"></dd></div>
 				<div class="co__total"><dt data-i18n="co.total">К оплате</dt><dd id="co-total"></dd></div>
 			</dl>
 			<p class="form__error" id="co-error" role="alert"></p>
