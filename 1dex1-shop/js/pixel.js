@@ -83,6 +83,13 @@ const C = {
 	r: '#ff5a5a',
 	b: '#6a4a2a',
 	B: '#8f6a40',
+	// новогодние: тёмно-красный, светло-красный, снег, тень снега, ёлка
+	e: '#b8283a',
+	E: '#ff8a8a',
+	n: '#f4faff',
+	N: '#bcd8f2',
+	t: '#2f8f45',
+	T: '#1e6232',
 };
 
 // ---------- иконки (9x9) ----------
@@ -115,6 +122,10 @@ export const ICONS = {
 	// банковская карта и QR-код (способы оплаты)
 	card: ['.........', 'qqqqqqqqq', 'qpppppppq', 'qkkkkkkkq', 'qpppppppq', 'qggpppppq', 'qggpwwpwq', 'qqqqqqqqq', '.........'],
 	qr: ['lll.l.lll', 'l.l...l.l', 'lll.l.lll', '...l.l...', 'l.lll.l.l', '...l..l..', 'lll.l.ll.', 'l.l..l..l', 'lll.ll.l.'],
+	// новогодние: подарок, ёлка со звездой, снежинка
+	gift: ['..g...g..', '.gGg.gGg.', '..ggggg..', 'rrrrgrrrr', 'gggggGggg', 'reeegeeer', 'reeegeeer', 'reeegeeer', 'eeeegeeee'],
+	tree: ['....g....', '...tGt...', '...ttt...', '..ttrtt..', '..ttttt..', '.ttgtttT.', '.tttttTT.', 'ttrtttTTT', '....b....'],
+	snow: ['....n....', '.n..n..n.', '..n.n.n..', '...nnn...', 'nnnnNnnnn', '...nnn...', '..n.n.n..', '.n..n..n.', '....n....'],
 	// злость: красное лицо, брови домиком вниз
 	// криппер: зелёное пятнистое лицо
 	creeper: ['lmlllmllm', 'lllmlllml', 'mkklllkkl', 'lkklmlkkl', 'llmkkkmll', 'lmlkkklml', 'llkkkkkll', 'mlkmlmkll', 'llklllklm'],
@@ -144,6 +155,32 @@ const CASE_LID = ['.kkkkkkkkkkkkkk.', 'kGPPPPPPPPPPPPGk', 'kgppppppppppppgk', 'k
 const CASE_BASE = ['kgpppppkkpppppgk', 'kgppppkGgkppppgk', 'kgppppkghkppppgk', 'kgpppppkkpppppgk', 'kgppppppppppppgk', 'kgppppppppppppgk', 'kgqqqqqqqqqqqqhk', 'kGhhhhhhhhhhhhhk', '.kkkkkkkkkkkkkk.'];
 export const caseArt = () =>
 	`<span class="case__lid">${pixelSvg(CASE_LID, C)}</span><span class="case__base">${pixelSvg(CASE_BASE, C)}</span>`;
+
+// ---------- новогодний кейс: подарочная коробка с бантом (те же крышка и низ — открывается так же) ----------
+const GIFT_LID = [
+	'....kkk..kkk....',
+	'...kGgGkkGgGk...',
+	'...kghggggghk...',
+	'....kkkGgkkk....',
+	'kkkkkkkGgkkkkkkk',
+	'kEEEEEEGgEEEEEEk',
+	'kerrrrrGgrrrrrek',
+	'keeeeeehgeeeeeek',
+	'kkkkkkkkkkkkkkkk',
+];
+const GIFT_BASE = [
+	'kerrrrrGgrrrrrek',
+	'kerrrrrGgrrrrrek',
+	'kggggggggggggggk',
+	'khhhhhhhhhhhhhhk',
+	'kerrrrrGgrrrrrek',
+	'kerrrrrGgrrrrrek',
+	'keeeeeehgeeeeeek',
+	'keeeeeehgeeeeeek',
+	'.kkkkkkkkkkkkkk.',
+];
+export const giftArt = () =>
+	`<span class="case__lid">${pixelSvg(GIFT_LID, C)}</span><span class="case__base">${pixelSvg(GIFT_BASE, C)}</span>`;
 
 
 // ---------- обложки товаров (12x12), если у товара нет своей картинки ----------

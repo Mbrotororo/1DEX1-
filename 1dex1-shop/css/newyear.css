@@ -1,0 +1,156 @@
+/* ============================================================
+   НОВОГОДНИЙ СТИЛЬ. Работает, только когда в js/data.js стоит SEASON = 'newyear'
+   (тогда у <html> есть класс .ny). Выключил сезон — этих правил как будто нет.
+   ============================================================ */
+:root{
+	--ny-ice:#9fdcff;
+	--ny-ice-hi:#d8f2ff;
+	--ny-red:#ff4d5e;
+	--ny-red-lo:#b8283a;
+	/* пиксельный снег: ровный слой сверху и неровные «сосульки» снизу */
+	--ny-cap:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 6' shape-rendering='crispEdges'%3E%3Cpath fill='%23f4faff' d='M0 0h24v2H0zM0 2h5v1H0zM8 2h7v1H8zM17 2h7v1h-7zM1 3h3v1H1zM9 3h5v1H9zM18 3h5v1h-5zM10 4h4v1h-4zM19 4h3v1h-3z'/%3E%3Cpath fill='%23bcd8f2' d='M5 2h3v1H5zM15 2h2v1h-2zM0 3h1v1H0zM4 3h1v1H4zM8 3h1v1H8zM14 3h1v1h-1zM17 3h1v1h-1zM23 3h1v1h-1zM1 4h3v1H1zM9 4h1v1H9zM18 4h1v1h-1zM22 4h1v1h-1zM10 5h4v1h-4zM19 5h3v1h-3z'/%3E%3C/svg%3E");
+}
+
+/* ---------- снег на карточках, кнопках и подписях ---------- */
+.ny .card::before,.ny .mcard::before,.ny .ny-count::before{
+	content:"";position:absolute;left:-2px;right:-2px;top:-2px;z-index:3;height:12px;pointer-events:none;
+	background:var(--ny-cap) 0 0/48px 12px repeat-x;image-rendering:pixelated;
+}
+.ny .mcard{position:relative}
+.ny .btn::before{
+	content:"";position:absolute;left:3px;right:3px;top:-6px;height:10px;pointer-events:none;
+	background:var(--ny-cap) 7px 0/40px 10px repeat-x;image-rendering:pixelated;
+}
+.ny .btn:disabled::before{opacity:.7}
+.ny .label{position:relative;color:var(--ny-ice-hi);border-color:rgba(159,220,255,.45);background:linear-gradient(90deg,rgba(159,220,255,.18),rgba(159,220,255,.04))}
+.ny .label::after{
+	content:"";position:absolute;left:12px;right:12px;top:-5px;height:8px;pointer-events:none;
+	background:var(--ny-cap) 0 0/32px 8px repeat-x;image-rendering:pixelated;
+}
+
+/* ---------- зимние акценты ---------- */
+.ny .item:hover{border-color:var(--ny-ice);box-shadow:var(--bevel),0 8px 0 #24476a}
+.ny .topbar.is-stuck{border-color:rgba(159,220,255,.28)}
+.ny .marquee{border-color:rgba(159,220,255,.22)}
+.ny .tasks__head h3,.ny .head h2{text-shadow:0 2px 0 rgba(159,220,255,.18)}
+
+/* ---------- гирлянда: провод с провисанием и мигающие лампочки ---------- */
+.ny-garland{
+	position:absolute;left:0;right:0;height:16px;pointer-events:none;overflow:hidden;
+	background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='16'%3E%3Cpath d='M0 2Q30 16 60 2' fill='none' stroke='%23223326' stroke-width='2'/%3E%3C/svg%3E") 0 0/60px 16px repeat-x;
+}
+.ny-garland--top{bottom:-13px}
+.ny-garland--bar{top:2px;left:6px;right:6px;height:12px;background-size:60px 12px;opacity:.95}
+.ny-garland i{
+	position:absolute;top:7px;width:6px;height:8px;background:var(--c);
+	box-shadow:0 0 6px 1px var(--c),inset -2px -2px 0 rgba(0,0,0,.18),inset 2px 1px 0 rgba(255,255,255,.45);
+	animation:ny-blink 1.6s steps(2,jump-none) infinite;animation-delay:var(--d);
+}
+.ny-garland i::before{content:"";position:absolute;left:1px;top:-3px;width:4px;height:3px;background:#3a4a3c}
+.ny-garland--bar i{top:5px;width:5px;height:6px}
+@keyframes ny-blink{0%,100%{opacity:1;filter:none}50%{opacity:.35;filter:saturate(.4)}}
+
+/* ---------- снегопад поверх сайта ---------- */
+.ny-snow{position:fixed;inset:0;z-index:33;width:100%;height:100%;pointer-events:none}
+
+/* ---------- северное сияние за островом ---------- */
+.ny-aurora{position:absolute;inset:0 0 30% 0;z-index:0;overflow:hidden;pointer-events:none;opacity:.75;transition:opacity 1s}
+/* мягкие ленты сияния: лёгкие «занавеси» из неровных полос, без резкого штрихкода */
+.ny-aurora i{
+	position:absolute;left:-25%;width:150%;height:46%;border-radius:50%;
+	background:radial-gradient(closest-side,rgba(110,255,190,.36),rgba(80,220,255,.16) 45%,rgba(154,107,255,0) 75%);
+	-webkit-mask-image:linear-gradient(transparent,#000 30%,#000 60%,transparent),repeating-linear-gradient(90deg,#000 0 14px,rgba(0,0,0,.82) 18px 22px,#000 30px 38px,rgba(0,0,0,.7) 44px 48px);
+	-webkit-mask-composite:source-in;
+	mask-image:linear-gradient(transparent,#000 30%,#000 60%,transparent),repeating-linear-gradient(90deg,#000 0 14px,rgba(0,0,0,.82) 18px 22px,#000 30px 38px,rgba(0,0,0,.7) 44px 48px);
+	mask-composite:intersect;
+	animation:ny-aurora 16s ease-in-out infinite alternate;
+}
+.ny-aurora i:nth-child(1){top:4%;transform:skewY(-7deg)}
+.ny-aurora i:nth-child(2){top:20%;animation-duration:21s;animation-delay:-6s;background:radial-gradient(closest-side,rgba(154,107,255,.38),rgba(90,200,255,.18) 50%,rgba(0,0,0,0) 75%)}
+.ny-aurora i:nth-child(3){top:-6%;height:34%;animation-duration:12s;animation-delay:-3s;opacity:.7}
+@keyframes ny-aurora{
+	0%{transform:translateX(-8%) skewY(-7deg) scaleY(.85)}
+	50%{transform:translateX(4%) skewY(-3deg) scaleY(1.1)}
+	100%{transform:translateX(9%) skewY(-9deg) scaleY(.9)}
+}
+.hero.is-nether .ny-aurora,.hero.is-end .ny-aurora{opacity:0}
+@media (max-width:899px){.ny-aurora{inset:0 0 auto 0;height:min(56svh,480px)}}
+
+/* ---------- отсчёт до Нового года на первом экране ---------- */
+.ny-count{
+	position:relative;display:inline-grid;gap:6px;margin:0 0 20px;padding:14px 18px 12px;
+	background:rgba(12,9,20,.72);border:2px solid rgba(159,220,255,.5);
+	box-shadow:inset 2px 2px 0 rgba(255,255,255,.08),0 5px 0 rgba(0,0,0,.35);
+}
+.ny-count__t{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--ny-ice)}
+.ny-count__v{font:400 clamp(20px,2.4vw,28px)/1 var(--font-display);color:#fff;letter-spacing:.02em;font-variant-numeric:tabular-nums;text-shadow:0 3px 0 #24476a}
+.ny-count.is-happy .ny-count__v{color:var(--gold);text-shadow:0 3px 0 var(--gold-lo)}
+@media (max-width:899px){.ny-count{display:grid;justify-items:center;margin:4px 0 6px;text-align:center}}
+
+/* ---------- Новогодний мод — «Хит сезона» ---------- */
+.ny .item[data-id="new-year-mod"]{border-color:rgba(159,220,255,.7);animation:pop .5s var(--ease) both,ny-glow 2.6s ease-in-out infinite;animation-delay:calc(var(--i)*55ms),0s}
+@keyframes ny-glow{0%,100%{box-shadow:var(--bevel),0 0 0 0 rgba(159,220,255,0),0 0 18px rgba(159,220,255,.18)}50%{box-shadow:var(--bevel),0 0 0 2px rgba(159,220,255,.25),0 0 34px rgba(159,220,255,.4)}}
+/* снег внутри обложки */
+.ny .item[data-id="new-year-mod"] .item__cover::before{
+	content:"";position:absolute;inset:0;z-index:2;pointer-events:none;
+	background:
+		radial-gradient(circle,#fff 0 1.6px,transparent 2.2px) 0 0/46px 46px,
+		radial-gradient(circle,rgba(255,255,255,.75) 0 1px,transparent 1.6px) 17px 9px/29px 29px;
+	animation:ny-fall 7s linear infinite;
+}
+@keyframes ny-fall{to{background-position:0 46px,17px 38px}}
+.ny-hit{
+	position:absolute;right:-42px;top:22px;z-index:3;width:170px;padding:6px 0;transform:rotate(38deg);
+	font-size:11px;line-height:1;text-align:center;text-transform:uppercase;letter-spacing:.12em;color:#fff;
+	background:linear-gradient(var(--ny-red),var(--ny-red-lo));box-shadow:0 3px 0 rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.35);
+}
+.mcard .ny-hit{right:-48px;top:14px;width:150px;font-size:9px;padding:4px 0}
+.ny .mcard[data-product="new-year-mod"]{overflow:hidden;border-color:rgba(159,220,255,.7);animation:ny-glow 2.6s ease-in-out infinite}
+
+/* ---------- кейс-подарок: из коробки вылетает снег ---------- */
+.ny-burst{position:absolute;left:50%;top:42%;width:0;height:0;pointer-events:none;z-index:4}
+.ny-burst i{
+	position:absolute;width:var(--s);height:var(--s);background:#f4faff;box-shadow:0 0 4px rgba(255,255,255,.6);
+	animation:ny-burst 1.5s cubic-bezier(.2,.7,.4,1) forwards;animation-delay:var(--d);
+}
+@keyframes ny-burst{
+	0%{transform:translate(0,0);opacity:0}
+	10%{opacity:1}
+	45%{transform:translate(var(--x),var(--y))}
+	100%{transform:translate(calc(var(--x)*1.25),calc(var(--y) + 120px));opacity:0}
+}
+
+/* ---------- снежки ---------- */
+.ny-ball{
+	position:fixed;left:0;top:0;z-index:36;width:14px;height:14px;margin:-7px 0 0 -7px;pointer-events:none;
+	background:#f7fbff;box-shadow:inset -3px -3px 0 #bcd8f2,0 2px 0 rgba(0,0,0,.25);
+	clip-path:polygon(4px 0,10px 0,10px 2px,12px 2px,12px 4px,14px 4px,14px 10px,12px 10px,12px 12px,10px 12px,10px 14px,4px 14px,4px 12px,2px 12px,2px 10px,0 10px,0 4px,2px 4px,2px 2px,4px 2px);
+}
+.ny-splat{
+	position:absolute;z-index:32;width:56px;height:56px;margin:-28px 0 0 -28px;pointer-events:none;
+	background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' shape-rendering='crispEdges'%3E%3Cpath fill='%23bcd8f2' d='M4 3h6v1h2v2h1v4h-1v2h-2v1H4v-1H2v-2H1V6h1V4h2z'/%3E%3Cpath fill='%23f7fbff' d='M5 3h4v1h2v2h1v3h-1v2h-2v1H5v-1H3V9H2V6h1V4h2zM1 2h1v1H1zM12 1h1v1h-1zM13 7h1v1h-1zM0 8h1v1H0zM6 0h1v1H6zM11 12h1v1h-1zM2 12h1v1H2zM7 13h1v1H7z'/%3E%3C/svg%3E") 0 0/100% 100%;
+	image-rendering:pixelated;
+}
+.ny-splat i{position:absolute;left:50%;top:50%;width:4px;height:4px;background:#f4faff;animation:ny-crumb .5s ease-out forwards}
+@keyframes ny-crumb{to{transform:translate(var(--x),var(--y));opacity:0}}
+
+/* ---------- полночь: «С Новым годом!» ---------- */
+.ny-banner{
+	position:fixed;left:50%;top:38%;z-index:46;transform:translate(-50%,-50%);pointer-events:none;
+	display:grid;justify-items:center;gap:10px;text-align:center;white-space:nowrap;
+	font:400 clamp(26px,6vw,64px)/1.05 var(--font-display);color:var(--gold);
+	text-shadow:0 5px 0 var(--gold-lo),0 0 40px rgba(255,200,61,.55);
+	animation:ny-banner 6.5s var(--ease) forwards;
+}
+.ny-banner small{font:400 clamp(16px,3vw,28px)/1 var(--font-display);color:#fff;text-shadow:0 3px 0 #24476a}
+@keyframes ny-banner{
+	0%{opacity:0;transform:translate(-50%,-50%) scale(.4)}
+	10%{opacity:1;transform:translate(-50%,-50%) scale(1.08)}
+	16%{transform:translate(-50%,-50%) scale(1)}
+	85%{opacity:1;transform:translate(-50%,-50%) scale(1)}
+	100%{opacity:0;transform:translate(-50%,-60%) scale(.96)}
+}
+
+@media (prefers-reduced-motion:reduce){
+	.ny-garland i,.ny-aurora i,.ny .item[data-id="new-year-mod"] .item__cover::before,.ny .item[data-id="new-year-mod"],.ny .mcard[data-product="new-year-mod"]{animation:none}
+}

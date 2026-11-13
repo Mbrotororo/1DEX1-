@@ -14,7 +14,8 @@ const DARK = [34, 27, 58];
 const PURPLE = [154, 107, 255];
 const mix = (a, b, k) => a.map((v, i) => v + (b[i] - v) * k);
 
-export const initFootWord = (canvas, {on = () => {}, reducedMotion = false} = {}) => {
+export const initFootWord = (canvas, {on = () => {}, reducedMotion = false, season = ''} = {}) => {
+	const NY = season === 'newyear'; // под Новый год сверху на буквах — снег
 	const wideNow = () => canvas.clientWidth >= 560;
 	// пока three.js не загрузился, держим примерную высоту, чтобы страница не прыгала
 	const guessHeight = () => {
@@ -82,6 +83,9 @@ export const initFootWord = (canvas, {on = () => {}, reducedMotion = false} = {}
 			return new THREE.Color().setRGB(r / 255, gg / 255, b / 255, THREE.SRGBColorSpace);
 		});
 
+		// снег: от белого к цвету свечения, когда под курсором
+		const SNOW = new THREE.Color('#eaf4ff');
+		const SNOW_PAL = PALETTE.map((c, i) => SNOW.clone().lerp(c, Math.min(1, i / 40)));
 		let mesh = null;
 		let word = null;
 		let list = [];
@@ -94,14 +98,15 @@ export const initFootWord = (canvas, {on = () => {}, reducedMotion = false} = {}
 			wide = isWide;
 			word = rasterize(isWide ? ['1DEX1 SHOP'] : ['1DEX1', 'SHOP'], ROWS);
 			find = cellIndex(word);
-			list = word.cells.map((c) => ({...c, glow: 0, brokenAt: -1, regrowAt: 0, vx: 0, vy: 0, vz: 0, spin: 0, flyColor: 0}));
+			const filled = new Set(word.cells.map((c) => `${c.gx},${c.gy}`));
+			list = word.cells.map((c) => ({...c, glow: 0, brokenAt: -1, regrowAt: 0, vx: 0, vy: 0, vz: 0, spin: 0, flyColor: 0, snow: NY && (!filled.has(`${c.gx},${c.gy - 1}`) || (!filled.has(`${c.gx},${c.gy - 2}`) && c.seed < 0.45))}));
 			if (mesh) {
 				group.remove(mesh);
 				mesh.dispose();
 			}
 			mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, list.length));
 			mesh.frustumCulled = false;
-			list.forEach((_, i) => mesh.setColorAt(i, PALETTE[0]));
+			list.forEach((v, i) => mesh.setColorAt(i, v.snow ? SNOW_PAL[0] : PALETTE[0]));
 			group.add(mesh);
 		};
 
@@ -229,7 +234,7 @@ export const initFootWord = (canvas, {on = () => {}, reducedMotion = false} = {}
 					dummy.position.set(v.x, v.y, lift * lift * 1.6);
 					dummy.rotation.set(0, 0, 0);
 					dummy.scale.setScalar(Math.max(0.0001, s) * (1 + lift * 0.08));
-					mesh.setColorAt(i, PALETTE[Math.round(Math.min(1, v.glow) * 63)]);
+					mesh.setColorAt(i, (v.snow ? SNOW_PAL : PALETTE)[Math.round(Math.min(1, v.glow) * 63)]);
 				}
 				dummy.updateMatrix();
 				mesh.setMatrixAt(i, dummy.matrix);

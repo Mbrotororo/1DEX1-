@@ -235,6 +235,26 @@ const makeTextures = () => {
 			return d > 6.5 ? [70, 48, 42] : Math.floor(d) % 2 ? [124, 92, 78] : [88, 62, 54];
 		}),
 		// ---------- Энд ----------
+		// новогодние: снег сверху блока, бок травы под снегом, хвоя ели и хвоя со снегом
+		snow: pixelTexture((x, y) => {
+			const v = n(x, y, 23);
+			return shade([238, 246, 255], v < 0.12 ? 0.9 : v > 0.9 ? 1.03 : (x + y * 5) % 11 === 0 ? 0.95 : 1);
+		}),
+		snowSide: pixelTexture((x, y) => {
+			const depth = 2 + Math.floor(n(x, 0, 24) * 3);
+			if (y < depth) return shade([238, 246, 255], n(x, y, 23) < 0.15 ? 0.92 : 1);
+			if (y === depth) return shade([188, 214, 240], 1);
+			return dirt(x, y);
+		}),
+		spruce: pixelTexture((x, y) => {
+			const v = n(x, y, 25);
+			return shade([44, 96, 52], v < 0.16 ? 0.55 : v < 0.38 ? 0.8 : v > 0.86 ? 1.25 : v > 0.66 ? 1.08 : 0.95);
+		}),
+		spruceSnow: pixelTexture((x, y) => {
+			const v = n(x, y, 25);
+			if (n(x >> 1, y >> 1, 26) > 0.3) return shade([236, 245, 255], v < 0.2 ? 0.9 : 1);
+			return shade([44, 96, 52], v < 0.38 ? 0.8 : 1);
+		}),
 		endStone: pixelTexture((x, y) => {
 			const v = n(x, y, 16);
 			return shade([222, 224, 166], v < 0.14 ? 0.86 : v > 0.86 ? 1.06 : (x * 3 + y) % 9 === 0 ? 0.92 : 1);
@@ -507,7 +527,8 @@ const saveProgress = (p) => {
 //  'torch' — факел на дереве, 'need' / 'far' / 'busy' — почему блок не добыть,
 //  'drag' — персонажа подняли, 'diamond' — алмазная кирка, 'wallNeed' — стену не сломать,
 //  'free' — стена сломана, 'tickle' — пять кликов по скину
-export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = null, sky = null} = {}) => {
+export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = null, sky = null, season = ''} = {}) => {
+	const NY = season === 'newyear'; // новогодний стиль: снег, ёлка, снеговик, Санта, шапка с шарфом
 	let renderer;
 	try {
 		renderer = new THREE.WebGLRenderer({canvas, antialias: true, alpha: true, powerPreference: 'high-performance'});
@@ -617,9 +638,18 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	// Дуб, как в Minecraft: ствол из пяти брёвен, два широких слоя листвы,
 	// слой поуже и «крестик» на макушке. Нижние листья выше головы персонажа.
 	const TREE = {x: -1, z: -2};
-	for (let y = 0; y < 5; y++) addBlock('log', TREE.x, y + 0.5, TREE.z);
+	const SPRUCE = NY; // под Новый год вместо дуба — ёлка (нижние лапы тоже выше головы персонажа)
+	for (let y = 0; y < (SPRUCE ? 6 : 5); y++) addBlock('log', TREE.x, y + 0.5, TREE.z);
 	const leaf = (dx, y, dz) => (y < 4 && portalDist(PORTAL_O, TREE.x + dx, TREE.z + dz) < 1.1 ? null : addBlock('leaves', TREE.x + dx, y, TREE.z + dz));
-	for (const y of [3.5, 4.5]) {
+	if (SPRUCE) {
+		// ярусы: широкий, узкий, ромб, крестик, макушка
+		for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) if ((dx || dz) && !(Math.abs(dx) === 2 && Math.abs(dz) === 2)) leaf(dx, 3.5, dz);
+		for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) if (dx || dz) leaf(dx, 4.5, dz);
+		for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) if ((dx || dz) && Math.abs(dx) + Math.abs(dz) <= 2) leaf(dx, 5.5, dz);
+		for (const [dx, dz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) leaf(dx, 6.5, dz);
+		leaf(0, 7.5, 0);
+	}
+	for (const y of SPRUCE ? [] : [3.5, 4.5]) {
 		for (let dx = -2; dx <= 2; dx++) {
 			for (let dz = -2; dz <= 2; dz++) {
 				if (dx === 0 && dz === 0) continue; // там ствол
@@ -628,25 +658,31 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			}
 		}
 	}
-	for (let dx = -1; dx <= 1; dx++) {
-		for (let dz = -1; dz <= 1; dz++) {
-			if (Math.abs(dx) === 1 && Math.abs(dz) === 1 && rand() < 0.5) continue;
-			leaf(dx, 5.5, dz);
+	if (!SPRUCE) {
+		for (let dx = -1; dx <= 1; dx++) {
+			for (let dz = -1; dz <= 1; dz++) {
+				if (Math.abs(dx) === 1 && Math.abs(dz) === 1 && rand() < 0.5) continue;
+				leaf(dx, 5.5, dz);
+			}
 		}
+		for (const [dx, dz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) leaf(dx, 6.5, dz);
 	}
-	for (const [dx, dz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) leaf(dx, 6.5, dz);
 	// куст
 	const BUSHES = [
 		{x: -3, z: -1},
 		{x: 2, z: 2},
 	].filter((b) => blockAt.has(`${b.x},-0.5,${b.z}`));
-	for (const bsh of BUSHES) addBlock('leaves', bsh.x, 0.5, bsh.z);
+	const SNOWMAN = NY ? BUSHES.find((b) => b.x === 2 && b.z === 2) : null;
+	for (const bsh of BUSHES) if (bsh !== SNOWMAN) addBlock('leaves', bsh.x, 0.5, bsh.z);
 
 	const grassSide = lambert(tex.grassSide);
 	const logSide = lambert(tex.logSide);
 	const logTop = lambert(tex.logTop);
 	const MATS = {
-		grass: [grassSide, grassSide, lambert(tex.grassTop), lambert(tex.dirt), grassSide, grassSide],
+		grass: NY ? (() => {
+			const side = lambert(tex.snowSide);
+			return [side, side, lambert(tex.snow), lambert(tex.dirt), side, side];
+		})() : [grassSide, grassSide, lambert(tex.grassTop), lambert(tex.dirt), grassSide, grassSide],
 		dirt: lambert(tex.dirt),
 		stone: lambert(tex.stone),
 		coal: lambert(tex.coal),
@@ -655,13 +691,17 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		diamond: lambert(tex.diamondOre),
 		amethystOre: lambert(tex.amethystOre),
 		log: [logSide, logSide, logTop, logTop, logSide, logSide],
-		leaves: lambert(tex.leaves),
+		leaves: NY ? (() => {
+			const side = lambert(tex.spruce);
+			return [side, side, lambert(tex.spruceSnow), side, side, side];
+		})() : lambert(tex.leaves),
 	};
 	const BLOCK_COLOR = {
 		grass: '#5fae3f', dirt: '#7d5a3e', stone: '#7c7888', coal: '#38363f', iron: '#c9a585', gold: '#ffc83d', diamond: '#3fe6d8', amethystOre: '#9a6bff', log: '#6a4a2a', leaves: '#3e842c',
 		netherrack: '#73342f', quartzOre: '#e8dccb', netherGold: '#ffc83d', ancientDebris: '#6a4a3e', magma: '#ff8a22', glowstone: '#ffd27a', shroomlight: '#ffaa55', wartBlock: '#98161c', crimsonStem: '#7e2840',
 		endStone: '#dedfa6', obsidian: '#2a1d40', bedrock: '#555558',
 	};
+	if (NY) Object.assign(BLOCK_COLOR, {grass: '#eef6ff', leaves: '#2c6034'});
 
 	const setBlock = (b, s) => {
 		b.scale = s;
@@ -704,7 +744,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	const PLANT_MATS = {poppy: plantMat(tex.poppy), dandelion: plantMat(tex.dandelion), tuft: plantMat(tex.grassTuft)};
 	const CHEST = {x: -2, z: 1, rot: 0.3};
 	const plants = [];
-	for (const b of blocks) {
+	for (const b of NY ? [] : blocks) {
 		if (b.type !== 'grass') continue;
 		const {x, z} = b.pos;
 		if (Math.hypot(x - HOME.x, z - HOME.z) < 1.4) continue;
@@ -765,7 +805,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 
 	// препятствия на верхушке острова: персонаж их обходит
 	// препятствия; портал добавляется ниже (в Незер или в Энд — смотря что стоит)
-	const OVER_BASE_OBSTACLES = [{x: TREE.x, z: TREE.z, r: 0.8}, {x: CHEST.x, z: CHEST.z, r: 0.85}, ...BUSHES.map((b) => ({x: b.x, z: b.z, r: 0.75}))];
+	const OVER_BASE_OBSTACLES = [{x: TREE.x, z: TREE.z, r: NY ? 1.4 : 0.8}, {x: CHEST.x, z: CHEST.z, r: 0.85}, ...BUSHES.map((b) => ({x: b.x, z: b.z, r: 0.75}))];
 	const OBSTACLES = [...OVER_BASE_OBSTACLES];
 
 	// ================= ПЕРСОНАЖ =================
@@ -800,6 +840,188 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		}
 		return g;
 	};
+	// ================= НОВЫЙ ГОД НА ОСТРОВЕ =================
+	// Подарки под ёлкой, снеговик, гирлянда на ёлке и звезда на макушке. Всё — в группе острова:
+	// в Незере и Энде их нет. Подарок или снеговик пропадает, если сломать блок под ним.
+	const nyLights = [];
+	let nyStar = null;
+	let nyLightMesh = null;
+	if (NY) {
+		const flat = (color) => new THREE.MeshLambertMaterial({color});
+		// подарок: коробка с лентой крест-накрест и бант сверху
+		const giftTex = (body, ribbon) =>
+			pixelTexture((x, y) => {
+				const onRibbon = x === 7 || x === 8 || y === 7 || y === 8;
+				const v = (x * 7 + y * 13) % 9 === 0 ? 0.9 : 1;
+				return shade(onRibbon ? ribbon : body, onRibbon ? (x === 8 || y === 8 ? 0.85 : 1) : v);
+			});
+		const GIFTS = [
+			{x: -1.85, z: -1.15, s: 0.55, body: [214, 40, 58], ribbon: [255, 200, 61]},
+			{x: -0.85, z: -0.9, s: 0.42, body: [92, 180, 255], ribbon: [245, 250, 255]},
+			{x: -2.05, z: -2.15, s: 0.48, body: [52, 150, 74], ribbon: [230, 40, 60]},
+			{x: -1.35, z: -0.72, s: 0.3, body: [154, 107, 255], ribbon: [184, 255, 61]},
+		];
+		for (const gft of GIFTS) {
+			const mat = lambert(giftTex(gft.body, gft.ribbon));
+			const g = new THREE.Group();
+			g.position.set(gft.x, 0, gft.z);
+			g.rotation.y = rand() * 1.2 - 0.6;
+			const boxM = new THREE.Mesh(new THREE.BoxGeometry(gft.s, gft.s * 0.86, gft.s), mat);
+			boxM.position.y = gft.s * 0.43;
+			const bowMat = flat(`rgb(${gft.ribbon.join(',')})`);
+			const bowL = new THREE.Mesh(new THREE.BoxGeometry(gft.s * 0.26, gft.s * 0.2, gft.s * 0.12), bowMat);
+			bowL.position.set(-gft.s * 0.14, gft.s * 0.95, 0);
+			bowL.rotation.z = 0.5;
+			const bowR = bowL.clone();
+			bowR.position.x = gft.s * 0.14;
+			bowR.rotation.z = -0.5;
+			g.add(boxM, bowL, bowR);
+			island.add(g);
+			const under = blockAt.get(`${Math.round(gft.x)},-0.5,${Math.round(gft.z)}`);
+			if (under) plants.push({mesh: g, block: under});
+		}
+		// снеговик на месте куста: три снежных блока, глаза-угольки, морковка, руки-ветки, цилиндр и шарф
+		if (SNOWMAN) {
+			const snowMat = lambert(tex.snow);
+			const coal = flat('#1b1720');
+			const sm = new THREE.Group();
+			sm.position.set(SNOWMAN.x, 0, SNOWMAN.z);
+			sm.rotation.y = -0.35;
+			const part = (geo, mat, x, y, z, rz = 0) => {
+				const m = new THREE.Mesh(geo, mat);
+				m.position.set(x, y, z);
+				m.rotation.z = rz;
+				sm.add(m);
+				return m;
+			};
+			part(new THREE.BoxGeometry(0.82, 0.78, 0.82), snowMat, 0, 0.39, 0);
+			part(new THREE.BoxGeometry(0.64, 0.6, 0.64), snowMat, 0, 1.06, 0);
+			part(new THREE.BoxGeometry(0.5, 0.48, 0.5), snowMat, 0, 1.58, 0);
+			for (const x of [-0.11, 0.11]) part(new THREE.BoxGeometry(0.07, 0.07, 0.04), coal, x, 1.64, 0.262);
+			for (const x of [-0.12, -0.04, 0.04, 0.12]) part(new THREE.BoxGeometry(0.05, 0.05, 0.04), coal, x, x === -0.12 || x === 0.12 ? 1.48 : 1.45, 0.262);
+			part(new THREE.BoxGeometry(0.07, 0.07, 0.22), flat('#ff8a2e'), 0, 1.56, 0.33);
+			for (const y of [0.96, 1.16]) part(new THREE.BoxGeometry(0.07, 0.07, 0.04), coal, 0, y, 0.325);
+			const stick = flat('#6e4b26');
+			part(new THREE.BoxGeometry(0.5, 0.05, 0.05), stick, -0.52, 1.2, 0, -0.55);
+			part(new THREE.BoxGeometry(0.5, 0.05, 0.05), stick, 0.52, 1.2, 0, 0.55);
+			const red = flat('#d42a3a');
+			part(new THREE.BoxGeometry(0.68, 0.12, 0.68), red, 0, 1.36, 0);
+			part(new THREE.BoxGeometry(0.14, 0.32, 0.06), red, 0.18, 1.2, 0.36);
+			part(new THREE.BoxGeometry(0.62, 0.05, 0.62), coal, 0, 1.85, 0);
+			part(new THREE.BoxGeometry(0.38, 0.32, 0.38), coal, 0, 2.02, 0);
+			part(new THREE.BoxGeometry(0.4, 0.06, 0.4), red, 0, 1.92, 0);
+			island.add(sm);
+			const under = blockAt.get(`${SNOWMAN.x},-0.5,${SNOWMAN.z}`);
+			if (under) plants.push({mesh: sm, block: under});
+		}
+		// гирлянда на ёлке: огоньки на боковых гранях лап
+		const leafBlocks = blocks.filter((b) => b.type === 'leaves' && Math.hypot(b.pos.x - TREE.x, b.pos.z - TREE.z) < 3);
+		for (const b of leafBlocks) {
+			for (const [nx, nz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+				if (blockAt.has(`${b.pos.x + nx},${b.pos.y},${b.pos.z + nz}`) || rand() > 0.42 || nyLights.length >= 30) continue;
+				const side = (rand() - 0.5) * 0.6;
+				nyLights.push({
+					block: b,
+					pos: new THREE.Vector3(b.pos.x + nx * 0.54 + (nz ? side : 0), b.pos.y + (rand() - 0.5) * 0.5, b.pos.z + nz * 0.54 + (nx ? side : 0)),
+					c: Math.floor(rand() * 5),
+					on: true,
+				});
+			}
+		}
+		nyLightMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.17, 0.17, 0.17), new THREE.MeshBasicMaterial(), Math.max(1, nyLights.length));
+		nyLightMesh.count = nyLights.length;
+		nyLights.forEach((l, i) => {
+			dummy.position.copy(l.pos);
+			dummy.rotation.set(0, 0, 0);
+			dummy.scale.setScalar(1);
+			dummy.updateMatrix();
+			nyLightMesh.setMatrixAt(i, dummy.matrix);
+			nyLightMesh.setColorAt(i, new THREE.Color('#ffffff'));
+		});
+		island.add(nyLightMesh);
+		// звезда на макушке: пиксельная, медленно вращается и светится
+		const top = blockAt.get(`${TREE.x},7.5,${TREE.z}`);
+		if (top) {
+			nyStar = new THREE.Group();
+			nyStar.position.set(TREE.x, 8.3, TREE.z);
+			const starMat = new THREE.MeshBasicMaterial({color: '#ffd23f'});
+			const cell = new THREE.BoxGeometry(0.17, 0.17, 0.12);
+			['..#..', '.###.', '#####', '.###.', '.#.#.'].forEach((row, r) =>
+				[...row].forEach((ch, c) => {
+					if (ch !== '#') return;
+					const m = new THREE.Mesh(cell, starMat);
+					m.position.set((c - 2) * 0.17, (2 - r) * 0.17, 0);
+					nyStar.add(m);
+				}),
+			);
+			const halo = new THREE.Sprite(new THREE.SpriteMaterial({map: glow, color: '#ffcf4a', transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending}));
+			halo.scale.setScalar(2.2);
+			nyStar.add(halo);
+			nyStar.userData.block = top;
+			island.add(nyStar);
+		}
+	}
+	const NY_BULB = ['#ff4d5e', '#ffc83d', '#b8ff3d', '#4de1ff', '#c3a6ff'].map((c) => new THREE.Color(c));
+	const nyColor = new THREE.Color();
+	let nyBlinkAt = 0;
+	const stepIslandNY = (idle) => {
+		if (nyLightMesh) {
+			if (now > nyBlinkAt) {
+				nyBlinkAt = now + 0.35;
+				for (const l of nyLights) if (Math.random() < 0.3) l.on = !l.on;
+			}
+			nyLights.forEach((l, i) => {
+				const s = l.block.scale > 0.9 ? 1 : 0.0001; // сломали лапу — огонёк пропал
+				dummy.position.copy(l.pos);
+				dummy.rotation.set(0, 0, 0);
+				dummy.scale.setScalar(s);
+				dummy.updateMatrix();
+				nyLightMesh.setMatrixAt(i, dummy.matrix);
+				nyLightMesh.setColorAt(i, nyColor.copy(NY_BULB[l.c]).multiplyScalar(l.on ? 1 : 0.28));
+			});
+			nyLightMesh.instanceMatrix.needsUpdate = true;
+			nyLightMesh.instanceColor.needsUpdate = true;
+		}
+		if (nyStar) {
+			nyStar.visible = nyStar.userData.block.scale > 0.9;
+			nyStar.rotation.y = reducedMotion ? 0 : idle * 0.6;
+			nyStar.position.y = 8.3 + Math.sin(idle * 1.5) * 0.05;
+		}
+	};
+
+	// Новогодняя шапка с помпоном и полосатый шарф (в пикселях скина: голова 8×8×8 над шеей).
+	// Каждая следующая часть чуть заходит в предыдущую — нет совпадающих граней и мерцания.
+	const dressNY = (parts) => {
+		const cloth = (base, k = 0) =>
+			new THREE.MeshLambertMaterial({
+				map: pixelTexture((x, y) => shade(base, (x * 5 + y * 3 + k) % 7 === 0 ? 0.86 : (x + y * 7) % 11 === 0 ? 1.08 : 1)),
+			});
+		const red = cloth([212, 32, 46]);
+		const fur = cloth([246, 250, 255], 3);
+		const hat = new THREE.Group();
+		const add = (w, h, d, mat, x, y, z, rx = 0) => {
+			const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+			m.position.set(x, y, z);
+			m.rotation.x = rx;
+			hat.add(m);
+		};
+		add(9.6, 2.2, 9.6, fur, 0, 7.6, 0); // белый мех по кругу
+		add(8.6, 2.6, 8.6, red, 0, 9.8, -0.2);
+		add(6.6, 2.6, 6.6, red, 0.4, 11.9, -1.0, -0.12);
+		add(4.6, 2.4, 4.6, red, 0.9, 13.7, -2.1, -0.28);
+		add(3.0, 2.2, 3.0, red, 1.5, 15.0, -3.4, -0.45);
+		add(2.8, 2.8, 2.8, fur, 2.0, 15.6, -4.9); // помпон
+		parts.head.add(hat);
+		// шарф: полоски красный/белый, хвостик свисает спереди
+		const scarf = new THREE.MeshLambertMaterial({map: pixelTexture((x, y) => (Math.floor(y / 4) % 2 ? [244, 248, 255] : [46, 160, 80]))});
+		const ring = new THREE.Mesh(new THREE.BoxGeometry(9.2, 2.6, 5.4), scarf);
+		ring.position.set(0, 5.1, 0);
+		const tail = new THREE.Mesh(new THREE.BoxGeometry(2.4, 6.4, 0.9), scarf);
+		tail.position.set(1.9, 1.2, 2.75);
+		tail.rotation.z = 0.06;
+		parts.body.add(ring, tail);
+	};
+
 	// Персонаж-скелет. Два экземпляра: один стоит на острове, второй летает по сайту.
 	const makeRig = () => {
 		const rig = buildPlayer(skin);
@@ -818,6 +1040,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		pick.position.set(0, -8.6, 0.2).addScaledVector(along, -2 * 0.8);
 		pick.visible = false;
 		rig.parts.armR.add(pick);
+		if (NY) dressNY(rig.parts);
 		return {...rig, pivot, pick};
 	};
 	const rig = makeRig();
@@ -1153,6 +1376,18 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	// Каждый мир — своя группа на острове. Незер и Энд строятся при первом входе:
 	// пока туда не заглянули, они не занимают память и не замедляют загрузку.
 	const BASIC = (map) => new THREE.MeshBasicMaterial({map});
+	// под Новый год: сверху на блоке — снег (верхняя грань), бока — родные
+	// в Незере свет тёплый — снег подкрашен в голубой, чтобы под ним оставался белым
+	const snowTops = {};
+	const snowy = (mat, world = 'end') => {
+		if (!NY) return mat;
+		if (!snowTops[world]) {
+			snowTops[world] = lambert(tex.snow);
+			if (world === 'nether') snowTops[world].color.setRGB(0.95, 1.3, 1.6);
+		}
+		const side = Array.isArray(mat) ? mat : [mat, mat, mat, mat, mat, mat];
+		return [side[0], side[1], snowTops[world], side[3], side[4], side[5]];
+	};
 	const hullRing = (r0, r1, r2, y2) => {
 		const out = [];
 		for (let i = 0; i < 16; i++) {
@@ -1262,7 +1497,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const meshes = meshBlocks(
 			B.list,
 			{
-				netherrack: lambert(tex.netherrack),
+				netherrack: snowy(lambert(tex.netherrack), 'nether'),
 				quartzOre: lambert(tex.quartzOre),
 				netherGold: lambert(tex.netherGold),
 				ancientDebris: [debrisSide, debrisSide, debrisTop, debrisTop, debrisSide, debrisSide],
@@ -1270,7 +1505,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				glowstone: BASIC(tex.glowstone),
 				shroomlight: BASIC(tex.shroomlight),
 				lava: BASIC(tex.lava),
-				wartBlock: lambert(tex.wartBlock),
+				wartBlock: snowy(lambert(tex.wartBlock), 'nether'),
 				crimsonStem: [stemSide, stemSide, stemTop, stemTop, stemSide, stemSide],
 			},
 			ground,
@@ -1370,7 +1605,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			{x: -1, z: -4, h: 4},
 		];
 		for (const p of PILLARS) for (let y = 0; y < p.h; y++) B.add('obsidian', p.x, y + 0.5, p.z);
-		const meshes = meshBlocks(B.list, {endStone: lambert(tex.endStone), obsidian: obsidianMat, bedrock: lambert(tex.bedrock)}, ground);
+		const meshes = meshBlocks(B.list, {endStone: snowy(lambert(tex.endStone)), obsidian: snowy(obsidianMat), bedrock: lambert(tex.bedrock)}, ground);
 		// кристаллы Края на колоннах: светятся, вращаются в клетке
 		const crystalMat = new THREE.MeshBasicMaterial({color: '#ffb3e6'});
 		const cageMat = new THREE.MeshBasicMaterial({color: '#e8d6ff', wireframe: true});
@@ -1504,6 +1739,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			if (w.fx) w.fx.visible = w === W;
 		}
 		galaxy.visible = to === 'over';
+		if (NY) tintWordSnow();
 		HOME.copy(W.home);
 		STAND_R = W.standR;
 		OBSTACLES.splice(0, OBSTACLES.length, ...W.obstacles());
@@ -1684,8 +1920,12 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		bigWide = wide;
 		BIG = rasterize(wide ? ['1DEX1 SHOP'] : ['1DEX1', 'SHOP'], 10); // меньше 10 рядов — у «E» слипаются перекладины
 		bigFind = cellIndex(BIG);
+		// под Новый год сверху на буквах лежит снег: верхний блок каждого столбика (иногда и второй)
+		const filled = new Set(BIG.cells.map((c) => `${c.gx},${c.gy}`));
+		const snowAt = (c) => NY && (!filled.has(`${c.gx},${c.gy - 1}`) || (!filled.has(`${c.gx},${c.gy - 2}`) && c.seed < 0.45));
 		bigVoxels = BIG.cells.slice(0, BIG_MAX).map((c) => ({
 			...c,
+			snow: snowAt(c) ? new THREE.Color(c.seed < 0.5 ? '#f2f8ff' : '#dcecfb').multiplyScalar(0.96 + c.seed * 0.06) : null,
 			color: bigTop.clone().lerp(bigBottom, c.ty).multiplyScalar(0.93 + c.seed * 0.12),
 			phase: c.x * 0.11 + c.line * 1.4,
 			hover: 0,
@@ -1694,11 +1934,63 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			regrowAt: 0,
 			scale: 1,
 		}));
+		tintWordSnow();
 		bigVoxels.forEach((v, i) => bigMesh.setColorAt(i, v.color));
 		bigMesh.count = bigVoxels.length;
 		bigMesh.instanceColor.needsUpdate = true;
 		SETS[0].list = bigVoxels;
 		SETS[0].bounded = false;
+		if (NY) placeWordHat();
+	};
+	// снег на надписи: в Незере тёплый свет — подкрашиваем в голубой, чтобы оставался белым
+	const SNOW_TINT = {nether: new THREE.Color(0.95, 1.3, 1.6)};
+	const tintWordSnow = () => {
+		for (const v of bigVoxels) if (v.snow) v.color.copy(v.snow).multiply(SNOW_TINT[worldId] || new THREE.Color(1, 1, 1));
+	};
+	// новогодняя шапка на первой «1» надписи (в блоках надписи: блок = 1)
+	let wordHat = null;
+	let wordHatCell = null;
+	const placeWordHat = () => {
+		if (!wordHat) {
+			wordHat = new THREE.Group();
+			const mat = (color) => new THREE.MeshLambertMaterial({map: tex.voxel, color});
+			const red = mat('#e0303a');
+			const fur = mat('#f4f8ff');
+			const add = (w, h, d, m, x, y, z, rz = 0) => {
+				const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+				b.position.set(x, y, z);
+				b.rotation.z = rz;
+				wordHat.add(b);
+			};
+			add(6.4, 1.5, WORD_DEPTH + 0.5, fur, 0, 0.75, 0);
+			add(5.2, 1.7, WORD_DEPTH + 0.2, red, 0.3, 2.3, 0, -0.08);
+			add(3.8, 1.6, WORD_DEPTH, red, 1.0, 3.8, 0, -0.2);
+			add(2.5, 1.5, WORD_DEPTH - 0.2, red, 2.0, 5.0, 0, -0.38);
+			add(1.6, 1.6, 1.6, fur, 3.1, 5.6, 0);
+			bigGroup.add(wordHat);
+		}
+		// первая буква: столбцы до первого пустого; шапка — над её верхним блоком
+		// (только первая строка: на телефоне надпись в две строки, и вторая заполняет промежутки)
+		const line0 = bigVoxels.filter((v) => v.line === 0);
+		const minX = Math.min(...line0.map((v) => v.gx));
+		const cols = new Set(line0.map((v) => v.gx));
+		let end = minX;
+		while (cols.has(end + 1)) end++;
+		const first = line0.filter((v) => v.gx <= end);
+		const topGy = Math.min(...first.map((v) => v.gy));
+		const tops = first.filter((v) => v.gy === topGy);
+		wordHatCell = tops[Math.floor(tops.length / 2)];
+		wordHat.userData.x = tops.reduce((sum, v) => sum + v.x, 0) / tops.length;
+		// на телефоне надпись у самого верха сцены — шапка надета ниже и чуть меньше, чтобы не обрезалась
+		wordHat.userData.y = wordHatCell.y + (bigWide ? 0.45 : -1.4);
+		wordHat.scale.setScalar(bigWide ? 1 : 0.8);
+	};
+	const stepWordHat = (idle) => {
+		if (!wordHat || !wordHatCell) return;
+		// качается вместе с буквой; блок под шапкой сломали — шапка пропала до его возвращения
+		wordHat.visible = wordHatCell.scale > 0.5;
+		wordHat.position.set(wordHat.userData.x, wordHat.userData.y + Math.sin(idle * 1.6 + wordHatCell.phase) * 0.3, 0);
+		wordHat.rotation.z = 0.12;
 	};
 
 	// ================= ОСКОЛКИ =================
@@ -1894,6 +2186,191 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		g.globalAlpha = 1;
 	};
 
+	// ================= НОВЫЙ ГОД: СНЕГОПАД В СЦЕНЕ И САНТА =================
+	// Снег идёт во всех мирах — и над островом, и в Незере, и в Энде. Вокруг острова летает
+	// маленький Санта на санях с двумя оленями (у первого — красный нос) и оставляет искры.
+	// Модель — из простых цветных блоков без текстур; соседние блоки чуть заходят друг в друга,
+	// поэтому совпадающих граней (и мерцания) нет.
+	let stepWorldNY = () => {};
+	if (NY) {
+		const snowPts = [];
+		const makeSnow = (count, size) => {
+			const pos = new Float32Array(count * 3);
+			for (let i = 0; i < count; i++) {
+				pos[i * 3] = (Math.random() - 0.5) * 24;
+				pos[i * 3 + 1] = Math.random() * 21 - 9;
+				pos[i * 3 + 2] = Math.random() * 14 - 8;
+			}
+			const geo = new THREE.BufferGeometry();
+			geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+			const pts = new THREE.Points(geo, new THREE.PointsMaterial({color: '#f2f8ff', size, sizeAttenuation: false, transparent: true, opacity: 0.9, depthWrite: false}));
+			pts.frustumCulled = false;
+			world.add(pts);
+			snowPts.push({pos, geo, count, speed: size > 3 ? 1.3 : 0.9});
+		};
+		const phone = innerWidth < 900;
+		makeSnow(phone ? 90 : 160, 2);
+		makeSnow(phone ? 30 : 60, 4);
+
+		// --- Санта на санях ---
+		const flat = (color) => new THREE.MeshLambertMaterial({color});
+		const M = {red: flat('#d42232'), dark: flat('#8a1d28'), gold: flat('#ffc83d'), white: flat('#f4f8ff'), skin: flat('#f2c29b'), black: flat('#1b1720'), brown: flat('#8a5a34'), horn: flat('#d9c29a'), pink: flat('#ff9aa8')};
+		const santa = new THREE.Group();
+		const add = (parent, w, h, d, mat, x, y, z) => {
+			const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+			m.position.set(x, y, z);
+			parent.add(m);
+			return m;
+		};
+		// тонкая палочка (вожжи, сцепка) от точки a до точки b
+		const rod = (parent, a, b, mat) => {
+			const d = new THREE.Vector3().subVectors(b, a);
+			const m = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, d.length()), mat);
+			m.position.copy(a).addScaledVector(d, 0.5);
+			m.lookAt(parent.localToWorld(b.clone()));
+			parent.add(m);
+		};
+		// сани
+		for (const x of [-0.3, 0.3]) {
+			add(santa, 0.06, 0.06, 1.3, M.gold, x, 0.03, 0);
+			add(santa, 0.06, 0.22, 0.06, M.gold, x, 0.14, 0.66);
+			add(santa, 0.06, 0.06, 0.14, M.gold, x, 0.25, 0.6);
+			for (const z of [-0.35, 0.35]) add(santa, 0.05, 0.16, 0.05, M.gold, x, 0.13, z);
+		}
+		add(santa, 0.72, 0.36, 1.0, M.red, 0, 0.39, -0.05);
+		add(santa, 0.74, 0.06, 1.02, M.gold, 0, 0.58, -0.05);
+		add(santa, 0.72, 0.42, 0.14, M.red, 0, 0.78, -0.47);
+		add(santa, 0.72, 0.24, 0.12, M.red, 0, 0.66, 0.44);
+		// мешок с подарками
+		add(santa, 0.36, 0.4, 0.32, M.dark, 0.14, 0.8, -0.25);
+		add(santa, 0.12, 0.06, 0.12, M.gold, 0.14, 1.02, -0.25);
+		// сам Санта
+		add(santa, 0.4, 0.42, 0.32, M.red, -0.1, 0.8, 0.05);
+		add(santa, 0.42, 0.07, 0.34, M.black, -0.1, 0.74, 0.05);
+		add(santa, 0.08, 0.06, 0.02, M.gold, -0.1, 0.74, 0.225);
+		add(santa, 0.28, 0.28, 0.28, M.skin, -0.1, 1.14, 0.05);
+		add(santa, 0.3, 0.2, 0.08, M.white, -0.1, 1.06, 0.21);
+		for (const x of [-0.16, -0.04]) add(santa, 0.04, 0.04, 0.02, M.black, x, 1.2, 0.197);
+		add(santa, 0.05, 0.05, 0.04, M.pink, -0.1, 1.14, 0.205);
+		add(santa, 0.32, 0.06, 0.32, M.white, -0.1, 1.29, 0.05);
+		add(santa, 0.3, 0.12, 0.3, M.red, -0.1, 1.335, 0.05);
+		add(santa, 0.16, 0.14, 0.16, M.red, -0.06, 1.44, -0.01);
+		add(santa, 0.09, 0.09, 0.09, M.white, 0.0, 1.52, -0.1);
+		for (const x of [-0.34, 0.14]) {
+			add(santa, 0.1, 0.1, 0.3, M.red, x, 0.88, 0.22);
+			add(santa, 0.11, 0.11, 0.08, M.white, x, 0.88, 0.39);
+		}
+		// олени
+		const deer = [];
+		const reindeer = (z, lead) => {
+			const g = new THREE.Group();
+			g.position.set(0, 0, z);
+			add(g, 0.26, 0.26, 0.56, M.brown, 0, 0.62, 0);
+			add(g, 0.28, 0.08, 0.06, M.red, 0, 0.62, 0.05);
+			add(g, 0.14, 0.22, 0.14, M.brown, 0, 0.8, 0.24);
+			add(g, 0.18, 0.18, 0.26, M.brown, 0, 0.95, 0.36);
+			add(g, 0.06, 0.06, 0.04, M.white, 0, 0.66, -0.29);
+			for (const x of [-0.07, 0.07]) {
+				add(g, 0.04, 0.2, 0.04, M.horn, x, 1.13, 0.3);
+				add(g, 0.12, 0.04, 0.04, M.horn, x * 2.2, 1.2, 0.3);
+				add(g, 0.04, 0.04, 0.03, M.black, x * 0.85, 0.99, 0.495);
+			}
+			const nose = add(g, 0.07, 0.07, 0.05, lead ? new THREE.MeshBasicMaterial({color: '#ff3040'}) : M.black, 0, 0.92, 0.515);
+			if (lead) {
+				const halo = new THREE.Sprite(new THREE.SpriteMaterial({map: glow, color: '#ff3040', transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending}));
+				halo.position.copy(nose.position);
+				halo.scale.setScalar(0.6);
+				g.add(halo);
+			}
+			const legs = [];
+			for (const x of [-0.08, 0.08]) {
+				for (const lz of [-0.2, 0.2]) {
+					const leg = new THREE.Group();
+					leg.position.set(x, 0.5, lz);
+					add(leg, 0.07, 0.34, 0.07, M.brown, 0, -0.17, 0);
+					g.add(leg);
+					legs.push(leg);
+				}
+			}
+			santa.add(g);
+			deer.push({g, legs});
+			return g;
+		};
+		reindeer(1.05, false);
+		reindeer(1.78, true);
+		santa.updateMatrixWorld(true);
+		// вожжи от рук Санты ко второму оленю и сцепка между оленями
+		for (const x of [-0.34, 0.14]) rod(santa, new THREE.Vector3(x, 0.88, 0.43), new THREE.Vector3(x * 0.3, 0.64, 0.78), M.gold);
+		rod(santa, new THREE.Vector3(0, 0.62, 1.33), new THREE.Vector3(0, 0.62, 1.5), M.gold);
+		santa.scale.setScalar(0.9);
+		world.add(santa);
+		// искры за санями: золотые и белые, гаснут
+		const SPARK = 70;
+		const sPos = new Float32Array(SPARK * 3);
+		const sCol = new Float32Array(SPARK * 3);
+		const sLife = new Float32Array(SPARK);
+		const sBase = [];
+		const sGeo = new THREE.BufferGeometry();
+		sGeo.setAttribute('position', new THREE.BufferAttribute(sPos, 3));
+		sGeo.setAttribute('color', new THREE.BufferAttribute(sCol, 3));
+		const sparks = new THREE.Points(sGeo, new THREE.PointsMaterial({size: 3, sizeAttenuation: false, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending}));
+		sparks.frustumCulled = false;
+		world.add(sparks);
+		const SPARK_C = [new THREE.Color('#ffd86b'), new THREE.Color('#ffffff'), new THREE.Color('#ffb03a')];
+		let sNext = 0;
+		let sAt = 0;
+		let ang = Math.random() * Math.PI * 2;
+		const back = new THREE.Vector3();
+		stepWorldNY = (dt, idle) => {
+			for (const sp of snowPts) {
+				const {pos, count, speed} = sp;
+				if (!reducedMotion) {
+					for (let i = 0; i < count; i++) {
+						pos[i * 3 + 1] -= dt * speed * (0.75 + (i % 5) * 0.12);
+						pos[i * 3] += Math.sin(idle * 0.8 + i) * dt * 0.25;
+						if (pos[i * 3 + 1] < -9) pos[i * 3 + 1] = 12;
+					}
+				}
+				sp.geo.attributes.position.needsUpdate = true;
+			}
+			// полёт по эллипсу вокруг острова: спереди — ниже и ближе, сзади его закрывает остров
+			const big = worldId !== 'over';
+			const rx = big ? 7.4 : 6.2;
+			const rz = big ? 5.4 : 4.4;
+			if (!reducedMotion) ang += dt * 0.24;
+			const x = Math.cos(ang) * rx;
+			const z = Math.sin(ang) * rz;
+			santa.position.set(x, (big ? 3.8 : 3.2) + Math.sin(ang * 2) * 0.5 + Math.sin(idle * 2.2) * 0.08, z);
+			santa.rotation.set(Math.cos(ang * 2) * 0.08, Math.atan2(-Math.sin(ang) * rx, Math.cos(ang) * rz), -0.16);
+			for (const d of deer) {
+				d.legs.forEach((leg, i) => (leg.rotation.x = reducedMotion ? 0 : Math.sin(idle * 11 + (i % 2 ? Math.PI : 0) + (i > 1 ? 0.7 : 0)) * 0.55));
+				d.g.position.y = Math.sin(idle * 11) * 0.03;
+			}
+			// искры из-под полозьев
+			sAt += dt;
+			if (sAt > sNext) {
+				sAt = 0;
+				sNext = 0.045;
+				const i = Math.floor(Math.random() * SPARK);
+				santa.localToWorld(back.set((Math.random() - 0.5) * 0.5, 0.05, -0.62));
+				world.worldToLocal(back);
+				sPos.set([back.x, back.y, back.z], i * 3);
+				sLife[i] = 1;
+				sBase[i] = SPARK_C[Math.floor(Math.random() * SPARK_C.length)];
+			}
+			for (let i = 0; i < SPARK; i++) {
+				if (sLife[i] <= 0) continue;
+				sLife[i] = Math.max(0, sLife[i] - dt * 0.9);
+				sPos[i * 3 + 1] -= dt * 0.35;
+				const c = sBase[i];
+				const k = sLife[i] * (0.6 + 0.4 * Math.sin(idle * 20 + i));
+				sCol.set([c.r * k, c.g * k, c.b * k], i * 3);
+			}
+			sGeo.attributes.position.needsUpdate = true;
+			sGeo.attributes.color.needsUpdate = true;
+		};
+	}
+
 	// ================= ПРОСЛОЙКА ПОВЕРХ ВСЕГО САЙТА =================
 	// Снятый с острова персонаж рисуется на отдельном прозрачном холсте поверх страницы,
 	// поэтому может летать над любыми блоками. Клики сквозь холст проходят.
@@ -2005,6 +2482,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 
 	let now = 0;
 	let jumpAt = -10;
+	let throwAt = -10; // когда кинул снежок (под Новый год)
 	let broken = 0;
 	let tickles = 0;
 
@@ -2163,7 +2641,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	// ================= ТАНЦЫ =================
 	// Танцует, когда сам захочет: на острове время от времени, если ничем не занят,
 	// и иногда — сидя на тексте (поза «dance» среди поз на виджете). Темп — 120 ударов в минуту.
-	const DANCES = ['bob', 'floss', 'shuffle', 'hands', 'robot', 'arms'];
+	const DANCES = ['bob', 'floss', 'shuffle', 'hands', 'robot', 'arms', ...(NY ? ['jingle'] : [])];
 	const ROBOT = [
 		{armRx: -1.57, armRz: 0.05, armLx: 0, armLz: -0.05, headYaw: 0.55},
 		{armRx: 0, armRz: 0.05, armLx: -1.57, armLz: -0.05, headYaw: -0.55},
@@ -2192,6 +2670,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				return {legR: sw > 0 ? -sw * 0.85 : -sw * 0.2, legL: sw < 0 ? sw * 0.85 : sw * 0.2, armRx: -0.35 + sw * 0.85, armLx: -0.35 - sw * 0.85, armRz: 0.1, armLz: -0.1, drop: -Math.abs(cw) * 0.1, hipX: sw * 0.05, headPitch: hit * 0.2};
 			case 'hands': // руки вверх, как на концерте, качается
 				return {armRx: -2.75, armLx: -2.75, armRz: -0.2 + sw * 0.35, armLz: 0.2 + sw * 0.35, tiltZ: sw * 0.1, hipX: sw * 0.12, drop: -hit * 0.1, headPitch: -0.25 + hit * 0.25};
+			case 'jingle': // новогодний: трясёт «бубенцами» в руках и подпрыгивает
+				return {armRx: -0.4, armLx: -0.4, armRz: -1.15 + Math.sin(beat * Math.PI * 4) * 0.18, armLz: 1.15 - Math.sin(beat * Math.PI * 4) * 0.18, drop: -hit * 0.14, tiltZ: sw * 0.12, headYaw: sw * 0.35, headPitch: -0.15 + hit * 0.15, legRz: sw > 0 ? 0.2 * sw : 0, legLz: sw < 0 ? 0.2 * sw : 0};
 			case 'robot': // робот: на каждый удар — новая поза рывком
 				return {...ROBOT[n % ROBOT.length], drop: -hit * 0.04, snap: true};
 			default: // волна руками: руки в стороны, волна бежит от одной к другой
@@ -3005,7 +3485,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const pick = list.find((o) => (roll -= o[2]) <= 0) || list[0];
 		setPose(pick[0], pick[1] * (0.8 + Math.random() * 0.4));
 		if (pick[0] === 'dance') freshDance();
-		if (pick[0] === 'sitHappy' || pick[0] === 'dance') say('icon:note', 1.8);
+		if (pick[0] === 'sitHappy' || pick[0] === 'dance') say(NY ? oneOf('icon:note', 'icon:gift', 'icon:tree') : 'icon:note', 1.8);
+		else if (NY && Math.random() < 0.18) say('say.ny', 2);
 		else if (pick[0] === 'look' && Math.random() < 0.5) say('?', 1.4);
 	};
 
@@ -4200,7 +4681,13 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			}
 		}
 		if (cheer > 0) Object.assign(target, {armRx: lerp(target.armRx, -2.9, cheer), armRz: lerp(target.armRz, -0.3, cheer), armLx: lerp(target.armLx, -2.9, cheer), armLz: lerp(target.armLz, 0.3, cheer), legR: cheer * 0.3, legL: -cheer * 0.3});
-		const fast = state === 'mine' || state === 'wall';
+		// бросок снежка: рука взлетает назад-вверх и резко идёт вперёд
+		const th = (now - throwAt) / 0.42;
+		if (th >= 0 && th < 1) {
+			target.armRx = th < 0.4 ? lerp(target.armRx, -3.0, th / 0.4) : lerp(-3.0, -1.1, (th - 0.4) / 0.6);
+			target.armRz = 0.05;
+		}
+		const fast = state === 'mine' || state === 'wall' || (th >= 0 && th < 1);
 		for (const key of Object.keys(pose)) pose[key] = lerp(pose[key], target[key], snap ? 1 - Math.exp(-dt * 40) : fast && key === 'armRx' ? 1 - Math.exp(-dt * 30) : k);
 		p.armR.rotation.set(pose.armRx, 0, pose.armRz);
 		p.armL.rotation.set(pose.armLx, 0, pose.armLz);
@@ -4495,6 +4982,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	let swayPhase = 0;
 	let heroVisible = true;
 	let portalHintAt = 9;
+	let nyHiAt = 6; // «С Новым годом!» на острове — первый раз через несколько секунд
 	let hopPx = 0;
 	let closeup = null; // только для проверки: камера крупно у персонажа
 	const pointerOverlay = new THREE.Vector2();
@@ -4559,6 +5047,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			} else p.animate(t);
 		}
 		worlds[worldId].tick?.(dt, idle);
+		stepWorldNY(dt, idle);
 		// захотел потанцевать: на острове, когда ничем не занят, раз в полминуты-минуту, 6–12 секунд
 		const islandFree = P.mode === 'idle' && !P.queue.length && !P.holding && !warp;
 		stepParty();
@@ -4591,12 +5080,15 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			freshDance();
 			dance.until = now + 6 + Math.random() * 6;
 			dance.next = dance.until + 25 + Math.random() * 35;
-			say('icon:note', 1.8);
+			say(NY ? oneOf('icon:note', 'icon:gift', 'icon:tree') : 'icon:note', 1.8);
 		} else if (!islandFree && dancingOnIsland()) dance.until = -1; // занялся делом — танец закончился
 		if (worldId === 'over' && !visitedNether && P.mode === 'idle' && !P.queue.length && heroVisible && now > portalHintAt && !nap.state && now > party.until) {
 			// подсказка: что там, в портале?
 			portalHintAt = now + 32 + Math.random() * 20;
 			say('say.portal', 2.4);
+		} else if (NY && P.mode === 'idle' && !P.queue.length && heroVisible && now > nyHiAt && !nap.state && !dancingOnIsland() && now > party.until) {
+			nyHiAt = now + 38 + Math.random() * 30;
+			say(oneOf('say.ny', 'icon:gift', 'icon:tree'), 2);
 		}
 		world.position.y = Math.sin(idle * 0.8) * 0.18;
 		// остров сам очень медленно качается на ±60°, мышь на это не влияет
@@ -4637,6 +5129,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		}
 		for (const pl of plants) pl.mesh.visible = pl.block.scale > 0.6;
 		for (const tr of torches) tr.halo.material.opacity = 0.6 + Math.sin(now * 13 + tr.group.position.x * 5) * 0.12;
+		if (NY) stepIslandNY(idle);
 
 		// скелет: на острове — в 3D-сцене, вне острова — на прослойке поверх сайта
 		const islandHidden = islandTpAt > 0 && performance.now() < islandTpAt;
@@ -4733,6 +5226,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const glintAt = sweep <= 1 && !reducedMotion ? sweep * 1.4 - 0.2 : null;
 
 		// блоки надписей: своя волна, но не вращаются
+		if (NY) stepWordHat(idle);
 		for (const set of SETS) {
 			const {list, mesh, unit, z, amp, lift} = set;
 			if (set.glint) {
@@ -4859,6 +5353,34 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		tier: () => TIERS[progress.tier].id,
 		world: () => worldId,
 		celebrate, // покупка: прыгает от радости
+		// снежок: персонаж кидает его в точку (tx, ty) экрана. Возвращает, откуда он полетит,
+		// или null, если персонажа не видно или он занят (тогда снежок прилетит сверху)
+		throwSnowball: (tx, ty) => {
+			if (!NY || rage || tp || warp) return null;
+			let hand;
+			if (P.mode === 'free') {
+				if (PB.held) return null;
+				oRig.root.updateMatrixWorld(true);
+				const w = oRig.parts.armR.localToWorld(new THREE.Vector3(0, -10, 0));
+				hand = {x: w.x, y: -w.y};
+			} else if (P.mode === 'idle' && !P.queue.length && heroVisible && nap.state !== 'sleep') {
+				if (nap.state) napWake(30);
+				rig.root.updateMatrixWorld(true);
+				const pt = toPx(rig.parts.armR.localToWorld(new THREE.Vector3(0, -10, 0)));
+				const r = canvas.getBoundingClientRect();
+				hand = {x: pt.x + r.left, y: pt.y + r.top};
+			} else return null;
+			if (hand.y < -40 || hand.y > innerHeight + 40 || hand.x < -40 || hand.x > innerWidth + 40) return null;
+			throwAt = now;
+			PB.idleT = 0;
+			return {x: hand.x, y: hand.y - 4, delay: 0.17};
+		},
+		// пустое ли место на первом экране (не остров, не надпись, не портал, не персонаж)
+		emptyAt: (cx, cy) => {
+			updatePointer(cx, cy);
+			if (!pointerInHero) return true;
+			return !pickVoxel() && !pickPlayer() && !pickPortal() && !pickBlock() && !(P.mode === 'free' && hitFree());
+		},
 		debug: {
 			// подменить час (ночь/утро); null — снова настоящие часы
 			clock: (h = null) => {

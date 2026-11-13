@@ -2,15 +2,16 @@
 import {ACHIEVEMENTS, count, notify, onChange, renderList, unlock} from './achievements.js';
 import * as auth from './auth.js';
 import {initCollab} from './collab.js';
-import {CASE, CASHBACK, LEGAL, MARQUEE, SITE, TASKS, VISUALS} from './data.js';
+import {CASE, CASHBACK, LEGAL, MARQUEE, SEASON, SITE, TASKS, VISUALS} from './data.js';
 import {solve as solveRobot} from './pow.js';
 import {initFootWord} from './footer.js';
 import {applyI18n, getLang, locale, onLang, setLang, t} from './i18n.js';
 import {getDoc} from './legal.js';
 import {fontReady} from './voxelword.js';
-import {caseArt, coverArt, icon, navIcon} from './pixel.js';
+import {caseArt, coverArt, giftArt, icon, navIcon} from './pixel.js';
 import {boomSound, breakSound, fireworkSound, hissSound, punchSound, shatterSound} from './sound.js';
 import {fireworks} from './fireworks.js';
+import {initNewYear, snowBurst} from './newyear.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -126,10 +127,14 @@ let openAuth = () => {}; // заполняется в блоке аккаунт�
 let products = [];
 // покупка: салют над сайтом, а персонаж прыгает от радости
 let heroApi = null;
+// праздничное оформление (js/data.js → SEASON)
+const NY = SEASON === 'newyear';
+const isHit = (p) => NY && p.id === 'new-year-mod'; // «Хит сезона»
 const celebrate = () => {
 	fireworks({reducedMotion, onLaunch: () => fireworkSound('launch'), onPop: () => fireworkSound('pop')});
 	heroApi?.celebrate?.();
 };
+if (NY) initNewYear({reducedMotion, hero: () => heroApi, celebrate: () => heroApi?.celebrate?.(), debug: new URLSearchParams(location.search).has('debug')});
 let filter = 'all';
 const seenTabs = new Set();
 const titleOf = (p) => (getLang() === 'en' && p.titleEn) || p.title;
@@ -154,7 +159,7 @@ const card = (p, i) => {
 	else action = `<button class="btn btn--lime btn--sm" data-checkout="${esc(p.id)}">${t('item.buy')}</button>`;
 	const cover = p.cover ? `<img src="${esc(p.cover)}" alt="" loading="lazy">` : coverArt(p.kind, i);
 	return `<article class="item card" data-kind="${esc(p.kind)}" data-id="${esc(p.id)}" style="--i:${i}">
-		<div class="item__cover ${p.cover ? '' : 'is-art'}">${cover}
+		<div class="item__cover ${p.cover ? '' : 'is-art'}">${cover}${isHit(p) ? `<span class="ny-hit px">${t('ny.hit')}</span>` : ''}
 			<span class="item__badges">${p.status === 'ready' ? '' : `<span class="tag tag--gold px">${t('status.soon')}</span>`}${p.until ? `<span class="tag tag--excl px">${esc(untilText(p))}</span>` : ''}</span>
 		</div>
 		<div class="item__body">
@@ -176,7 +181,7 @@ const renderPhoneShop = () => {
 				.slice(0, 4)
 				.map(
 					(p) =>
-						`<button class="mcard" type="button" data-product="${esc(p.id)}"><span class="mcard__ic">${p.cover ? `<img src="${esc(p.cover)}" alt="" loading="lazy">` : icon(p.kind === 'rp' ? 'gem' : 'pick')}</span><b>${esc(titleOf(p))}</b><small>${kindOf(p)}</small><span class="mcard__price px">${priceOf(p)}</span></button>`,
+						`<button class="mcard" type="button" data-product="${esc(p.id)}">${isHit(p) ? `<span class="ny-hit px">${t('ny.hit')}</span>` : ''}<span class="mcard__ic">${p.cover ? `<img src="${esc(p.cover)}" alt="" loading="lazy">` : icon(p.kind === 'rp' ? 'gem' : 'pick')}</span><b>${esc(titleOf(p))}</b><small>${kindOf(p)}</small><span class="mcard__price px">${priceOf(p)}</span></button>`,
 				)
 				.join('')
 		: `<div class="mcard mcard--empty"><span class="mcard__ic">${icon('chest')}</span><b>${t('m.soonT')}</b><small>${t('m.soonP')}</small></div>`;
@@ -926,7 +931,7 @@ let paintCase = () => {};
 	const btn = $('#case-open');
 	const dots = [$('.hotbar__dot'), $('.topnav__dot')].filter(Boolean);
 	const LOOT_ICON = {money: 'coin', rp: 'gem'};
-	art.innerHTML = caseArt();
+	art.innerHTML = NY ? giftArt() : caseArt(); // под Новый год кейс — подарочная коробка
 	const total = CASE.loot.reduce((sum, l) => sum + l.chance, 0);
 	const pct = (c) => {
 		const v = (c / total) * 100;
@@ -1009,6 +1014,7 @@ let paintCase = () => {};
 				art.classList.remove('is-shaking');
 				art.classList.add('is-open');
 				breakSound();
+				if (NY) snowBurst(art.parentElement, reducedMotion);
 				showPrize(res.prize);
 				opening = false;
 				paintCase();
@@ -1121,7 +1127,7 @@ let paintCase = () => {};
 }
 
 // ---------- подвал: надпись «1DEX1 SHOP» из ломающихся блоков ----------
-initFootWord($('#foot-word'), {reducedMotion, on: () => blockBroken('digger')});
+initFootWord($('#foot-word'), {reducedMotion, season: SEASON, on: () => blockBroken('digger')});
 $('#year').textContent = new Date().getFullYear();
 
 // ---------- запуск: узнать, есть ли сервер, загрузить вошедшего и товары ----------
@@ -1137,6 +1143,7 @@ Promise.all([import('./hero.js'), fontReady()])
 		const tier = (id) => t(`tier.${id}`);
 		const ok = initHero($('#hero-gl'), {
 			reducedMotion,
+			season: SEASON,
 			wall: $('#marquee'),
 			sky: $('#hero-sky'),
 			on(event, data) {
