@@ -293,8 +293,6 @@ coForm.addEventListener('submit', async (e) => {
 	notify(t('toast.bought'));
 });
 const renderShop = () => {
-	const common = products.length ? (products[0].tags || []).filter((tag) => products.every((p) => p.tags?.includes(tag))) : [];
-	$('#shop-ver').textContent = common.length ? t('shop.ver', {v: common.join(' · ')}) : '';
 	renderPhoneShop();
 	if (sheet.open) paintSheet();
 	if (checkout.open) paintCheckout();

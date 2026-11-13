@@ -644,8 +644,6 @@ h2{font:400 clamp(26px,4vw,50px)/1.05 var(--font-display);letter-spacing:-.01em;
 .robot__box[data-state="fail"]~.robot__state{color:var(--red)}
 .hp{position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden}
 @keyframes spin{to{transform:rotate(360deg)}}
-.shop__ver{margin:-6px 0 16px;font-size:12px;letter-spacing:.06em;color:var(--dim)}
-.shop__ver:empty{display:none}
 .co__cb dt{font-size:14px;color:var(--muted)}
 .co__cb dd{color:var(--lime)}
 .co__cb[hidden]{display:none}

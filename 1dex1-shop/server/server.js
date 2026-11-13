@@ -299,6 +299,19 @@ route('POST', 'resend', async ({body, ip}) => {
 });
 
 // --- код из письма: заканчивает регистрацию или вход ---
+// Админы по почте: ADMIN_EMAILS в server/.env (через запятую). Аккаунт с такой почтой, как только
+// она подтверждена кодом из письма, сам получает доступ в админку — команда в консоли не нужна.
+// Код приходит только на эту почту, поэтому чужой человек так админом не станет.
+const ADMIN_EMAILS = String(process.env.ADMIN_EMAILS || '')
+	.split(',')
+	.map((s) => s.trim().toLowerCase())
+	.filter(Boolean);
+const grantAdmins = () => {
+	if (!ADMIN_EMAILS.length) return;
+	q(`UPDATE users SET role = 'admin' WHERE verified = 1 AND role IS NOT 'admin' AND lower(email) IN (${ADMIN_EMAILS.map(() => '?').join(', ')})`).run(...ADMIN_EMAILS);
+};
+grantAdmins();
+
 route('POST', 'verify', ({body, res, ip}) => {
 	const code = String(body.code || '').replace(/\D/g, '');
 	if (limited(`verify:${ip}`, 30, 15 * 60e3)) return [429, {error: 'too_many'}];
@@ -312,6 +325,7 @@ route('POST', 'verify', ({body, res, ip}) => {
 		return [400, {error: 'bad_code'}];
 	}
 	if (!user.verified) markVerified(user.id);
+	grantAdmins();
 	q('DELETE FROM email_codes WHERE user_id = ?').run(user.id);
 	startSession(res, user.id);
 	return [200, {user: userJson(user.id)}];

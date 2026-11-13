@@ -19,7 +19,7 @@ const call = async (method, body) => {
 		method: 'POST',
 		headers: {'Content-Type': 'application/json'},
 		body: JSON.stringify(body || {}),
-		signal: AbortSignal.timeout(10e3),
+		signal: AbortSignal.timeout(30e3),
 	});
 	const data = await res.json().catch(() => null);
 	if (!data?.ok) throw new Error(data?.description || `HTTP ${res.status}`);
