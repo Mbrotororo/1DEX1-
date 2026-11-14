@@ -260,9 +260,10 @@ class Worker {
   find(names, maxDistance = 32, count = 64, extra = null) {
     const reg = this.bot.registry;
     const ids = names.map((n) => reg.blocksByName[n] && reg.blocksByName[n].id).filter((x) => x !== undefined);
-    const positions = this.bot.findBlocks({ matching: ids, maxDistance, count: extra ? count * 4 : count });
-    if (!extra) return positions;
-    return positions.filter((p) => extra(this.bot.blockAt(p))).slice(0, count);
+    if (!extra) return this.bot.findBlocks({ matching: ids, maxDistance, count });
+    // the extra test runs during the search, so far blocks are found when the near ones don't fit
+    const test = (b) => { try { return !!extra(b); } catch (_) { return false; } };
+    return this.bot.findBlocks({ matching: ids, maxDistance, count, useExtraInfo: test });
   }
 
   async equipBestFor(block) {

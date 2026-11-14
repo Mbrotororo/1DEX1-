@@ -31,6 +31,7 @@ async function run(w) {
     if (site && (logs(w) >= 160 || w.freeSlots() <= 3)) {
       if (!(await S.goToSite(w))) continue;
       await F.toGround(w);
+      if (S.placedChests(w, C.depot(w)).length < 4) await C.ensureDepot(w);
       w.setStatus('несу брёвна на склад');
       const names = [...new Set(w.bot.inventory.items().filter((i) => C.LOGS.test(i.name)).map((i) => i.name))];
       const stored = await S.depositRow(w, C.depot(w), names.concat(['stick', 'apple']));

@@ -16,13 +16,22 @@ async function craftItem(w, name, times = 1, table = null) {
   const recipes = bot.recipesFor(it.id, null, 1, table);
   if (!recipes.length) return false;
   try {
-    await withTimeout(bot.craft(recipes[0], times, table), 15000, `крафт ${name}`);
+    await withTimeout(bot.craft(recipes[0], times, table), 15000 + times * 1500, `крафт ${name}`);
     log.debug(w.name, `скрафтил ${name} x${times}`);
+    await sleep(150);   // too many clicks in a row and the server loses track of the inventory
     return true;
   } catch (e) {
     log.debug(w.name, `не скрафтил ${name}: ${e.message}`);
+    await unstick(w);
     return false;
   }
+}
+
+/** After a failed craft: close the window so the server gives back what is left in the crafting grid. */
+async function unstick(w) {
+  const bot = w.bot;
+  try { bot.closeWindow(bot.currentWindow || bot.inventory); } catch (_) { /* ignore */ }
+  await sleep(600);
 }
 
 function plankCount(w) { return w.countMatch(/_planks$/); }

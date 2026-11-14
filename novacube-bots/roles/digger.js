@@ -5,7 +5,7 @@ const { Vec3 } = require('vec3');
 const S = require('../lib/site');
 const F = require('../lib/floors');
 const C = require('./common');
-const { chopWood, woodCount, craftItem, ensurePlanks } = require('../lib/craft');
+const { chopWood, woodCount } = require('../lib/craft');
 const { sleep } = require('../lib/util');
 
 async function chooseSite(w) {
@@ -44,23 +44,6 @@ async function chooseSite(w) {
   return null;
 }
 
-/** The first depot chests, so the others have somewhere to put wood and dirt. */
-async function firstDepot(w) {
-  const missing = S.missingChests(w, C.depot(w));
-  if (!missing.length) return;
-  w.setStatus('ставлю первые сундуки склада');
-  const n = Math.min(missing.length, Math.floor((woodCount(w) - 4) / 8));
-  if (n > 0 && (await ensurePlanks(w, n * 8))) {
-    const table = await C.workbench(w);
-    if (table) for (let i = 0; i < n; i++) if (!(await craftItem(w, 'chest', 1, table))) break;
-  }
-  for (const p of missing) {
-    if (!w.item('chest')) break;
-    await w.gotoBlock(new Vec3(p.x + 2, p.y, p.z), 30000);
-    await w.placeAt(p, 'chest', p.offset(0, -1, 0));
-  }
-}
-
 async function run(w) {
   const cfg = w.cfg;
   const team = w.team;
@@ -77,14 +60,21 @@ async function run(w) {
       team.save();
       w.say(`фермы будут здесь: ${site.x} ${site.y} ${site.z} (две фермы ${site.W}x${site.L}, по ${site.F} этажей)`);
       if (cfg.commands.sethome) { w.cmd(cfg.commands.sethome); team.state.homeSet = { [w.name]: true }; team.save(); }
-      await firstDepot(w);
+      await C.ensureDepot(w);
       continue;
     }
     if (!(await S.goToSite(w))) continue;
     await F.toGround(w);
     w.atBase = true;
     await C.ensureFood(w);
-    if (S.placedChests(w, C.depot(w)).length < 2) await firstDepot(w);
+    if (S.placedChests(w, C.depot(w)).length < 2) {
+      await C.ensureDepot(w);
+      if (S.placedChests(w, C.depot(w)).length < 2 && woodCount(w) < 20 * 4) {
+        w.setStatus('нужны сундуки для склада — рублю дерево');
+        await chopWood(w, 20 * 4, 48, 4);
+        continue;
+      }
+    }
     await C.digForDepot(w);
   }
 }

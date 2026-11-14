@@ -90,6 +90,28 @@ async function workbench(w) {
   return b && b.name === 'crafting_table' ? b : null;
 }
 
+/** The depot chests: whoever stands at the farms with enough wood puts the missing ones. */
+async function ensureDepot(w, maxNow = 4) {
+  const missing = S.missingChests(w, depot(w)).slice(0, maxNow);
+  if (!missing.length) return;
+  const need = missing.length - w.count('chest');
+  if (need > 0) {
+    const can = Math.min(need, Math.floor((woodCount(w) - 4) / 8));
+    if (can <= 0) return;
+    w.setStatus('ставлю сундуки склада');
+    if (!(await ensurePlanks(w, can * 8 + 4))) return;
+    const table = await workbench(w);
+    if (!table) return;
+    for (let i = 0; i < can; i++) if (!(await craftItem(w, 'chest', 1, table))) break;
+  }
+  for (const p of missing) {
+    if (!w.item('chest')) break;
+    w.setStatus('ставлю сундуки склада');
+    await w.gotoBlock(new Vec3(p.x + 2, p.y, p.z), 30000);
+    await w.placeAt(p, 'chest', p.offset(0, -1, 0));
+  }
+}
+
 /** Makes a tool: stone if we carry cobblestone, otherwise wood. kind: sword | shovel | axe | pickaxe */
 async function craftTool(w, kind) {
   const cost = { sword: [2, 1], shovel: [1, 2], axe: [3, 2], pickaxe: [3, 2] }[kind];
@@ -263,6 +285,6 @@ async function tender(w) {
 
 module.exports = {
   PLANT_RU, LOGS, site, depot, storage, names, phase2, myTeam, climberIndex, builderFloors, builderDone, tendFloors,
-  ensureFood, workbench, craftTool, ensureTool, ensureSword, digDirt, digForDepot, storeHarvest, countStored,
+  ensureFood, workbench, ensureDepot, craftTool, ensureTool, ensureSword, digDirt, digForDepot, storeHarvest, countStored,
   ensureColumnBlocks, tendTrip, buildTrip, tendOnce, tender,
 };
