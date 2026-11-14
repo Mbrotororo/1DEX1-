@@ -48,7 +48,7 @@ function chestSpots(farm) {
 function groundY(bot, x, z, fromY) {
   for (let y = fromY + 12; y > fromY - 20; y--) {
     const b = bot.blockAt(new Vec3(x, y, z));
-    if (b && b.boundingBox === 'block' && !/leaves/.test(b.name)) return y;
+    if (b && b.boundingBox === 'block' && !/leaves|chest|crafting_table/.test(b.name)) return y;  // our own chests are not ground
   }
   return fromY - 1;
 }
@@ -274,14 +274,17 @@ async function ensureChests(w, farm) {
   if (!missing.length) return spots;
   w.setStatus('ставлю сундуки для урожая');
   w.careful(false);
-  for (const p of missing) {
-    if (!w.item('chest')) {
-      if (woodCount(w) < 8 || !(await ensurePlanks(w, 8))) break;
+  // craft every missing chest at once (8 planks each), keeping 4 planks for a table if we have none
+  const need = missing.length - w.count('chest');
+  if (need > 0) {
+    const tableCost = w.item('crafting_table') || w.find(['crafting_table'], 5, 1).length ? 0 : 4;
+    const can = Math.min(need, Math.floor((woodCount(w) - tableCost) / 8));
+    if (can > 0 && (await ensurePlanks(w, can * 8 + tableCost))) {
       const table = await ensureTable(w);
-      if (!table) break;
-      await craftItem(w, 'chest', 1, table);
-      await pickUpTable(w);
+      if (table) { await craftItem(w, 'chest', can, table); await pickUpTable(w); }
     }
+  }
+  for (const p of missing) {
     if (!w.item('chest')) break;
     // stand two blocks west of the chest row, not on the spot itself
     await w.gotoBlock(new Vec3(p.x - 2, p.y, p.z), 30000);
@@ -357,7 +360,7 @@ async function run(w) {
       }
       const seeds = cfg.farm.seedsToStart || 64;
       if (w.count('bamboo') < seeds) { await gatherSeeds(w, { bamboo: seeds, sweet_berries: 0 }, 25); continue; }
-      if (woodCount(w) < 40) { w.setStatus('рублю дерево на сундуки'); await chopWood(w, 40, 40); if (woodCount(w) < 24) continue; }
+      if (woodCount(w) < 56) { w.setStatus('рублю дерево на сундуки'); await chopWood(w, 56, 40); if (woodCount(w) < 32) continue; }
       farm = await chooseSite(w);
       if (!farm) { await sleep(10000); continue; }
       team.state.wideFarm = farm;
