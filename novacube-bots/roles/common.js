@@ -165,7 +165,7 @@ async function digDirt(w, target) {
   }
   const reg = bot.registry;
   const ids = ['grass_block', 'dirt', 'podzol'].map((n) => reg.blocksByName[n] && reg.blocksByName[n].id).filter((x) => x !== undefined);
-  const all = w.cfg.bots.map((b) => b.name);
+  const all = w.cfg.bots.length ? w.cfg.bots.map((b) => b.name) : [w.name];
   const me = Math.max(0, all.indexOf(w.name));
   w.digTurn = w.digTurn || 0;
   const spotFor = () => {

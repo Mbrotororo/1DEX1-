@@ -6,67 +6,11 @@
   },
   "main": {
     "name": "RodionDex",
-    "controlledByBot": false,
-    "password": ""
+    "controlledByBot": true,
+    "password": "",
+    "role": "solo"
   },
-  "bots": [
-    {
-      "name": "RodionDex1",
-      "role": "berries"
-    },
-    {
-      "name": "RodionDex2",
-      "role": "bamboo"
-    },
-    {
-      "name": "RodionDex3",
-      "role": "lumberjack"
-    },
-    {
-      "name": "RodionDex4",
-      "role": "digger"
-    },
-    {
-      "name": "RodionDex5",
-      "role": "smith"
-    },
-    {
-      "name": "RodionDex6",
-      "role": "builder"
-    },
-    {
-      "name": "RodionDex7",
-      "role": "builder"
-    },
-    {
-      "name": "RodionDex8",
-      "role": "planter"
-    },
-    {
-      "name": "RodionDex9",
-      "role": "planter"
-    },
-    {
-      "name": "RodionDex10",
-      "role": "planter"
-    }
-  ],
-  "teams": {
-    "bamboo": [
-      "RodionDex1",
-      "RodionDex2",
-      "RodionDex3",
-      "RodionDex4",
-      "RodionDex5"
-    ],
-    "sweet_berries": [
-      "RodionDex6",
-      "RodionDex7",
-      "RodionDex8",
-      "RodionDex9",
-      "RodionDex10"
-    ]
-  },
+  "bots": [],
   "commands": {
     "register": "/register {pass} {pass}",
     "login": "/login {pass}",
@@ -80,9 +24,9 @@
     "home": ""
   },
   "farm": {
-    "width": 30,
-    "length": 70,
-    "floors": 10,
+    "width": 15,
+    "length": 32,
+    "floors": 4,
     "floorGap": 4,
     "firstFloorHeight": 3,
     "plants": [
@@ -91,11 +35,17 @@
     ],
     "keepSeeds": 192
   },
-  "storage": {
-    "doubleChestsBeforeEveryoneFarms": 12
+  "solo": {
+    "siteDistance": 220,
+    "storagePairs": 6,
+    "sellAt": 512,
+    "keepInStorage": 128,
+    "tendEveryMin": 10,
+    "dirtBatch": 1536,
+    "mineMinutes": 6
   },
   "depot": {
-    "doubleChests": 4
+    "doubleChests": 2
   },
   "smith": {
     "shovels": 3,
@@ -124,8 +74,5 @@
       "sell"
     ]
   },
-  "joinDelaySec": 8,
-  "lumberjack": {
-    "logCap": 384
-  }
+  "joinDelaySec": 3
 }

@@ -193,4 +193,4 @@ async function run(w) {
   }
 }
 
-module.exports = { run };
+module.exports = { run, placeChests, charcoal, unload };

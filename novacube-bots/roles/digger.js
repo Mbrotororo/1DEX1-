@@ -8,39 +8,45 @@ const C = require('./common');
 const { chopWood, woodCount } = require('../lib/craft');
 const { sleep } = require('../lib/util');
 
-async function chooseSite(w) {
+/** Checks the ground around the bot: is there a flat, dry, soil-covered place for the whole layout? */
+function evaluateHere(w) {
   const cfg = w.cfg;
   const tmp = S.makeSite(cfg, 0, 0, 0);
+  const bot = w.bot;
+  const p = bot.entity.position.floored();
+  const x = p.x - Math.floor(tmp.spanX / 2), z = p.z - Math.floor(tmp.L / 2);
+  const y0 = p.y - 1;
+  let ok = true, top = -999, low = 999, samples = 0, trees = 0, soil = 0;
+  for (let dx = -11; dx <= tmp.spanX + 2 && ok; dx += 3) {
+    for (let dz = -3; dz <= tmp.L + 2 && ok; dz += 3) {
+      let g = null;
+      let tree = false;
+      for (let y = y0 + 12; y > y0 - 10; y--) {
+        const b = bot.blockAt(new Vec3(x + dx, y, z + dz));
+        if (!b) { ok = false; break; }           // not loaded: too far, try another place
+        if (/water|lava|ice|bamboo|cactus|sugar_cane/.test(b.name)) { ok = false; break; }
+        if (/leaves|log/.test(b.name)) { tree = true; continue; }   // trees are fine: they get cut
+        if (b.boundingBox === 'block') { g = y; if (/^(grass_block|dirt|podzol|coarse_dirt)$/.test(b.name)) soil++; break; }
+      }
+      if (!ok || g === null) { ok = false; break; }
+      samples++;
+      if (tree) trees++;
+      top = Math.max(top, g); low = Math.min(low, g);
+      if (top - low > 4) ok = false;
+    }
+  }
+  if (ok && trees > samples * 0.3) ok = false;   // a forest: too much to cut
+  if (ok && soil < samples * 0.8) ok = false;    // sand, stone, terracotta: no dirt to dig for the floors
+  return ok ? S.makeSite(cfg, x, top, z) : null;
+}
+
+async function chooseSite(w) {
   for (let i = 0; i < 80; i++) {
     w.setStatus('ищу ровное место под фермы (/rtp)');
-    if (!(await w.teleport(cfg.commands.rtp, {}, 'rtp'))) continue;
+    if (!(await w.teleport(w.cfg.commands.rtp, {}, 'rtp'))) continue;
     await sleep(2000);   // let the chunks around arrive
-    const bot = w.bot;
-    const p = bot.entity.position.floored();
-    const x = p.x - Math.floor(tmp.spanX / 2), z = p.z - Math.floor(tmp.L / 2);
-    const y0 = p.y - 1;
-    let ok = true, top = -999, low = 999, samples = 0, trees = 0, soil = 0;
-    for (let dx = -11; dx <= tmp.spanX + 2 && ok; dx += 3) {
-      for (let dz = -3; dz <= tmp.L + 2 && ok; dz += 3) {
-        let g = null;
-        let tree = false;
-        for (let y = y0 + 12; y > y0 - 10; y--) {
-          const b = bot.blockAt(new Vec3(x + dx, y, z + dz));
-          if (!b) { ok = false; break; }           // not loaded: too far, try another place
-          if (/water|lava|ice|bamboo|cactus|sugar_cane/.test(b.name)) { ok = false; break; }
-          if (/leaves|log/.test(b.name)) { tree = true; continue; }   // trees are fine: the lumberjack cuts them
-          if (b.boundingBox === 'block') { g = y; if (/^(grass_block|dirt|podzol|coarse_dirt)$/.test(b.name)) soil++; break; }
-        }
-        if (!ok || g === null) { ok = false; break; }
-        samples++;
-        if (tree) trees++;
-        top = Math.max(top, g); low = Math.min(low, g);
-        if (top - low > 4) ok = false;
-      }
-    }
-    if (ok && trees > samples * 0.3) ok = false;   // a forest: too much to cut
-    if (ok && soil < samples * 0.8) ok = false;    // sand, stone, terracotta: no dirt to dig for the floors
-    if (ok) return S.makeSite(cfg, x, top, z);
+    const site = evaluateHere(w);
+    if (site) return site;
   }
   return null;
 }
@@ -80,4 +86,4 @@ async function run(w) {
   }
 }
 
-module.exports = { run, chooseSite };
+module.exports = { run, chooseSite, evaluateHere };

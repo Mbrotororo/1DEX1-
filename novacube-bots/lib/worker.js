@@ -10,6 +10,31 @@ const { sleep, fmt, withTimeout } = require('./util');
 const HOSTILE = new Set(['zombie', 'husk', 'drowned', 'zombie_villager', 'skeleton', 'stray', 'bogged', 'spider', 'cave_spider',
   'creeper', 'witch', 'slime', 'pillager', 'vindicator', 'silverfish', 'phantom']);
 
+/** Plain text out of a chat component in any shape (string, JSON text, or the NBT form 1.20.3+ servers send). */
+function chatText(x) {
+  if (x === null || x === undefined) return '';
+  if (typeof x === 'string') {
+    const t = x.trim();
+    if (t.startsWith('{') || t.startsWith('[')) { try { return chatText(JSON.parse(t)); } catch (_) { /* plain */ } }
+    return x;
+  }
+  if (Array.isArray(x)) return x.map(chatText).join('');
+  if (typeof x === 'object') {
+    // NBT wrapper: { type: 'compound' | 'list' | 'string', value: ... }
+    if (x.type && 'value' in x && Object.keys(x).length <= 2) {
+      if (x.type === 'list') return chatText(x.value && x.value.value !== undefined ? x.value.value : x.value);
+      return chatText(x.value);
+    }
+    let s = '';
+    if ('text' in x) s += chatText(x.text);
+    if ('' in x) s += chatText(x['']);
+    if ('translate' in x) s += chatText(x.translate);
+    if ('extra' in x) s += chatText(x.extra);
+    return s;
+  }
+  return String(x);
+}
+
 class Worker {
   constructor(cfg, account, team) {
     this.cfg = cfg;
@@ -124,7 +149,12 @@ class Worker {
     });
 
     bot.on('messagestr', (msg, position) => this.onChat(msg, position));
-    bot.on('kicked', (reason) => { this.lastKick = typeof reason === 'string' ? reason : JSON.stringify(reason); this.say(`кикнуло: ${this.lastKick}`.slice(0, 300)); this.explainKick(this.lastKick); });
+    bot.on('kicked', (reason) => {
+      this.lastKick = chatText(reason);
+      this.say(`кикнуло: «${this.lastKick.slice(0, 400)}»`);
+      log.debug(this.name, `причина кика целиком: ${typeof reason === 'string' ? reason : JSON.stringify(reason)}`);
+      this.explainKick(this.lastKick);
+    });
     bot.on('error', (e) => log.debug(this.name, `ошибка: ${e.message}`));
     bot.on('death', () => this.say('умер, возрождаюсь'));
     bot.on('end', (reason) => {
@@ -295,6 +325,19 @@ class Worker {
     } catch (e) {
       this.bot.pathfinder.setGoal(null);
       log.debug(this.name, `не дошёл до ${pos}: ${e.message}`);
+      return false;
+    }
+  }
+
+  /** Walks to a column (x, z) at whatever height the ground is there. */
+  async gotoXZ(x, z, range = 3, timeout = 90000) {
+    this.act(`иду к ${Math.round(x)} ${Math.round(z)}`);
+    try {
+      await withTimeout(this.bot.pathfinder.goto(new goals.GoalNearXZ(Math.round(x), Math.round(z), range)), timeout, 'путь');
+      return true;
+    } catch (e) {
+      this.bot.pathfinder.setGoal(null);
+      log.debug(this.name, `не дошёл до ${Math.round(x)} ${Math.round(z)}: ${e.message}`);
       return false;
     }
   }

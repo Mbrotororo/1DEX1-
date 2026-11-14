@@ -36,6 +36,7 @@ const ROLES = {
   planter: require('./roles/planter'),
   miner: require('./roles/miner'),
   main: require('./roles/main'),
+  solo: require('./roles/solo'),
 };
 
 async function runRole(w) {
@@ -58,9 +59,9 @@ async function main() {
   const list = cfg.bots.map((b) => ({ name: b.name, role: b.role, password: accounts[b.name] }));
   if (cfg.main.controlledByBot) {
     if (!cfg.main.password) {
-      log.line('1DEX1', `чтобы ${cfg.main.name} был ботом, впиши его пароль в config.json (main.password)`);
+      log.line('1DEX1', `⚠ впиши пароль от ${cfg.main.name} в config.json (строка "password" в разделе "main"), сохрани файл и запусти снова`);
     } else {
-      list.unshift({ name: cfg.main.name, role: 'main', password: cfg.main.password });
+      list.unshift({ name: cfg.main.name, role: cfg.main.role || 'main', password: cfg.main.password });
     }
   }
   for (const acc of list) {

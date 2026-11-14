@@ -1,0 +1,131 @@
+{
+  "server": {
+    "host": "play.novacube.fun",
+    "port": 25565,
+    "version": "1.21.11"
+  },
+  "main": {
+    "name": "RodionDex",
+    "controlledByBot": false,
+    "password": ""
+  },
+  "bots": [
+    {
+      "name": "RodionDex1",
+      "role": "berries"
+    },
+    {
+      "name": "RodionDex2",
+      "role": "bamboo"
+    },
+    {
+      "name": "RodionDex3",
+      "role": "lumberjack"
+    },
+    {
+      "name": "RodionDex4",
+      "role": "digger"
+    },
+    {
+      "name": "RodionDex5",
+      "role": "smith"
+    },
+    {
+      "name": "RodionDex6",
+      "role": "builder"
+    },
+    {
+      "name": "RodionDex7",
+      "role": "builder"
+    },
+    {
+      "name": "RodionDex8",
+      "role": "planter"
+    },
+    {
+      "name": "RodionDex9",
+      "role": "planter"
+    },
+    {
+      "name": "RodionDex10",
+      "role": "planter"
+    }
+  ],
+  "teams": {
+    "bamboo": [
+      "RodionDex1",
+      "RodionDex2",
+      "RodionDex3",
+      "RodionDex4",
+      "RodionDex5"
+    ],
+    "sweet_berries": [
+      "RodionDex6",
+      "RodionDex7",
+      "RodionDex8",
+      "RodionDex9",
+      "RodionDex10"
+    ]
+  },
+  "commands": {
+    "register": "/register {pass} {pass}",
+    "login": "/login {pass}",
+    "rtp": "/rtp",
+    "mine": "/warp mine",
+    "spawn": "/spawn",
+    "sell": "/b",
+    "tpa": "/tpa {player}",
+    "tpaccept": "/tpaccept",
+    "sethome": "",
+    "home": ""
+  },
+  "farm": {
+    "width": 30,
+    "length": 70,
+    "floors": 10,
+    "floorGap": 4,
+    "firstFloorHeight": 3,
+    "plants": [
+      "bamboo",
+      "sweet_berries"
+    ],
+    "keepSeeds": 192
+  },
+  "storage": {
+    "doubleChestsBeforeEveryoneFarms": 12
+  },
+  "depot": {
+    "doubleChests": 4
+  },
+  "smith": {
+    "shovels": 3,
+    "axes": 1,
+    "swords": 8,
+    "swordsBeforeEveryoneFarms": 20,
+    "torches": 128
+  },
+  "scout": {
+    "searchRadius": 56,
+    "rtpCooldownSec": 10
+  },
+  "miner": {
+    "radius": 24
+  },
+  "sell": {
+    "mainSells": [
+      "bamboo",
+      "sweet_berries"
+    ],
+    "menuKeywords": [
+      "sign",
+      "табличк",
+      "продаж",
+      "скупщик",
+      "sell"
+    ]
+  },
+  "joinDelaySec": 8,
+  "lumberjack": {
+    "logCap": 384
+  }
+}
