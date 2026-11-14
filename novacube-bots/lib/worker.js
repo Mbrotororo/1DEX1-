@@ -539,7 +539,8 @@ class Worker {
     const bag = [['бамбук', this.count('bamboo')], ['ягоды', this.count('sweet_berries')], ['земля', this.count('dirt')],
       ['брёвна', this.countMatch(/_log$/)], ['уголь', this.count('coal')], ['камень', this.count('cobblestone')]]
       .filter(([, n]) => n > 0).map(([k, n]) => `${k} ${n}`).join(', ');
-    return `${this.name} (${this.role}): ${this.status}${bag ? ' | ' + bag : ''} | ${p.x.toFixed(0)} ${p.y.toFixed(0)} ${p.z.toFixed(0)}`;
+    const now = this.actWhat && this.actAt && Date.now() - this.actAt < 120000 ? ` [${this.actWhat}]` : '';
+    return `${this.name} (${this.role}): ${this.status}${now}${bag ? ' | ' + bag : ''} | ${p.x.toFixed(0)} ${p.y.toFixed(0)} ${p.z.toFixed(0)}`;
   }
 }
 

@@ -48,11 +48,13 @@ async function stepTo(w, cell, sneak) {
 }
 
 // ------------------------------------------------------------------ column
-/** Ground level of a column = the ground right next to it (west), where nothing is ever built or dug.
- *  Pieces of an old column above that level are ours and get dug away. */
+/** Ground level of a column = the lowest ground in the free strip right next to it (west), where nothing
+ *  is ever built or dug. Anything of ours above that level in the column cell gets dug away. */
 function colBase(w, farm, i) {
   const s = S.shaftOf(farm, i);
-  return S.groundY(w.bot, s.x - 1, s.z, w.team.state.site);
+  const site = w.team.state.site;
+  const around = [[-1, 0], [-1, -1], [-1, 1], [-2, 0]].map(([dx, dz]) => S.groundY(w.bot, s.x + dx, s.z + dz, site));
+  return Math.min(...around);
 }
 
 function rememberShaft(w, farm, i) {
@@ -66,15 +68,20 @@ async function toShaftBottom(w, farm, i) {
   const s = S.shaftOf(farm, i);
   const g = colBase(w, farm, i);
   w.careful(false);
-  if (onColumn(w, s) && Math.floor(w.bot.entity.position.y) <= g + 1) return true;
-  // stand next to the column, clear its cell down to the ground level (old pieces, a flower), step in
-  if (!(await w.gotoBlock(new Vec3(s.x - 1, g + 1, s.z), 60000))) return false;
-  for (let y = g + 4; y >= g + 1; y--) {
-    const p = new Vec3(s.x, y, s.z);
-    const b = w.bot.blockAt(p);
-    if (b && b.name !== 'air' && b.name !== 'cave_air') await w.dig(p, false);
+  if (!onColumn(w, s)) {
+    // next to the column, then clear its cell down to the ground (old pieces, a flower) and step in
+    if (!(await w.goto(new Vec3(s.x - 1, g + 1, s.z), 1, 60000))) return false;
+    for (let y = g + 4; y >= g + 1; y--) {
+      const p = new Vec3(s.x, y, s.z);
+      const b = w.bot.blockAt(p);
+      if (b && b.name !== 'air' && b.name !== 'cave_air') await w.dig(p, false);
+    }
+    await stepTo(w, new Vec3(s.x, g + 1, s.z), false);
+    if (!onColumn(w, s)) return false;
   }
-  await stepTo(w, new Vec3(s.x, g + 1, s.z), false);
+  // standing on a piece of an old column: dig it down to the ground
+  let guard = 0;
+  while (Math.floor(w.bot.entity.position.y) > g + 1 && guard++ < 60) if (!(await w.digDown())) break;
   return onColumn(w, s);
 }
 
@@ -326,13 +333,18 @@ async function trip(w, farm, floors, idx, mode) {
   rememberShaft(w, farm, idx);
   w.atBase = false;
   w.acceptTeleports = false;
-  if (!(await toShaftBottom(w, farm, idx))) { res.reason = 'не дошёл до столба'; w.acceptTeleports = true; return res; }
+  if (!(await toShaftBottom(w, farm, idx))) {
+    res.reason = 'не дошёл до столба';
+    log.debug(w.name, `заход отменён: не дошёл до столба ${farm.id}:${idx} (стою на ${w.bot.entity.position.floored()})`);
+    w.acceptTeleports = true;
+    return res;
+  }
   // a trip that stopped on a full bag goes on from that floor and lane
   const r = w.resume && w.resume.farm === farm.id && w.resume.mode === mode && floors.includes(w.resume.k) ? w.resume : null;
   let order = [...floors].sort((a, b) => a - b);
   if (r) order = order.filter((k) => k >= r.k).concat(order.filter((k) => k < r.k));
   for (const k of order) {
-    if (!(await climbShaft(w, farm, k))) { res.reason = 'не поднялся'; break; }
+    if (!(await climbShaft(w, farm, k))) { res.reason = 'не поднялся'; log.debug(w.name, `заход: не поднялся на этаж ${k + 1} (стою на ${w.bot.entity.position.floored()})`); break; }
     const pass = new Pass(w, farm, k, idx, mode);
     if (r && r.k === k) pass.startLane = r.lane;
     await pass.run();
