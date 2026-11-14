@@ -1,0 +1,58 @@
+{
+  "server": { "host": "play.novacube.fun", "port": 25565, "version": "1.21.11" },
+
+  "main": {
+    "name": "RodionDex",
+    "controlledByBot": false,
+    "password": ""
+  },
+
+  "bots": [
+    { "name": "Kirill_Bro",  "role": "farmer" },
+    { "name": "ShadowLis",   "role": "scout" },
+    { "name": "Tema_Chill",  "role": "scout" },
+    { "name": "NoName_Max",  "role": "miner" },
+    { "name": "Lexa_Kopatel","role": "miner" }
+  ],
+
+  "commands": {
+    "register": "/register {pass} {pass}",
+    "login": "/login {pass}",
+    "rtp": "/rtp",
+    "mine": "/warp mine",
+    "spawn": "/spawn",
+    "sell": "/b",
+    "tpa": "/tpa {player}",
+    "tpaccept": "/tpaccept",
+    "sethome": "",
+    "home": ""
+  },
+
+  "farm": {
+    "plants": ["bamboo", "sweet_berries", "bamboo", "sweet_berries", "bamboo", "sweet_berries", "bamboo", "sweet_berries", "bamboo", "sweet_berries"],
+    "floorGap": 4,
+    "firstFloorHeight": 3,
+    "harvestEveryMin": 4,
+    "keepForReplant": 16,
+    "seedsToStart": 16
+  },
+
+  "scout": {
+    "bamboo": 64,
+    "sweet_berries": 64,
+    "searchRadius": 56,
+    "rtpCooldownSec": 10
+  },
+
+  "miner": {
+    "radius": 24,
+    "sellWhenFull": true
+  },
+
+  "sell": {
+    "mainSells": ["bamboo", "sweet_berries"],
+    "menuKeywords": ["sign", "табличк", "продаж", "скупщик", "sell"]
+  },
+
+  "joinDelaySec": 8
+}

@@ -1,0 +1,14 @@
+{
+  "name": "novacube-bots",
+  "version": "1.0.0",
+  "description": "1DEX1 helper bots for play.novacube.fun: mine, scout bamboo and berries, build and harvest a tower farm",
+  "main": "index.js",
+  "private": true,
+  "scripts": { "start": "node index.js" },
+  "dependencies": {
+    "mineflayer": "^4.39.0",
+    "mineflayer-pathfinder": "^2.4.5",
+    "minecraft-data": "^3.119.0",
+    "vec3": "^0.1.10"
+  }
+}
