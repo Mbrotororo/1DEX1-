@@ -10,7 +10,9 @@ set "DST=%LOCALAPPDATA%\PrankFakeVirus"
 
 REM 1) kopiruem fayly prikola v postoyannuyu papku
 if not exist "%DST%" mkdir "%DST%"
+copy /Y "%SRC%scare.hta"             "%DST%\" >nul
 copy /Y "%SRC%scare.html"            "%DST%\" >nul
+copy /Y "%SRC%track.mp3"             "%DST%\" >nul
 copy /Y "%SRC%START.bat"             "%DST%\" >nul
 copy /Y "%SRC%autorun-watcher.vbs"   "%DST%\" >nul
 

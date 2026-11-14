@@ -59,6 +59,7 @@
 </head>
 <body>
 <canvas id="matrix"></canvas>
+<audio id="snd" src="track.mp3" loop></audio>
 <div id="term"></div>
 <div id="flash"></div>
 <div id="ggl"></div>
@@ -161,8 +162,11 @@
     T(260,function(){ beep(rnd(700,900),0.25,0.06); });
     T(560,siren);
   }
+  function playSnd(){ try{ var s=document.getElementById("snd"); if(s){ s.volume=1.0; var pr=s.play(); if(pr&&pr.catch) pr.catch(function(){}); } }catch(e){} }
+  function stopSnd(){ try{ var s=document.getElementById("snd"); if(s){ s.pause(); try{ s.currentTime=0; }catch(e){} } }catch(e){} }
   var musicNodes=[];
   function startMusic(){
+    return; // music now comes from track.mp3 via playSnd(); synth bed disabled
     if(!ac) return;
     var now=ac.currentTime;
     [55,55.5,82.5].forEach(function(f,i){
@@ -237,7 +241,7 @@
     if(running) return; running=true;
     intro.style.display='none';
     try{ ac=new (window.AudioContext||window.webkitAudioContext)(); if(ac&&ac.resume) ac.resume(); }catch(e){ ac=null; }
-    enterFullscreen(); startMusic(); lock();
+    enterFullscreen(); startMusic(); playSnd(); lock();
     matrixTimer=setInterval(drawMatrix,45); timers.push(matrixTimer);
     pushLine(); doFlash();
     T(2500,showBanner); T(6000,showEye); T(3500,runProgress);
@@ -254,7 +258,7 @@
     banner.classList.remove('show'); body.classList.remove('shaking');
     flash.style.opacity=0; eye.style.opacity=0; alertBox.style.display='none';
     cx.clearRect(0,0,cv.width,cv.height); term.innerHTML='';
-    stopMusic(); unlock();
+    stopMusic(); stopSnd(); unlock();
     try{ if(ac) ac.close(); }catch(e){}
   }
   var locked=false;
