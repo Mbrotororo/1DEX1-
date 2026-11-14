@@ -12,7 +12,9 @@ REM muzyka (track.mp3) skrytno v fone
 if exist "%~dp0_music.vbs" start "" wscript //nologo "%~dp0_music.vbs"
 
 REM otkryvaet COUNT okon kaskadom
-set COUNT=15
+REM 50 - eto uzhe stena okon na ves ekran, no komp perezhivet.
+REM NE stav 500+ : komp zavisnet namertvo i pridetsya zhestko vyklyuchat.
+set COUNT=50
 for /L %%i in (1,1,%COUNT%) do (
   start "" "%~f0" worker
   ping -n 1 -w 130 127.0.0.1 >nul
@@ -41,6 +43,6 @@ echo  ============================================
 echo        SYSTEM COMPROMISED - ACCESS GRANTED
 echo  ============================================
 echo.
-echo  (eto prank. okno zakroetsya samo cherez 45 sek)
-timeout /t 45 >nul
+echo  (eto prank. okno zakroetsya samo cherez 5 minut)
+timeout /t 300 >nul
 exit
