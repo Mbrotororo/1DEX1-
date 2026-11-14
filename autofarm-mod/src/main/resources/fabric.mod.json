@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "dexbot",
+  "version": "${version}",
+  "name": "1DEX1 Bot",
+  "description": "Бот-автоферма: сам строит фермы бамбука и ягод, фармит, складывает в сундуки и сдаёт скупщику.",
+  "authors": ["1DEX1"],
+  "license": "MIT",
+  "icon": "assets/dexbot/icon.png",
+  "environment": "client",
+  "entrypoints": { "client": ["ru.onedex.bot.BotClient"] },
+  "mixins": ["dexbot.mixins.json"],
+  "depends": { "fabricloader": ">=0.17.3", "minecraft": "~1.21.11", "java": ">=21" }
+}

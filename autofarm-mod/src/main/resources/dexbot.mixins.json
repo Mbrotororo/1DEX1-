@@ -1,0 +1,7 @@
+{
+  "required": true,
+  "package": "ru.onedex.bot.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": ["KeyboardInputMixin"],
+  "injectors": { "defaultRequire": 1 }
+}
