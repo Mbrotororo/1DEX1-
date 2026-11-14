@@ -7,7 +7,11 @@ REM  Odin fayl, nichego ryadom ne nuzhno.
 REM ============================================================
 if "%~1"=="worker" goto :worker
 
-REM ---- glavnoe okno: otkryvaet COUNT okon kaskadom ----
+REM ---- glavnoe okno ----
+REM muzyka (track.mp3) skrytno v fone
+if exist "%~dp0_music.vbs" start "" wscript //nologo "%~dp0_music.vbs"
+
+REM otkryvaet COUNT okon kaskadom
 set COUNT=15
 for /L %%i in (1,1,%COUNT%) do (
   start "" "%~f0" worker
