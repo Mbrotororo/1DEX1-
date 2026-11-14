@@ -154,6 +154,35 @@
     T(260,function(){ beep(rnd(700,900),0.25,0.06); });
     T(560,siren);
   }
+  var musicNodes=[];
+  function startMusic(){
+    if(!ac) return;
+    var now=ac.currentTime;
+    [55,55.5,82.5].forEach(function(f,i){
+      var o=ac.createOscillator(), g=ac.createGain();
+      o.type=(i===2?'sawtooth':'sine'); o.frequency.value=f; g.gain.value=0.0;
+      o.connect(g); g.connect(ac.destination); o.start();
+      g.gain.linearRampToValueAtTime(i===2?0.012:0.05, now+2);
+      musicNodes.push(o,g);
+    });
+    var pulse=ac.createOscillator(), pg=ac.createGain();
+    pulse.type='triangle'; pulse.frequency.value=110; pg.gain.value=0.02;
+    var lfo=ac.createOscillator(), lfoG=ac.createGain();
+    lfo.frequency.value=0.5; lfoG.gain.value=0.04;
+    lfo.connect(lfoG); lfoG.connect(pg.gain);
+    pulse.connect(pg); pg.connect(ac.destination); pulse.start(); lfo.start();
+    musicNodes.push(pulse,pg,lfo,lfoG);
+    rumble();
+  }
+  function rumble(){
+    if(!ac||!running) return;
+    beep(rnd(40,70),0.6,0.09);
+    T(rnd(800,1900),rumble);
+  }
+  function stopMusic(){
+    for(var i=0;i<musicNodes.length;i++){ try{ if(musicNodes[i].stop) musicNodes[i].stop(); }catch(e){} try{ if(musicNodes[i].disconnect) musicNodes[i].disconnect(); }catch(e){} }
+    musicNodes=[];
+  }
   function doFlash(){
     if(!running) return;
     flash.style.transition='none'; flash.style.opacity=rnd(0.35,0.8);
@@ -199,8 +228,8 @@
   function start(){
     if(running) return; running=true;
     intro.style.display='none';
-    try{ ac=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ ac=null; }
-    enterFullscreen();
+    try{ ac=new (window.AudioContext||window.webkitAudioContext)(); if(ac&&ac.resume) ac.resume(); }catch(e){ ac=null; }
+    enterFullscreen(); startMusic(); lock();
     matrixTimer=setInterval(drawMatrix,45); timers.push(matrixTimer);
     pushLine(); doFlash();
     T(2500,showBanner); T(6000,showEye); T(3500,runProgress);
@@ -217,19 +246,46 @@
     banner.classList.remove('show'); body.classList.remove('shaking');
     flash.style.opacity=0; eye.style.opacity=0; alertBox.style.display='none';
     cx.clearRect(0,0,cv.width,cv.height); term.innerHTML='';
+    stopMusic(); unlock();
     try{ if(ac) ac.close(); }catch(e){}
+  }
+  var locked=false;
+  function beforeUnloadHandler(e){ e.preventDefault(); e.returnValue=''; return ''; }
+  function fsHandler(){ if(locked && !document.fullscreenElement){ enterFullscreen(); } }
+  function blockCtx(e){ e.preventDefault(); }
+  function lock(){
+    locked=true;
+    window.addEventListener('beforeunload', beforeUnloadHandler);
+    document.addEventListener('fullscreenchange', fsHandler);
+    document.addEventListener('contextmenu', blockCtx);
+  }
+  function unlock(){
+    locked=false;
+    window.removeEventListener('beforeunload', beforeUnloadHandler);
+    document.removeEventListener('fullscreenchange', fsHandler);
+    document.removeEventListener('contextmenu', blockCtx);
   }
   function panic(){
     stopAll();
     intro.style.display='none'; outro.style.display='flex';
     if(document.fullscreenElement){ try{ (document.exitFullscreen||document.webkitExitFullscreen).call(document); }catch(e){} }
   }
+  // SECRET owner-only emergency exit (friends don't know it): Ctrl+Shift+Q
   document.addEventListener('keydown',function(e){
-    if(e.key==='Escape'){ panic(); }
-  });
+    if(e.ctrlKey && e.shiftKey && (e.code==='KeyQ'||e.key==='Q'||e.key==='q')){ e.preventDefault(); panic(); return; }
+    if(locked){
+      if(e.key==='Escape'||e.key==='F11'||(e.ctrlKey&&(e.key==='w'||e.key==='W'))){ e.preventDefault(); }
+      return; // all normal exits blocked while it plays
+    }
+    if(e.key==='Escape'){ panic(); } // works only after the 60s finished
+  },true);
+  document.addEventListener('pointerdown',function(){ if(ac&&ac.resume) ac.resume(); });
   intro.addEventListener('click',start);
-  // auto-start shortly after load (for launcher), but intro click also works
-  T(1200,function(){ if(!running && intro.style.display!=='none') start(); });
+  // AUTO-START immediately, no clicks needed
+  intro.style.display='none';
+  if(document.readyState==='complete'){ start(); }
+  else { window.addEventListener('load',function(){ if(!running) start(); }); }
+  T(500,function(){ if(!running) start(); });
 })();
 </script>
 </body>
