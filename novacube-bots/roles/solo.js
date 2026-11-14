@@ -58,10 +58,13 @@ async function goHome(w) {
 // ------------------------------------------------------------------ the place
 /** Can we dig here? (Spawn regions are usually protected: blocks come back.) */
 async function canDigHere(w, site) {
-  const found = w.find(['grass_block', 'dirt'], 12, 20, (b) => !S.inZone(site, b.position, 1));
+  // a block outside the farms' area (we stand in the middle of it)
+  const found = w.find(['grass_block', 'dirt'], 48, 10, (b) => !S.inZone(site, b.position, 2) &&
+    !!w.bot.blockAt(b.position.offset(0, 1, 0)) && w.bot.blockAt(b.position.offset(0, 1, 0)).boundingBox !== 'block');
+  if (!found.length) return false;
   for (const p of found.slice(0, 3)) {
     const before = w.count('dirt');
-    if (p.distanceTo(w.bot.entity.position) > 4.3) await w.goto(p, 3, 15000);
+    if (p.distanceTo(w.bot.entity.position) > 4.3) await w.goto(p, 3, 30000);
     await w.dig(p);
     await w.collectDrops(3, 3);
     if (w.count('dirt') > before) return true;
