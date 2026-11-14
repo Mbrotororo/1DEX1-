@@ -1231,4 +1231,8 @@ Promise.all([import('./hero.js'), fontReady()])
 		// адрес с ?debug открывает доступ к сцене из консоли — нужно только для проверки
 		if (new URLSearchParams(location.search).has('debug')) window.__hero = ok;
 	})
-	.catch(() => document.documentElement.classList.add('no-gl'));
+	.catch((err) => {
+		// 3D-сцена не запустилась — показываем запасную надпись, а причину пишем в консоль
+		console.error('1DEX1: 3D-сцена не запустилась', err);
+		document.documentElement.classList.add('no-gl');
+	});

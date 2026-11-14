@@ -3,7 +3,26 @@
 // и разбивается на клетки, каждая закрашенная клетка — блок. Клик ломает сразу кучку блоков,
 // они разлетаются и быстро вырастают снова: сначала по краям, потом в середине.
 
+import {wordPixels} from './pixel.js';
+
 export const VOXEL_FONT = '"Rubik Mono One", "Arial Black", sans-serif';
+
+// Буквы из встроенного пиксельного шрифта (pixel.js, 5×7) — если браузер не даёт читать
+// пиксели холста (Safari с защитой от слежки, Brave, блокировщики), надпись всё равно есть.
+// Каждый пиксель буквы — квадрат k×k блоков.
+const glyphRaster = (lines, rows) => {
+	const k = Math.max(1, Math.round(rows / 7));
+	const gap = Math.round(rows * 0.42);
+	const lineH = 7 * k + gap;
+	const words = lines.map((l) => wordPixels(l));
+	const Wmax = Math.max(...words.map((w) => w.width * k));
+	const raw = [];
+	words.forEach((w, li) => {
+		const off = 2 + Math.round((Wmax - w.width * k) / 2);
+		for (const px of w.pixels) for (let dy = 0; dy < k; dy++) for (let dx = 0; dx < k; dx++) raw.push({gx: off + px.x * k + dx, gy: 2 + li * lineH + (6 - px.y) * k + dy});
+	});
+	return {raw, lineH, rows: 7 * k};
+};
 
 // дождаться шрифта (если не загрузится — буквы будут из запасного шрифта)
 export const fontReady = () => {
@@ -43,6 +62,15 @@ export const rasterize = (lines, rows) => {
 			if (sum / ((S / 2) * (S / 2) * 255) > 0.5) raw.push({gx, gy});
 		}
 	}
+	let lineH2 = lineH;
+	let rows2 = rows;
+	if (!raw.length) {
+		// холст ничего не отдал — собираем буквы из встроенного шрифта
+		const gr = glyphRaster(lines, rows);
+		raw.push(...gr.raw);
+		lineH2 = gr.lineH;
+		rows2 = gr.rows;
+	}
 	if (!raw.length) return {cells: [], width: 1, height: 1};
 	const minX = Math.min(...raw.map((p) => p.gx));
 	const maxX = Math.max(...raw.map((p) => p.gx));
@@ -53,8 +81,8 @@ export const rasterize = (lines, rows) => {
 	let seed = 9;
 	const rand = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
 	const cells = raw.map(({gx, gy}) => {
-		const line = Math.min(lines.length - 1, Math.floor((gy - 2) / lineH));
-		const ty = Math.min(1, Math.max(0, (gy - 2 - line * lineH) / Math.max(1, rows - 1)));
+		const line = Math.min(lines.length - 1, Math.floor((gy - 2) / lineH2));
+		const ty = Math.min(1, Math.max(0, (gy - 2 - line * lineH2) / Math.max(1, rows2 - 1)));
 		return {gx, gy, x: gx - cx, y: cy - gy, ty, line, seed: rand()};
 	});
 	return {cells, width: maxX - minX + 1, height: maxY - minY + 1, cx, cy};

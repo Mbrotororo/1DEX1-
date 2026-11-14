@@ -28,7 +28,8 @@ export const initSnowYard = ({reducedMotion = false, hero = () => null, debug = 
 	cv.className = 'ny-snow';
 	cv.setAttribute('aria-hidden', 'true');
 	document.body.append(cv);
-	const g = cv.getContext('2d');
+	const main = cv.getContext('2d');
+	let g = main; // куда рисуем сейчас: общий холст или холст карточки
 	let W = 0;
 	let H = 0;
 	let dpr = 1;
@@ -118,6 +119,58 @@ export const initSnowYard = ({reducedMotion = false, hero = () => null, debug = 
 			next.push({el, key: keyOf(el), d, r});
 		}
 		surfaces = next;
+		// карточку убрали со страницы — убираем и её холст
+		for (const [el, pad] of pads) {
+			if (surfaces.some((x) => x.el === el)) continue;
+			pad.cv.remove();
+			pads.delete(el);
+		}
+	};
+	// Сугроб и снеговики каждой карточки — на своём холсте, прикреплённом к странице прямо над
+	// карточкой: при прокрутке он едет вместе с ней, без отставания. По бокам — поля для рук и
+	// метлы, сверху — место для снеговика в шапке, снизу — для сосулек. Не шире экрана.
+	const PAD = 56;
+	const ZONE = 150;
+	const LIP = 14;
+	const layer = document.createElement('div');
+	layer.className = 'ny-drifts';
+	layer.setAttribute('aria-hidden', 'true');
+	document.body.append(layer);
+	const pads = new Map(); // карточка -> {cv, ctx, x, y, w, k, on, ox, oy}
+	const placePad = (s) => {
+		let pad = pads.get(s.el);
+		if (!pad) {
+			const c = document.createElement('canvas');
+			layer.append(c);
+			pad = {cv: c, ctx: c.getContext('2d'), x: null, y: null, w: 0, k: 0, on: true};
+			pads.set(s.el, pad);
+		}
+		const x0 = Math.max(0, Math.floor(s.r.left - PAD));
+		const w = Math.max(1, Math.min(W, Math.ceil(s.r.right + PAD)) - x0);
+		const h = ZONE + LIP;
+		const k = Math.min(2, devicePixelRatio || 1);
+		if (pad.w !== w || pad.k !== k) {
+			Object.assign(pad, {w, k});
+			pad.cv.width = Math.round(w * k);
+			pad.cv.height = Math.round(h * k);
+			pad.cv.style.width = `${w}px`;
+			pad.cv.style.height = `${h}px`;
+		}
+		// место на странице: меняется, только когда карточка сдвинулась (прокрутка его не трогает)
+		const x = Math.round(x0 + scrollX);
+		const y = Math.round(s.r.top + scrollY - ZONE);
+		if (pad.x !== x || pad.y !== y) {
+			pad.x = x;
+			pad.y = y;
+			pad.cv.style.transform = `translate(${x}px,${y}px)`;
+		}
+		if (!pad.on) {
+			pad.cv.style.display = '';
+			pad.on = true;
+		}
+		pad.ox = x - scrollX; // левый верхний угол холста на экране
+		pad.oy = y - scrollY;
+		return pad;
 	};
 	const add = (d, i, a) => {
 		for (const [k, part] of [[i, 0.6], [i - 1, 0.2], [i + 1, 0.2]]) if (k >= 0 && k < d.cols) d.h[k] = Math.min(limit(d, k), d.h[k] + a * part);
@@ -569,7 +622,6 @@ export const initSnowYard = ({reducedMotion = false, hero = () => null, debug = 
 
 	// ---------- кадр ----------
 	let last = performance.now();
-	let lastScroll = scrollY;
 	let refreshAt = 0;
 	let growAt = 0;
 	const frame = (ms) => {
@@ -581,8 +633,6 @@ export const initSnowYard = ({reducedMotion = false, hero = () => null, debug = 
 			refreshAt = ms + 700;
 			refresh();
 		} else for (const s of surfaces) s.r = s.el.getBoundingClientRect();
-		const ds = scrollY - lastScroll;
-		lastScroll = scrollY;
 		// сугробы понемногу растут сами и осыпаются
 		if (ms > growAt) {
 			growAt = ms + 250;
@@ -591,10 +641,10 @@ export const initSnowYard = ({reducedMotion = false, hero = () => null, debug = 
 				relax(s.d);
 			}
 		}
+		g = main;
 		g.setTransform(dpr, 0, 0, dpr, 0, 0);
 		g.clearRect(0, 0, W, H);
 		const seen = surfaces.filter((s) => s.r.bottom > -40 && s.r.top - 40 < H);
-		for (const s of seen) drawDrift(s);
 		// снеговики: ходят по своей карточке, через 30 секунд тают
 		if (!toys()) stacks = [];
 		for (const st of [...stacks]) {
@@ -641,8 +691,26 @@ export const initSnowYard = ({reducedMotion = false, hero = () => null, debug = 
 					}
 				}
 			}
-			if (s.r.bottom > -60 && s.r.top - 140 < H) drawStack(st, s, t);
 		}
+		// карточки у экрана: сугроб и снеговики рисуем на холсте самой карточки
+		for (const s of surfaces) {
+			if (s.r.bottom < -ZONE || s.r.top - ZONE > H + 120) {
+				const pad = pads.get(s.el);
+				if (pad?.on) {
+					pad.cv.style.display = 'none';
+					pad.on = false;
+				}
+				continue;
+			}
+			const pad = placePad(s);
+			g = pad.ctx;
+			g.setTransform(1, 0, 0, 1, 0, 0);
+			g.clearRect(0, 0, pad.cv.width, pad.cv.height);
+			g.setTransform(pad.k, 0, 0, pad.k, -pad.ox * pad.k, -pad.oy * pad.k);
+			drawDrift(s);
+			for (const st of stacks) if (st.el === s.el && !st.lost) drawStack(st, s, t);
+		}
+		g = main;
 		// в руке
 		if (held?.man) {
 			// снеговика несут: болтается за руку
@@ -765,7 +833,7 @@ export const initSnowYard = ({reducedMotion = false, hero = () => null, debug = 
 		// снежинки: падают, а коснувшись сугроба — остаются в нём
 		for (let i = 0; i < flakes.length; i++) {
 			const f = flakes[i];
-			f.y += f.vy * dt - ds * (0.12 + f.s * 0.08);
+			f.y += f.vy * dt;
 			f.ph += f.sw * dt;
 			const x = f.x + Math.sin(f.ph) * f.amp;
 			if (f.y > H + 12 || f.y < -40) {

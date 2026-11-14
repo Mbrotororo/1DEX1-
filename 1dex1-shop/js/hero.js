@@ -529,6 +529,18 @@ const saveProgress = (p) => {
 //  'free' — стена сломана, 'tickle' — пять кликов по скину
 export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = null, sky = null, season = ''} = {}) => {
 	const NY = season === 'newyear'; // новогодний стиль: снег, ёлка, снеговик, Санта, шапка с шарфом
+	// Новогоднее — украшение: если в нём что-то сломается, остров, миры и персонаж всё равно работают.
+	// Ошибку пишем в консоль один раз, сломавшуюся часть больше не трогаем.
+	const nyBroken = new Set();
+	const nySafe = (what, fn) => {
+		if (nyBroken.has(what)) return;
+		try {
+			fn();
+		} catch (err) {
+			nyBroken.add(what);
+			console.error(`1DEX1: новогоднее «${what}» отключено`, err);
+		}
+	};
 	let renderer;
 	try {
 		renderer = new THREE.WebGLRenderer({canvas, antialias: true, alpha: true, powerPreference: 'high-performance'});
@@ -844,118 +856,122 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	let nyStar = null;
 	let nyLightMesh = null;
 	if (NY) {
-		const flat = (color) => new THREE.MeshLambertMaterial({color});
-		// подарок: коробка с лентой крест-накрест и бант сверху
-		const giftTex = (body, ribbon) =>
-			pixelTexture((x, y) => {
-				const onRibbon = x === 7 || x === 8 || y === 7 || y === 8;
-				const v = (x * 7 + y * 13) % 9 === 0 ? 0.9 : 1;
-				return shade(onRibbon ? ribbon : body, onRibbon ? (x === 8 || y === 8 ? 0.85 : 1) : v);
-			});
-		const GIFTS = [
-			{x: -1.85, z: -1.15, s: 0.55, body: [214, 40, 58], ribbon: [255, 200, 61]},
-			{x: -0.85, z: -0.9, s: 0.42, body: [92, 180, 255], ribbon: [245, 250, 255]},
-			{x: -2.05, z: -2.15, s: 0.48, body: [52, 150, 74], ribbon: [230, 40, 60]},
-			{x: -1.35, z: -0.72, s: 0.3, body: [154, 107, 255], ribbon: [184, 255, 61]},
-		];
-		for (const gft of GIFTS) {
-			const mat = lambert(giftTex(gft.body, gft.ribbon));
-			const g = new THREE.Group();
-			g.position.set(gft.x, 0, gft.z);
-			g.rotation.y = rand() * 1.2 - 0.6;
-			const boxM = new THREE.Mesh(new THREE.BoxGeometry(gft.s, gft.s * 0.86, gft.s), mat);
-			boxM.position.y = gft.s * 0.43;
-			const bowMat = flat(`rgb(${gft.ribbon.join(',')})`);
-			const bowL = new THREE.Mesh(new THREE.BoxGeometry(gft.s * 0.26, gft.s * 0.2, gft.s * 0.12), bowMat);
-			bowL.position.set(-gft.s * 0.14, gft.s * 0.95, 0);
-			bowL.rotation.z = 0.5;
-			const bowR = bowL.clone();
-			bowR.position.x = gft.s * 0.14;
-			bowR.rotation.z = -0.5;
-			g.add(boxM, bowL, bowR);
-			island.add(g);
-			const under = blockAt.get(`${Math.round(gft.x)},-0.5,${Math.round(gft.z)}`);
-			if (under) plants.push({mesh: g, block: under});
-		}
-		// снеговик на месте куста: три снежных блока, глаза-угольки, морковка, руки-ветки, цилиндр и шарф
-		if (SNOWMAN) {
-			const snowMat = lambert(tex.snow);
-			const coal = flat('#1b1720');
-			const sm = new THREE.Group();
-			sm.position.set(SNOWMAN.x, 0, SNOWMAN.z);
-			sm.rotation.y = -0.35;
-			const part = (geo, mat, x, y, z, rz = 0) => {
-				const m = new THREE.Mesh(geo, mat);
-				m.position.set(x, y, z);
-				m.rotation.z = rz;
-				sm.add(m);
-				return m;
-			};
-			part(new THREE.BoxGeometry(0.82, 0.78, 0.82), snowMat, 0, 0.39, 0);
-			part(new THREE.BoxGeometry(0.64, 0.6, 0.64), snowMat, 0, 1.06, 0);
-			part(new THREE.BoxGeometry(0.5, 0.48, 0.5), snowMat, 0, 1.58, 0);
-			for (const x of [-0.11, 0.11]) part(new THREE.BoxGeometry(0.07, 0.07, 0.04), coal, x, 1.64, 0.262);
-			for (const x of [-0.12, -0.04, 0.04, 0.12]) part(new THREE.BoxGeometry(0.05, 0.05, 0.04), coal, x, x === -0.12 || x === 0.12 ? 1.48 : 1.45, 0.262);
-			part(new THREE.BoxGeometry(0.07, 0.07, 0.22), flat('#ff8a2e'), 0, 1.56, 0.33);
-			for (const y of [0.96, 1.16]) part(new THREE.BoxGeometry(0.07, 0.07, 0.04), coal, 0, y, 0.325);
-			const stick = flat('#6e4b26');
-			part(new THREE.BoxGeometry(0.5, 0.05, 0.05), stick, -0.52, 1.2, 0, -0.55);
-			part(new THREE.BoxGeometry(0.5, 0.05, 0.05), stick, 0.52, 1.2, 0, 0.55);
-			const red = flat('#d42a3a');
-			part(new THREE.BoxGeometry(0.68, 0.12, 0.68), red, 0, 1.36, 0);
-			part(new THREE.BoxGeometry(0.14, 0.32, 0.06), red, 0.18, 1.2, 0.36);
-			part(new THREE.BoxGeometry(0.62, 0.05, 0.62), coal, 0, 1.85, 0);
-			part(new THREE.BoxGeometry(0.38, 0.32, 0.38), coal, 0, 2.02, 0);
-			part(new THREE.BoxGeometry(0.4, 0.06, 0.4), red, 0, 1.92, 0);
-			island.add(sm);
-			const under = blockAt.get(`${SNOWMAN.x},-0.5,${SNOWMAN.z}`);
-			if (under) plants.push({mesh: sm, block: under});
-		}
-		// гирлянда на ёлке: огоньки на боковых гранях лап
-		const leafBlocks = blocks.filter((b) => b.type === 'leaves' && Math.hypot(b.pos.x - TREE.x, b.pos.z - TREE.z) < 3);
-		for (const b of leafBlocks) {
-			for (const [nx, nz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-				if (blockAt.has(`${b.pos.x + nx},${b.pos.y},${b.pos.z + nz}`) || rand() > 0.42 || nyLights.length >= 30) continue;
-				const side = (rand() - 0.5) * 0.6;
-				nyLights.push({
-					block: b,
-					pos: new THREE.Vector3(b.pos.x + nx * 0.54 + (nz ? side : 0), b.pos.y + (rand() - 0.5) * 0.5, b.pos.z + nz * 0.54 + (nx ? side : 0)),
-					c: Math.floor(rand() * 5),
-					on: true,
+		try {
+			const flat = (color) => new THREE.MeshLambertMaterial({color});
+			// подарок: коробка с лентой крест-накрест и бант сверху
+			const giftTex = (body, ribbon) =>
+				pixelTexture((x, y) => {
+					const onRibbon = x === 7 || x === 8 || y === 7 || y === 8;
+					const v = (x * 7 + y * 13) % 9 === 0 ? 0.9 : 1;
+					return shade(onRibbon ? ribbon : body, onRibbon ? (x === 8 || y === 8 ? 0.85 : 1) : v);
 				});
+			const GIFTS = [
+				{x: -1.85, z: -1.15, s: 0.55, body: [214, 40, 58], ribbon: [255, 200, 61]},
+				{x: -0.85, z: -0.9, s: 0.42, body: [92, 180, 255], ribbon: [245, 250, 255]},
+				{x: -2.05, z: -2.15, s: 0.48, body: [52, 150, 74], ribbon: [230, 40, 60]},
+				{x: -1.35, z: -0.72, s: 0.3, body: [154, 107, 255], ribbon: [184, 255, 61]},
+			];
+			for (const gft of GIFTS) {
+				const mat = lambert(giftTex(gft.body, gft.ribbon));
+				const g = new THREE.Group();
+				g.position.set(gft.x, 0, gft.z);
+				g.rotation.y = rand() * 1.2 - 0.6;
+				const boxM = new THREE.Mesh(new THREE.BoxGeometry(gft.s, gft.s * 0.86, gft.s), mat);
+				boxM.position.y = gft.s * 0.43;
+				const bowMat = flat(`rgb(${gft.ribbon.join(',')})`);
+				const bowL = new THREE.Mesh(new THREE.BoxGeometry(gft.s * 0.26, gft.s * 0.2, gft.s * 0.12), bowMat);
+				bowL.position.set(-gft.s * 0.14, gft.s * 0.95, 0);
+				bowL.rotation.z = 0.5;
+				const bowR = bowL.clone();
+				bowR.position.x = gft.s * 0.14;
+				bowR.rotation.z = -0.5;
+				g.add(boxM, bowL, bowR);
+				island.add(g);
+				const under = blockAt.get(`${Math.round(gft.x)},-0.5,${Math.round(gft.z)}`);
+				if (under) plants.push({mesh: g, block: under});
 			}
-		}
-		nyLightMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.17, 0.17, 0.17), new THREE.MeshBasicMaterial(), Math.max(1, nyLights.length));
-		nyLightMesh.count = nyLights.length;
-		nyLights.forEach((l, i) => {
-			dummy.position.copy(l.pos);
-			dummy.rotation.set(0, 0, 0);
-			dummy.scale.setScalar(1);
-			dummy.updateMatrix();
-			nyLightMesh.setMatrixAt(i, dummy.matrix);
-			nyLightMesh.setColorAt(i, new THREE.Color('#ffffff'));
-		});
-		island.add(nyLightMesh);
-		// звезда на макушке: пиксельная, медленно вращается и светится
-		const top = blockAt.get(`${TREE.x},7.5,${TREE.z}`);
-		if (top) {
-			nyStar = new THREE.Group();
-			nyStar.position.set(TREE.x, 8.3, TREE.z);
-			const starMat = new THREE.MeshBasicMaterial({color: '#ffd23f'});
-			const cell = new THREE.BoxGeometry(0.17, 0.17, 0.12);
-			['..#..', '.###.', '#####', '.###.', '.#.#.'].forEach((row, r) =>
-				[...row].forEach((ch, c) => {
-					if (ch !== '#') return;
-					const m = new THREE.Mesh(cell, starMat);
-					m.position.set((c - 2) * 0.17, (2 - r) * 0.17, 0);
-					nyStar.add(m);
-				}),
-			);
-			const halo = new THREE.Sprite(new THREE.SpriteMaterial({map: glow, color: '#ffcf4a', transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending}));
-			halo.scale.setScalar(2.2);
-			nyStar.add(halo);
-			nyStar.userData.block = top;
-			island.add(nyStar);
+			// снеговик на месте куста: три снежных блока, глаза-угольки, морковка, руки-ветки, цилиндр и шарф
+			if (SNOWMAN) {
+				const snowMat = lambert(tex.snow);
+				const coal = flat('#1b1720');
+				const sm = new THREE.Group();
+				sm.position.set(SNOWMAN.x, 0, SNOWMAN.z);
+				sm.rotation.y = -0.35;
+				const part = (geo, mat, x, y, z, rz = 0) => {
+					const m = new THREE.Mesh(geo, mat);
+					m.position.set(x, y, z);
+					m.rotation.z = rz;
+					sm.add(m);
+					return m;
+				};
+				part(new THREE.BoxGeometry(0.82, 0.78, 0.82), snowMat, 0, 0.39, 0);
+				part(new THREE.BoxGeometry(0.64, 0.6, 0.64), snowMat, 0, 1.06, 0);
+				part(new THREE.BoxGeometry(0.5, 0.48, 0.5), snowMat, 0, 1.58, 0);
+				for (const x of [-0.11, 0.11]) part(new THREE.BoxGeometry(0.07, 0.07, 0.04), coal, x, 1.64, 0.262);
+				for (const x of [-0.12, -0.04, 0.04, 0.12]) part(new THREE.BoxGeometry(0.05, 0.05, 0.04), coal, x, x === -0.12 || x === 0.12 ? 1.48 : 1.45, 0.262);
+				part(new THREE.BoxGeometry(0.07, 0.07, 0.22), flat('#ff8a2e'), 0, 1.56, 0.33);
+				for (const y of [0.96, 1.16]) part(new THREE.BoxGeometry(0.07, 0.07, 0.04), coal, 0, y, 0.325);
+				const stick = flat('#6e4b26');
+				part(new THREE.BoxGeometry(0.5, 0.05, 0.05), stick, -0.52, 1.2, 0, -0.55);
+				part(new THREE.BoxGeometry(0.5, 0.05, 0.05), stick, 0.52, 1.2, 0, 0.55);
+				const red = flat('#d42a3a');
+				part(new THREE.BoxGeometry(0.68, 0.12, 0.68), red, 0, 1.36, 0);
+				part(new THREE.BoxGeometry(0.14, 0.32, 0.06), red, 0.18, 1.2, 0.36);
+				part(new THREE.BoxGeometry(0.62, 0.05, 0.62), coal, 0, 1.85, 0);
+				part(new THREE.BoxGeometry(0.38, 0.32, 0.38), coal, 0, 2.02, 0);
+				part(new THREE.BoxGeometry(0.4, 0.06, 0.4), red, 0, 1.92, 0);
+				island.add(sm);
+				const under = blockAt.get(`${SNOWMAN.x},-0.5,${SNOWMAN.z}`);
+				if (under) plants.push({mesh: sm, block: under});
+			}
+			// гирлянда на ёлке: огоньки на боковых гранях лап
+			const leafBlocks = blocks.filter((b) => b.type === 'leaves' && Math.hypot(b.pos.x - TREE.x, b.pos.z - TREE.z) < 3);
+			for (const b of leafBlocks) {
+				for (const [nx, nz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+					if (blockAt.has(`${b.pos.x + nx},${b.pos.y},${b.pos.z + nz}`) || rand() > 0.42 || nyLights.length >= 30) continue;
+					const side = (rand() - 0.5) * 0.6;
+					nyLights.push({
+						block: b,
+						pos: new THREE.Vector3(b.pos.x + nx * 0.54 + (nz ? side : 0), b.pos.y + (rand() - 0.5) * 0.5, b.pos.z + nz * 0.54 + (nx ? side : 0)),
+						c: Math.floor(rand() * 5),
+						on: true,
+					});
+				}
+			}
+			nyLightMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.17, 0.17, 0.17), new THREE.MeshBasicMaterial(), Math.max(1, nyLights.length));
+			nyLightMesh.count = nyLights.length;
+			nyLights.forEach((l, i) => {
+				dummy.position.copy(l.pos);
+				dummy.rotation.set(0, 0, 0);
+				dummy.scale.setScalar(1);
+				dummy.updateMatrix();
+				nyLightMesh.setMatrixAt(i, dummy.matrix);
+				nyLightMesh.setColorAt(i, new THREE.Color('#ffffff'));
+			});
+			island.add(nyLightMesh);
+			// звезда на макушке: пиксельная, медленно вращается и светится
+			const top = blockAt.get(`${TREE.x},7.5,${TREE.z}`);
+			if (top) {
+				nyStar = new THREE.Group();
+				nyStar.position.set(TREE.x, 8.3, TREE.z);
+				const starMat = new THREE.MeshBasicMaterial({color: '#ffd23f'});
+				const cell = new THREE.BoxGeometry(0.17, 0.17, 0.12);
+				['..#..', '.###.', '#####', '.###.', '.#.#.'].forEach((row, r) =>
+					[...row].forEach((ch, c) => {
+						if (ch !== '#') return;
+						const m = new THREE.Mesh(cell, starMat);
+						m.position.set((c - 2) * 0.17, (2 - r) * 0.17, 0);
+						nyStar.add(m);
+					}),
+				);
+				const halo = new THREE.Sprite(new THREE.SpriteMaterial({map: glow, color: '#ffcf4a', transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending}));
+				halo.scale.setScalar(2.2);
+				nyStar.add(halo);
+				nyStar.userData.block = top;
+				island.add(nyStar);
+			}
+		} catch (err) {
+			console.error('1DEX1: новогодние украшения острова отключены', err);
 		}
 	}
 	const NY_BULB = ['#ff4d5e', '#ffc83d', '#b8ff3d', '#4de1ff', '#c3a6ff'].map((c) => new THREE.Color(c));
@@ -1037,7 +1053,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		pick.position.set(0, -8.6, 0.2).addScaledVector(along, -2 * 0.8);
 		pick.visible = false;
 		rig.parts.armR.add(pick);
-		if (NY) dressNY(rig.parts);
+		if (NY) nySafe('шапка и шарф', () => dressNY(rig.parts));
 		return {...rig, pivot, pick};
 	};
 	const rig = makeRig();
@@ -1937,7 +1953,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		bigMesh.instanceColor.needsUpdate = true;
 		SETS[0].list = bigVoxels;
 		SETS[0].bounded = false;
-		if (NY) placeWordHat();
+		if (NY) nySafe('шапка на надписи', placeWordHat);
 	};
 	// снег на надписи: в Незере тёплый свет — подкрашиваем в голубой, чтобы оставался белым
 	const SNOW_TINT = {nether: new THREE.Color(0.95, 1.3, 1.6)};
@@ -1969,6 +1985,11 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		// первая буква: столбцы до первого пустого; шапка — над её верхним блоком
 		// (только первая строка: на телефоне надпись в две строки, и вторая заполняет промежутки)
 		const line0 = bigVoxels.filter((v) => v.line === 0);
+		if (!line0.length) {
+			wordHat.visible = false;
+			wordHatCell = null;
+			return;
+		}
 		const minX = Math.min(...line0.map((v) => v.gx));
 		const cols = new Set(line0.map((v) => v.gx));
 		let end = minX;
@@ -2190,200 +2211,205 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	// поэтому совпадающих граней (и мерцания) нет.
 	let stepWorldNY = () => {};
 	if (NY) {
-		const snowPts = [];
-		const makeSnow = (count, size) => {
-			const pos = new Float32Array(count * 3);
-			for (let i = 0; i < count; i++) {
-				pos[i * 3] = (Math.random() - 0.5) * 24;
-				pos[i * 3 + 1] = Math.random() * 21 - 9;
-				pos[i * 3 + 2] = Math.random() * 14 - 8;
-			}
-			const geo = new THREE.BufferGeometry();
-			geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-			const pts = new THREE.Points(geo, new THREE.PointsMaterial({color: '#f2f8ff', size, sizeAttenuation: false, transparent: true, opacity: 0.9, depthWrite: false}));
-			pts.frustumCulled = false;
-			world.add(pts);
-			snowPts.push({pos, geo, count, speed: size > 3 ? 1.3 : 0.9});
-		};
-		const phone = innerWidth < 900;
-		makeSnow(phone ? 90 : 160, 2);
-		makeSnow(phone ? 30 : 60, 4);
-
-		// --- Санта на санях ---
-		const flat = (color) => new THREE.MeshLambertMaterial({color});
-		const M = {red: flat('#d42232'), dark: flat('#8a1d28'), gold: flat('#ffc83d'), white: flat('#f4f8ff'), skin: flat('#f2c29b'), black: flat('#1b1720'), brown: flat('#8a5a34'), horn: flat('#d9c29a'), pink: flat('#ff9aa8')};
-		const santa = new THREE.Group();
-		const add = (parent, w, h, d, mat, x, y, z) => {
-			const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-			m.position.set(x, y, z);
-			parent.add(m);
-			return m;
-		};
-		// тонкая палочка (вожжи, сцепка) от точки a до точки b
-		const rod = (parent, a, b, mat) => {
-			const d = new THREE.Vector3().subVectors(b, a);
-			const m = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, d.length()), mat);
-			m.position.copy(a).addScaledVector(d, 0.5);
-			m.lookAt(parent.localToWorld(b.clone()));
-			parent.add(m);
-		};
-		// сани
-		for (const x of [-0.3, 0.3]) {
-			add(santa, 0.06, 0.06, 1.3, M.gold, x, 0.03, 0);
-			add(santa, 0.06, 0.22, 0.06, M.gold, x, 0.14, 0.66);
-			add(santa, 0.06, 0.06, 0.14, M.gold, x, 0.25, 0.6);
-			for (const z of [-0.35, 0.35]) add(santa, 0.05, 0.16, 0.05, M.gold, x, 0.13, z);
-		}
-		add(santa, 0.72, 0.36, 1.0, M.red, 0, 0.39, -0.05);
-		add(santa, 0.74, 0.06, 1.02, M.gold, 0, 0.58, -0.05);
-		add(santa, 0.72, 0.42, 0.14, M.red, 0, 0.78, -0.47);
-		add(santa, 0.72, 0.24, 0.12, M.red, 0, 0.66, 0.44);
-		// мешок с подарками
-		add(santa, 0.36, 0.4, 0.32, M.dark, 0.14, 0.8, -0.25);
-		add(santa, 0.12, 0.06, 0.12, M.gold, 0.14, 1.02, -0.25);
-		// сам Санта
-		add(santa, 0.4, 0.42, 0.32, M.red, -0.1, 0.8, 0.05);
-		add(santa, 0.42, 0.07, 0.34, M.black, -0.1, 0.74, 0.05);
-		add(santa, 0.08, 0.06, 0.02, M.gold, -0.1, 0.74, 0.225);
-		add(santa, 0.28, 0.28, 0.28, M.skin, -0.1, 1.14, 0.05);
-		add(santa, 0.3, 0.2, 0.08, M.white, -0.1, 1.06, 0.21);
-		for (const x of [-0.16, -0.04]) add(santa, 0.04, 0.04, 0.02, M.black, x, 1.2, 0.197);
-		add(santa, 0.05, 0.05, 0.04, M.pink, -0.1, 1.14, 0.205);
-		add(santa, 0.32, 0.06, 0.32, M.white, -0.1, 1.29, 0.05);
-		add(santa, 0.3, 0.12, 0.3, M.red, -0.1, 1.335, 0.05);
-		add(santa, 0.16, 0.14, 0.16, M.red, -0.06, 1.44, -0.01);
-		add(santa, 0.09, 0.09, 0.09, M.white, 0.0, 1.52, -0.1);
-		for (const x of [-0.34, 0.14]) {
-			add(santa, 0.1, 0.1, 0.3, M.red, x, 0.88, 0.22);
-			add(santa, 0.11, 0.11, 0.08, M.white, x, 0.88, 0.39);
-		}
-		// олени
-		const deer = [];
-		const reindeer = (z, lead) => {
-			const g = new THREE.Group();
-			g.position.set(0, 0, z);
-			add(g, 0.26, 0.26, 0.56, M.brown, 0, 0.62, 0);
-			add(g, 0.28, 0.08, 0.06, M.red, 0, 0.62, 0.05);
-			add(g, 0.14, 0.22, 0.14, M.brown, 0, 0.8, 0.24);
-			add(g, 0.18, 0.18, 0.26, M.brown, 0, 0.95, 0.36);
-			add(g, 0.06, 0.06, 0.04, M.white, 0, 0.66, -0.29);
-			for (const x of [-0.07, 0.07]) {
-				add(g, 0.04, 0.2, 0.04, M.horn, x, 1.13, 0.3);
-				add(g, 0.12, 0.04, 0.04, M.horn, x * 2.2, 1.2, 0.3);
-				add(g, 0.04, 0.04, 0.03, M.black, x * 0.85, 0.99, 0.495);
-			}
-			const nose = add(g, 0.07, 0.07, 0.05, lead ? new THREE.MeshBasicMaterial({color: '#ff3040'}) : M.black, 0, 0.92, 0.515);
-			if (lead) {
-				const halo = new THREE.Sprite(new THREE.SpriteMaterial({map: glow, color: '#ff3040', transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending}));
-				halo.position.copy(nose.position);
-				halo.scale.setScalar(0.6);
-				g.add(halo);
-			}
-			const legs = [];
-			for (const x of [-0.08, 0.08]) {
-				for (const lz of [-0.2, 0.2]) {
-					const leg = new THREE.Group();
-					leg.position.set(x, 0.5, lz);
-					add(leg, 0.07, 0.34, 0.07, M.brown, 0, -0.17, 0);
-					g.add(leg);
-					legs.push(leg);
+		try {
+			const snowPts = [];
+			const makeSnow = (count, size) => {
+				const pos = new Float32Array(count * 3);
+				for (let i = 0; i < count; i++) {
+					pos[i * 3] = (Math.random() - 0.5) * 24;
+					pos[i * 3 + 1] = Math.random() * 21 - 9;
+					pos[i * 3 + 2] = Math.random() * 14 - 8;
 				}
+				const geo = new THREE.BufferGeometry();
+				geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+				const pts = new THREE.Points(geo, new THREE.PointsMaterial({color: '#f2f8ff', size, sizeAttenuation: false, transparent: true, opacity: 0.9, depthWrite: false}));
+				pts.frustumCulled = false;
+				world.add(pts);
+				snowPts.push({pos, geo, count, speed: size > 3 ? 1.3 : 0.9});
+			};
+			const phone = innerWidth < 900;
+			makeSnow(phone ? 90 : 160, 2);
+			makeSnow(phone ? 30 : 60, 4);
+
+			// --- Санта на санях ---
+			const flat = (color) => new THREE.MeshLambertMaterial({color});
+			const M = {red: flat('#d42232'), dark: flat('#8a1d28'), gold: flat('#ffc83d'), white: flat('#f4f8ff'), skin: flat('#f2c29b'), black: flat('#1b1720'), brown: flat('#8a5a34'), horn: flat('#d9c29a'), pink: flat('#ff9aa8')};
+			const santa = new THREE.Group();
+			const add = (parent, w, h, d, mat, x, y, z) => {
+				const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+				m.position.set(x, y, z);
+				parent.add(m);
+				return m;
+			};
+			// тонкая палочка (вожжи, сцепка) от точки a до точки b
+			const rod = (parent, a, b, mat) => {
+				const d = new THREE.Vector3().subVectors(b, a);
+				const m = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, d.length()), mat);
+				m.position.copy(a).addScaledVector(d, 0.5);
+				m.lookAt(parent.localToWorld(b.clone()));
+				parent.add(m);
+			};
+			// сани
+			for (const x of [-0.3, 0.3]) {
+				add(santa, 0.06, 0.06, 1.3, M.gold, x, 0.03, 0);
+				add(santa, 0.06, 0.22, 0.06, M.gold, x, 0.14, 0.66);
+				add(santa, 0.06, 0.06, 0.14, M.gold, x, 0.25, 0.6);
+				for (const z of [-0.35, 0.35]) add(santa, 0.05, 0.16, 0.05, M.gold, x, 0.13, z);
 			}
-			santa.add(g);
-			deer.push({g, legs});
-			return g;
-		};
-		reindeer(1.05, false);
-		reindeer(1.78, true);
-		santa.updateMatrixWorld(true);
-		// вожжи от рук Санты ко второму оленю и сцепка между оленями
-		for (const x of [-0.34, 0.14]) rod(santa, new THREE.Vector3(x, 0.88, 0.43), new THREE.Vector3(x * 0.3, 0.64, 0.78), M.gold);
-		rod(santa, new THREE.Vector3(0, 0.62, 1.33), new THREE.Vector3(0, 0.62, 1.5), M.gold);
-		santa.scale.setScalar(1.25); // далеко на заднем плане — чуть крупнее, чтобы было видно
-		world.add(santa);
-		// искры за санями: золотые и белые, гаснут
-		const SPARK = 70;
-		const sPos = new Float32Array(SPARK * 3);
-		const sCol = new Float32Array(SPARK * 3);
-		const sLife = new Float32Array(SPARK);
-		const sBase = [];
-		const sGeo = new THREE.BufferGeometry();
-		sGeo.setAttribute('position', new THREE.BufferAttribute(sPos, 3));
-		sGeo.setAttribute('color', new THREE.BufferAttribute(sCol, 3));
-		const sparks = new THREE.Points(sGeo, new THREE.PointsMaterial({size: 3, sizeAttenuation: false, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending}));
-		sparks.frustumCulled = false;
-		world.add(sparks);
-		const SPARK_C = [new THREE.Color('#ffd86b'), new THREE.Color('#ffffff'), new THREE.Color('#ffb03a')];
-		let sNext = 0;
-		let sAt = 0;
-		let ang = Math.random() * Math.PI * 2;
-		const back = new THREE.Vector3();
-		const ahead = new THREE.Vector3();
-		const camFwd = new THREE.Vector3();
-		const camRight = new THREE.Vector3();
-		const camUp = new THREE.Vector3();
-		const worldPos = new THREE.Vector3();
-		// где Санта на дорожке: p — фаза. По экрану — слева направо и обратно (полоса неба за
-		// островом), в глубину — на 9–13 блоков дальше острова, так что он всегда за ним
-		const santaPath = (p, out, idle) => {
-			camera.getWorldDirection(camFwd);
-			camRight.setFromMatrixColumn(camera.matrixWorld, 0);
-			camUp.setFromMatrixColumn(camera.matrixWorld, 1);
-			const lane = width >= 900 ? {x0: 0.52, x1: 0.97, y: 0.2} : {x0: 0.08, x1: 0.92, y: 0.42};
-			const D = camera.position.distanceTo(world.getWorldPosition(worldPos)) + 11 + Math.cos(p) * 2;
-			const visH = 2 * D * Math.tan((camera.fov * Math.PI) / 360);
-			const sx = (lane.x0 + lane.x1) / 2 + (Math.sin(p) * (lane.x1 - lane.x0)) / 2;
-			out.copy(camera.position)
-				.addScaledVector(camFwd, D)
-				.addScaledVector(camRight, (sx - 0.5) * visH * camera.aspect)
-				.addScaledVector(camUp, (0.5 - lane.y) * visH + Math.sin(p * 2) * 0.5 + Math.sin(idle * 2.2) * 0.08);
-			return world.worldToLocal(out);
-		};
-		stepWorldNY = (dt, idle) => {
-			for (const sp of snowPts) {
-				const {pos, count, speed} = sp;
-				if (!reducedMotion) {
-					for (let i = 0; i < count; i++) {
-						pos[i * 3 + 1] -= dt * speed * (0.75 + (i % 5) * 0.12);
-						pos[i * 3] += Math.sin(idle * 0.8 + i) * dt * 0.25;
-						if (pos[i * 3 + 1] < -9) pos[i * 3 + 1] = 12;
+			add(santa, 0.72, 0.36, 1.0, M.red, 0, 0.39, -0.05);
+			add(santa, 0.74, 0.06, 1.02, M.gold, 0, 0.58, -0.05);
+			add(santa, 0.72, 0.42, 0.14, M.red, 0, 0.78, -0.47);
+			add(santa, 0.72, 0.24, 0.12, M.red, 0, 0.66, 0.44);
+			// мешок с подарками
+			add(santa, 0.36, 0.4, 0.32, M.dark, 0.14, 0.8, -0.25);
+			add(santa, 0.12, 0.06, 0.12, M.gold, 0.14, 1.02, -0.25);
+			// сам Санта
+			add(santa, 0.4, 0.42, 0.32, M.red, -0.1, 0.8, 0.05);
+			add(santa, 0.42, 0.07, 0.34, M.black, -0.1, 0.74, 0.05);
+			add(santa, 0.08, 0.06, 0.02, M.gold, -0.1, 0.74, 0.225);
+			add(santa, 0.28, 0.28, 0.28, M.skin, -0.1, 1.14, 0.05);
+			add(santa, 0.3, 0.2, 0.08, M.white, -0.1, 1.06, 0.21);
+			for (const x of [-0.16, -0.04]) add(santa, 0.04, 0.04, 0.02, M.black, x, 1.2, 0.197);
+			add(santa, 0.05, 0.05, 0.04, M.pink, -0.1, 1.14, 0.205);
+			add(santa, 0.32, 0.06, 0.32, M.white, -0.1, 1.29, 0.05);
+			add(santa, 0.3, 0.12, 0.3, M.red, -0.1, 1.335, 0.05);
+			add(santa, 0.16, 0.14, 0.16, M.red, -0.06, 1.44, -0.01);
+			add(santa, 0.09, 0.09, 0.09, M.white, 0.0, 1.52, -0.1);
+			for (const x of [-0.34, 0.14]) {
+				add(santa, 0.1, 0.1, 0.3, M.red, x, 0.88, 0.22);
+				add(santa, 0.11, 0.11, 0.08, M.white, x, 0.88, 0.39);
+			}
+			// олени
+			const deer = [];
+			const reindeer = (z, lead) => {
+				const g = new THREE.Group();
+				g.position.set(0, 0, z);
+				add(g, 0.26, 0.26, 0.56, M.brown, 0, 0.62, 0);
+				add(g, 0.28, 0.08, 0.06, M.red, 0, 0.62, 0.05);
+				add(g, 0.14, 0.22, 0.14, M.brown, 0, 0.8, 0.24);
+				add(g, 0.18, 0.18, 0.26, M.brown, 0, 0.95, 0.36);
+				add(g, 0.06, 0.06, 0.04, M.white, 0, 0.66, -0.29);
+				for (const x of [-0.07, 0.07]) {
+					add(g, 0.04, 0.2, 0.04, M.horn, x, 1.13, 0.3);
+					add(g, 0.12, 0.04, 0.04, M.horn, x * 2.2, 1.2, 0.3);
+					add(g, 0.04, 0.04, 0.03, M.black, x * 0.85, 0.99, 0.495);
+				}
+				const nose = add(g, 0.07, 0.07, 0.05, lead ? new THREE.MeshBasicMaterial({color: '#ff3040'}) : M.black, 0, 0.92, 0.515);
+				if (lead) {
+					const halo = new THREE.Sprite(new THREE.SpriteMaterial({map: glow, color: '#ff3040', transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending}));
+					halo.position.copy(nose.position);
+					halo.scale.setScalar(0.6);
+					g.add(halo);
+				}
+				const legs = [];
+				for (const x of [-0.08, 0.08]) {
+					for (const lz of [-0.2, 0.2]) {
+						const leg = new THREE.Group();
+						leg.position.set(x, 0.5, lz);
+						add(leg, 0.07, 0.34, 0.07, M.brown, 0, -0.17, 0);
+						g.add(leg);
+						legs.push(leg);
 					}
 				}
-				sp.geo.attributes.position.needsUpdate = true;
-			}
-			// полёт на заднем плане, за островом: туда-обратно по небу; на краях разворачивается в глубину
-			if (!reducedMotion) ang += dt * 0.22;
-			santaPath(ang, santa.position, idle);
-			santaPath(ang + 0.02, ahead, idle);
-			santa.lookAt(world.localToWorld(ahead));
-			santa.rotateZ(-0.14 * Math.sign(Math.cos(ang) || 1));
-			for (const d of deer) {
-				d.legs.forEach((leg, i) => (leg.rotation.x = reducedMotion ? 0 : Math.sin(idle * 11 + (i % 2 ? Math.PI : 0) + (i > 1 ? 0.7 : 0)) * 0.55));
-				d.g.position.y = Math.sin(idle * 11) * 0.03;
-			}
-			// искры из-под полозьев
-			sAt += dt;
-			if (sAt > sNext) {
-				sAt = 0;
-				sNext = 0.045;
-				const i = Math.floor(Math.random() * SPARK);
-				santa.localToWorld(back.set((Math.random() - 0.5) * 0.5, 0.05, -0.62));
-				world.worldToLocal(back);
-				sPos.set([back.x, back.y, back.z], i * 3);
-				sLife[i] = 1;
-				sBase[i] = SPARK_C[Math.floor(Math.random() * SPARK_C.length)];
-			}
-			for (let i = 0; i < SPARK; i++) {
-				if (sLife[i] <= 0) continue;
-				sLife[i] = Math.max(0, sLife[i] - dt * 0.9);
-				sPos[i * 3 + 1] -= dt * 0.35;
-				const c = sBase[i];
-				const k = sLife[i] * (0.6 + 0.4 * Math.sin(idle * 20 + i));
-				sCol.set([c.r * k, c.g * k, c.b * k], i * 3);
-			}
-			sGeo.attributes.position.needsUpdate = true;
-			sGeo.attributes.color.needsUpdate = true;
-		};
+				santa.add(g);
+				deer.push({g, legs});
+				return g;
+			};
+			reindeer(1.05, false);
+			reindeer(1.78, true);
+			santa.updateMatrixWorld(true);
+			// вожжи от рук Санты ко второму оленю и сцепка между оленями
+			for (const x of [-0.34, 0.14]) rod(santa, new THREE.Vector3(x, 0.88, 0.43), new THREE.Vector3(x * 0.3, 0.64, 0.78), M.gold);
+			rod(santa, new THREE.Vector3(0, 0.62, 1.33), new THREE.Vector3(0, 0.62, 1.5), M.gold);
+			santa.scale.setScalar(1.25); // далеко на заднем плане — чуть крупнее, чтобы было видно
+			world.add(santa);
+			// искры за санями: золотые и белые, гаснут
+			const SPARK = 70;
+			const sPos = new Float32Array(SPARK * 3);
+			const sCol = new Float32Array(SPARK * 3);
+			const sLife = new Float32Array(SPARK);
+			const sBase = [];
+			const sGeo = new THREE.BufferGeometry();
+			sGeo.setAttribute('position', new THREE.BufferAttribute(sPos, 3));
+			sGeo.setAttribute('color', new THREE.BufferAttribute(sCol, 3));
+			const sparks = new THREE.Points(sGeo, new THREE.PointsMaterial({size: 3, sizeAttenuation: false, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending}));
+			sparks.frustumCulled = false;
+			world.add(sparks);
+			const SPARK_C = [new THREE.Color('#ffd86b'), new THREE.Color('#ffffff'), new THREE.Color('#ffb03a')];
+			let sNext = 0;
+			let sAt = 0;
+			let ang = Math.random() * Math.PI * 2;
+			const back = new THREE.Vector3();
+			const ahead = new THREE.Vector3();
+			const camFwd = new THREE.Vector3();
+			const camRight = new THREE.Vector3();
+			const camUp = new THREE.Vector3();
+			const worldPos = new THREE.Vector3();
+			// где Санта на дорожке: p — фаза. По экрану — слева направо и обратно (полоса неба за
+			// островом), в глубину — на 9–13 блоков дальше острова, так что он всегда за ним
+			const santaPath = (p, out, idle) => {
+				camera.getWorldDirection(camFwd);
+				camRight.setFromMatrixColumn(camera.matrixWorld, 0);
+				camUp.setFromMatrixColumn(camera.matrixWorld, 1);
+				const lane = width >= 900 ? {x0: 0.52, x1: 0.97, y: 0.2} : {x0: 0.08, x1: 0.92, y: 0.42};
+				const D = camera.position.distanceTo(world.getWorldPosition(worldPos)) + 11 + Math.cos(p) * 2;
+				const visH = 2 * D * Math.tan((camera.fov * Math.PI) / 360);
+				const sx = (lane.x0 + lane.x1) / 2 + (Math.sin(p) * (lane.x1 - lane.x0)) / 2;
+				out.copy(camera.position)
+					.addScaledVector(camFwd, D)
+					.addScaledVector(camRight, (sx - 0.5) * visH * camera.aspect)
+					.addScaledVector(camUp, (0.5 - lane.y) * visH + Math.sin(p * 2) * 0.5 + Math.sin(idle * 2.2) * 0.08);
+				return world.worldToLocal(out);
+			};
+			stepWorldNY = (dt, idle) => {
+				for (const sp of snowPts) {
+					const {pos, count, speed} = sp;
+					if (!reducedMotion) {
+						for (let i = 0; i < count; i++) {
+							pos[i * 3 + 1] -= dt * speed * (0.75 + (i % 5) * 0.12);
+							pos[i * 3] += Math.sin(idle * 0.8 + i) * dt * 0.25;
+							if (pos[i * 3 + 1] < -9) pos[i * 3 + 1] = 12;
+						}
+					}
+					sp.geo.attributes.position.needsUpdate = true;
+				}
+				// полёт на заднем плане, за островом: туда-обратно по небу; на краях разворачивается в глубину
+				if (!reducedMotion) ang += dt * 0.22;
+				santaPath(ang, santa.position, idle);
+				santaPath(ang + 0.02, ahead, idle);
+				santa.lookAt(world.localToWorld(ahead));
+				santa.rotateZ(-0.14 * Math.sign(Math.cos(ang) || 1));
+				for (const d of deer) {
+					d.legs.forEach((leg, i) => (leg.rotation.x = reducedMotion ? 0 : Math.sin(idle * 11 + (i % 2 ? Math.PI : 0) + (i > 1 ? 0.7 : 0)) * 0.55));
+					d.g.position.y = Math.sin(idle * 11) * 0.03;
+				}
+				// искры из-под полозьев
+				sAt += dt;
+				if (sAt > sNext) {
+					sAt = 0;
+					sNext = 0.045;
+					const i = Math.floor(Math.random() * SPARK);
+					santa.localToWorld(back.set((Math.random() - 0.5) * 0.5, 0.05, -0.62));
+					world.worldToLocal(back);
+					sPos.set([back.x, back.y, back.z], i * 3);
+					sLife[i] = 1;
+					sBase[i] = SPARK_C[Math.floor(Math.random() * SPARK_C.length)];
+				}
+				for (let i = 0; i < SPARK; i++) {
+					if (sLife[i] <= 0) continue;
+					sLife[i] = Math.max(0, sLife[i] - dt * 0.9);
+					sPos[i * 3 + 1] -= dt * 0.35;
+					const c = sBase[i];
+					const k = sLife[i] * (0.6 + 0.4 * Math.sin(idle * 20 + i));
+					sCol.set([c.r * k, c.g * k, c.b * k], i * 3);
+				}
+				sGeo.attributes.position.needsUpdate = true;
+				sGeo.attributes.color.needsUpdate = true;
+			};
+		} catch (err) {
+			stepWorldNY = () => {};
+			console.error('1DEX1: снег в сцене и Санта отключены', err);
+		}
 	}
 
 	// ================= ПРОСЛОЙКА ПОВЕРХ ВСЕГО САЙТА =================
@@ -5055,7 +5081,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			} else p.animate(t);
 		}
 		worlds[worldId].tick?.(dt, idle);
-		stepWorldNY(dt, idle);
+		if (NY) nySafe('снег и Санта', () => stepWorldNY(dt, idle));
 		// захотел потанцевать: на острове, когда ничем не занят, раз в полминуты-минуту, 6–12 секунд
 		const islandFree = P.mode === 'idle' && !P.queue.length && !P.holding && !warp;
 		stepParty();
@@ -5137,7 +5163,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		}
 		for (const pl of plants) pl.mesh.visible = pl.block.scale > 0.6;
 		for (const tr of torches) tr.halo.material.opacity = 0.6 + Math.sin(now * 13 + tr.group.position.x * 5) * 0.12;
-		if (NY) stepIslandNY(idle);
+		if (NY) nySafe('гирлянда на ёлке', () => stepIslandNY(idle));
 
 		// скелет: на острове — в 3D-сцене, вне острова — на прослойке поверх сайта
 		const islandHidden = islandTpAt > 0 && performance.now() < islandTpAt;
@@ -5234,7 +5260,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const glintAt = sweep <= 1 && !reducedMotion ? sweep * 1.4 - 0.2 : null;
 
 		// блоки надписей: своя волна, но не вращаются
-		if (NY) stepWordHat(idle);
+		if (NY) nySafe('шапка на надписи', () => stepWordHat(idle));
 		for (const set of SETS) {
 			const {list, mesh, unit, z, amp, lift} = set;
 			if (set.glint) {
