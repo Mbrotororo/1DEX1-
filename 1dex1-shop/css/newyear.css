@@ -7,26 +7,12 @@
 	--ny-ice-hi:#d8f2ff;
 	--ny-red:#ff4d5e;
 	--ny-red-lo:#b8283a;
-	/* пиксельный снег: ровный слой сверху и неровные «сосульки» снизу */
-	--ny-cap:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 6' shape-rendering='crispEdges'%3E%3Cpath fill='%23f4faff' d='M0 0h24v2H0zM0 2h5v1H0zM8 2h7v1H8zM17 2h7v1h-7zM1 3h3v1H1zM9 3h5v1H9zM18 3h5v1h-5zM10 4h4v1h-4zM19 4h3v1h-3z'/%3E%3Cpath fill='%23bcd8f2' d='M5 2h3v1H5zM15 2h2v1h-2zM0 3h1v1H0zM4 3h1v1H4zM8 3h1v1H8zM14 3h1v1h-1zM17 3h1v1h-1zM23 3h1v1h-1zM1 4h3v1H1zM9 4h1v1H9zM18 4h1v1h-1zM22 4h1v1h-1zM10 5h4v1h-4zM19 5h3v1h-3z'/%3E%3C/svg%3E");
 }
 
-/* ---------- снег на карточках, кнопках и подписях ---------- */
-.ny .card::before,.ny .mcard::before,.ny .ny-count::before{
-	content:"";position:absolute;left:-2px;right:-2px;top:-2px;z-index:3;height:12px;pointer-events:none;
-	background:var(--ny-cap) 0 0/48px 12px repeat-x;image-rendering:pixelated;
-}
-.ny .mcard{position:relative}
-.ny .btn::before{
-	content:"";position:absolute;left:3px;right:3px;top:-6px;height:10px;pointer-events:none;
-	background:var(--ny-cap) 7px 0/40px 10px repeat-x;image-rendering:pixelated;
-}
-.ny .btn:disabled::before{opacity:.7}
-.ny .label{position:relative;color:var(--ny-ice-hi);border-color:rgba(159,220,255,.45);background:linear-gradient(90deg,rgba(159,220,255,.18),rgba(159,220,255,.04))}
-.ny .label::after{
-	content:"";position:absolute;left:12px;right:12px;top:-5px;height:8px;pointer-events:none;
-	background:var(--ny-cap) 0 0/32px 8px repeat-x;image-rendering:pixelated;
-}
+/* ---------- снег на карточках, кнопках и подписях: сугробы рисуются на холсте .ny-snow (js/snowyard.js) ---------- */
+.ny .label{color:var(--ny-ice-hi);border-color:rgba(159,220,255,.45);background:linear-gradient(90deg,rgba(159,220,255,.18),rgba(159,220,255,.04))}
+.ny-grab{cursor:grab}
+.ny-grabbing,.ny-grabbing *{cursor:grabbing!important;-webkit-user-select:none;user-select:none}
 
 /* ---------- зимние акценты ---------- */
 .ny .item:hover{border-color:var(--ny-ice);box-shadow:var(--bevel),0 8px 0 #24476a}

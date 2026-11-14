@@ -691,10 +691,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		diamond: lambert(tex.diamondOre),
 		amethystOre: lambert(tex.amethystOre),
 		log: [logSide, logSide, logTop, logTop, logSide, logSide],
-		leaves: NY ? (() => {
-			const side = lambert(tex.spruce);
-			return [side, side, lambert(tex.spruceSnow), side, side, side];
-		})() : lambert(tex.leaves),
+		leaves: NY ? lambert(tex.spruce) : lambert(tex.leaves),
 	};
 	const BLOCK_COLOR = {
 		grass: '#5fae3f', dirt: '#7d5a3e', stone: '#7c7888', coal: '#38363f', iron: '#c9a585', gold: '#ffc83d', diamond: '#3fe6d8', amethystOre: '#9a6bff', log: '#6a4a2a', leaves: '#3e842c',
@@ -2302,7 +2299,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		// вожжи от рук Санты ко второму оленю и сцепка между оленями
 		for (const x of [-0.34, 0.14]) rod(santa, new THREE.Vector3(x, 0.88, 0.43), new THREE.Vector3(x * 0.3, 0.64, 0.78), M.gold);
 		rod(santa, new THREE.Vector3(0, 0.62, 1.33), new THREE.Vector3(0, 0.62, 1.5), M.gold);
-		santa.scale.setScalar(0.9);
+		santa.scale.setScalar(1.25); // далеко на заднем плане — чуть крупнее, чтобы было видно
 		world.add(santa);
 		// искры за санями: золотые и белые, гаснут
 		const SPARK = 70;
@@ -2321,6 +2318,27 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		let sAt = 0;
 		let ang = Math.random() * Math.PI * 2;
 		const back = new THREE.Vector3();
+		const ahead = new THREE.Vector3();
+		const camFwd = new THREE.Vector3();
+		const camRight = new THREE.Vector3();
+		const camUp = new THREE.Vector3();
+		const worldPos = new THREE.Vector3();
+		// где Санта на дорожке: p — фаза. По экрану — слева направо и обратно (полоса неба за
+		// островом), в глубину — на 9–13 блоков дальше острова, так что он всегда за ним
+		const santaPath = (p, out, idle) => {
+			camera.getWorldDirection(camFwd);
+			camRight.setFromMatrixColumn(camera.matrixWorld, 0);
+			camUp.setFromMatrixColumn(camera.matrixWorld, 1);
+			const lane = width >= 900 ? {x0: 0.52, x1: 0.97, y: 0.2} : {x0: 0.08, x1: 0.92, y: 0.42};
+			const D = camera.position.distanceTo(world.getWorldPosition(worldPos)) + 11 + Math.cos(p) * 2;
+			const visH = 2 * D * Math.tan((camera.fov * Math.PI) / 360);
+			const sx = (lane.x0 + lane.x1) / 2 + (Math.sin(p) * (lane.x1 - lane.x0)) / 2;
+			out.copy(camera.position)
+				.addScaledVector(camFwd, D)
+				.addScaledVector(camRight, (sx - 0.5) * visH * camera.aspect)
+				.addScaledVector(camUp, (0.5 - lane.y) * visH + Math.sin(p * 2) * 0.5 + Math.sin(idle * 2.2) * 0.08);
+			return world.worldToLocal(out);
+		};
 		stepWorldNY = (dt, idle) => {
 			for (const sp of snowPts) {
 				const {pos, count, speed} = sp;
@@ -2333,15 +2351,12 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				}
 				sp.geo.attributes.position.needsUpdate = true;
 			}
-			// полёт по эллипсу вокруг острова: спереди — ниже и ближе, сзади его закрывает остров
-			const big = worldId !== 'over';
-			const rx = big ? 7.4 : 6.2;
-			const rz = big ? 5.4 : 4.4;
-			if (!reducedMotion) ang += dt * 0.24;
-			const x = Math.cos(ang) * rx;
-			const z = Math.sin(ang) * rz;
-			santa.position.set(x, (big ? 3.8 : 3.2) + Math.sin(ang * 2) * 0.5 + Math.sin(idle * 2.2) * 0.08, z);
-			santa.rotation.set(Math.cos(ang * 2) * 0.08, Math.atan2(-Math.sin(ang) * rx, Math.cos(ang) * rz), -0.16);
+			// полёт на заднем плане, за островом: туда-обратно по небу; на краях разворачивается в глубину
+			if (!reducedMotion) ang += dt * 0.22;
+			santaPath(ang, santa.position, idle);
+			santaPath(ang + 0.02, ahead, idle);
+			santa.lookAt(world.localToWorld(ahead));
+			santa.rotateZ(-0.14 * Math.sign(Math.cos(ang) || 1));
 			for (const d of deer) {
 				d.legs.forEach((leg, i) => (leg.rotation.x = reducedMotion ? 0 : Math.sin(idle * 11 + (i % 2 ? Math.PI : 0) + (i > 1 ? 0.7 : 0)) * 0.55));
 				d.g.position.y = Math.sin(idle * 11) * 0.03;
@@ -5346,6 +5361,12 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		tier: () => TIERS[progress.tier].id,
 		world: () => worldId,
 		celebrate, // покупка: прыгает от радости
+		// в этой точке экрана — летающий персонаж или криппер (клик — им, а не снегу)
+		occupiedAt: (cx, cy) => {
+			if (P.mode !== 'free') return false;
+			updatePointer(cx, cy);
+			return hitFree() || hitCreeper();
+		},
 		debug: {
 			// подменить час (ночь/утро); null — снова настоящие часы
 			clock: (h = null) => {

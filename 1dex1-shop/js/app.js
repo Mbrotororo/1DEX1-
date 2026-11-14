@@ -133,7 +133,7 @@ const celebrate = () => {
 	fireworks({reducedMotion, onLaunch: () => fireworkSound('launch'), onPop: () => fireworkSound('pop')});
 	heroApi?.celebrate?.();
 };
-if (NY) initNewYear({reducedMotion, celebrate: () => heroApi?.celebrate?.(), debug: new URLSearchParams(location.search).has('debug')});
+if (NY) initNewYear({reducedMotion, hero: () => heroApi, celebrate: () => heroApi?.celebrate?.(), debug: new URLSearchParams(location.search).has('debug')});
 let filter = 'all';
 const seenTabs = new Set();
 const titleOf = (p) => (getLang() === 'en' && p.titleEn) || p.title;

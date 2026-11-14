@@ -1,80 +1,14 @@
 // Новогодний стиль сайта: снегопад, гирлянды, северное сияние за островом, отсчёт до
 // Нового года (в полночь — салют и «С Новым годом!»), снег из кейса-подарка.
+// Снег, сугробы и снеговики — в js/snowyard.js.
 // Включается в js/data.js: SEASON = 'newyear'. Выключил — этот файл ничего не делает.
 import {fireworks} from './fireworks.js';
 import {onLang, t} from './i18n.js';
 import {fireworkSound} from './sound.js';
+import {initSnowYard} from './snowyard.js';
 
 const BULBS = ['#ff4d5e', '#ffc83d', '#b8ff3d', '#4de1ff', '#c3a6ff'];
 const rnd = (a, b) => a + Math.random() * (b - a);
-
-// ---------- снегопад: пиксельные снежинки поверх сайта ----------
-const snowfall = () => {
-	const cv = document.createElement('canvas');
-	cv.className = 'ny-snow';
-	cv.setAttribute('aria-hidden', 'true');
-	document.body.append(cv);
-	const g = cv.getContext('2d');
-	// большая снежинка 7×7 — заранее нарисованная
-	const big = document.createElement('canvas');
-	big.width = big.height = 7;
-	const bg = big.getContext('2d');
-	bg.fillStyle = '#f4faff';
-	for (const [x, y] of [[3, 0], [3, 1], [3, 2], [3, 3], [3, 4], [3, 5], [3, 6], [0, 3], [1, 3], [2, 3], [4, 3], [5, 3], [6, 3], [1, 1], [5, 1], [1, 5], [5, 5]]) bg.fillRect(x, y, 1, 1);
-	let W = 0;
-	let H = 0;
-	let dpr = 1;
-	const flakes = [];
-	const make = (anywhere) => {
-		const r = Math.random();
-		const s = r < 0.55 ? 1 : r < 0.87 ? 2 : 3; // 3 — большая снежинка
-		return {x: rnd(0, W), y: anywhere ? rnd(0, H) : rnd(-30, -8), s, vy: 20 + s * 14 + rnd(0, 18), ph: rnd(0, 6.3), sw: rnd(0.6, 1.8), amp: rnd(6, 22), a: rnd(0.5, 1)};
-	};
-	const resize = () => {
-		W = document.documentElement.clientWidth;
-		H = innerHeight;
-		dpr = Math.min(2, devicePixelRatio || 1);
-		cv.width = Math.round(W * dpr);
-		cv.height = Math.round(H * dpr);
-		const n = Math.round(Math.min(170, Math.max(40, (W * H) / 9000)));
-		while (flakes.length < n) flakes.push(make(true));
-		flakes.length = n;
-	};
-	resize();
-	addEventListener('resize', resize);
-	let last = performance.now();
-	let lastScroll = scrollY;
-	const frame = (ms) => {
-		const dt = Math.min(0.05, (ms - last) / 1000);
-		last = ms;
-		// листаешь страницу — снег немного «отстаёт»: видно глубину
-		const ds = scrollY - lastScroll;
-		lastScroll = scrollY;
-		g.setTransform(dpr, 0, 0, dpr, 0, 0);
-		g.clearRect(0, 0, W, H);
-		for (let i = 0; i < flakes.length; i++) {
-			const f = flakes[i];
-			f.y += f.vy * dt - ds * (0.12 + f.s * 0.08);
-			f.ph += f.sw * dt;
-			if (f.y > H + 12 || f.y < -40) {
-				flakes[i] = make(f.y < -40 ? true : false);
-				if (f.y < -40) flakes[i].y = H + 5;
-				continue;
-			}
-			const x = Math.round(f.x + Math.sin(f.ph) * f.amp);
-			const y = Math.round(f.y);
-			g.globalAlpha = f.a;
-			if (f.s === 3) g.drawImage(big, x - 3, y - 3);
-			else {
-				g.fillStyle = '#f4faff';
-				g.fillRect(x, y, f.s + 1, f.s + 1);
-			}
-		}
-		g.globalAlpha = 1;
-		requestAnimationFrame(frame);
-	};
-	requestAnimationFrame(frame);
-};
 
 // ---------- гирлянда: провод и мигающие лампочки ----------
 const garland = (host, mod) => {
@@ -130,9 +64,8 @@ export const snowBurst = (host, reducedMotion = false) => {
 	setTimeout(() => box.remove(), 1800);
 };
 
-export const initNewYear = ({reducedMotion = false, celebrate = () => {}, debug = false} = {}) => {
+export const initNewYear = ({reducedMotion = false, hero = () => null, celebrate = () => {}, debug = false} = {}) => {
 	document.documentElement.classList.add('ny');
-	if (!reducedMotion) snowfall();
 	garland(document.querySelector('.topbar'), 'ny-garland--top');
 	garland(document.querySelector('.hotbar'), 'ny-garland--bar');
 	aurora();
@@ -189,6 +122,9 @@ export const initNewYear = ({reducedMotion = false, celebrate = () => {}, debug 
 		}
 		if (!seen) setTimeout(() => show(8), 1800);
 	}
+
+	// снег оседает на карточках и кнопках; из него можно лепить снеговиков
+	initSnowYard({reducedMotion, hero, debug});
 
 	if (debug) window.__ny = {midnight: () => show(16), burst: snowBurst};
 };
