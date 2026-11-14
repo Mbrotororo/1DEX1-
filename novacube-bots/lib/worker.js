@@ -48,6 +48,8 @@ class Worker {
       mv.blocksToAvoid.add(reg.blocksByName.sweet_berry_bush.id);
       mv.scafoldingBlocks = ['dirt', 'cobblestone', 'cobbled_deepslate', 'netherrack'].map((n) => reg.itemsByName[n] && reg.itemsByName[n].id).filter(Boolean);
       bot.pathfinder.setMovements(mv);
+      bot.pathfinder.tickTimeout = 10;     // ms per tick for path search: ten bots share one CPU core
+      bot.pathfinder.thinkTimeout = 20000; // so a path may take longer to find
       this.movements = mv;
       // careful walking on the farm floors: no digging, no own blocks, never step off an edge
       const safe = new Movements(bot);

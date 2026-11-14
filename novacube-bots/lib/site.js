@@ -85,7 +85,7 @@ function allBuilt(team, site) { return builtCount(team, site) >= site.F * site.f
 function groundY(bot, x, z, site) {
   for (let y = site.y + 1; y > site.y - 24; y--) {
     const b = bot.blockAt(new Vec3(x, y, z));
-    if (b && b.boundingBox === 'block' && !/leaves|chest|crafting_table|torch|log/.test(b.name)) return y;
+    if (b && b.boundingBox === 'block' && !/leaves|chest|crafting_table|furnace|torch|log/.test(b.name)) return y;
   }
   return site.y;
 }

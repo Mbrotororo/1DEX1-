@@ -16,15 +16,35 @@ async function craftItem(w, name, times = 1, table = null) {
   const recipes = bot.recipesFor(it.id, null, 1, table);
   if (!recipes.length) return false;
   if (w.act) w.act(`крафт ${name}`);
+  const before = w.count(name);
   try {
     await withTimeout(bot.craft(recipes[0], times, table), 15000 + times * 1500, `крафт ${name}`);
-    log.debug(w.name, `скрафтил ${name} x${times}`);
     await sleep(150);   // too many clicks in a row and the server loses track of the inventory
+    if (w.count(name) <= before) {
+      // the server did not really craft it (the inventory went out of sync)
+      log.debug(w.name, `крафт ${name} ничего не дал`);
+      await unstick(w);
+      craftFailed(w);
+      return false;
+    }
+    log.debug(w.name, `скрафтил ${name} x${times}`);
+    w.craftFails = 0;
     return true;
   } catch (e) {
     log.debug(w.name, `не скрафтил ${name}: ${e.message}`);
     await unstick(w);
+    craftFailed(w);
     return false;
+  }
+}
+
+/** Several failed crafts in a row: the inventory is out of sync with the server. Logging in again fixes it. */
+function craftFailed(w) {
+  w.craftFails = (w.craftFails || 0) + 1;
+  if (w.craftFails >= 6) {
+    w.craftFails = 0;
+    w.say('инвентарь сбился — перезахожу на сервер');
+    try { w.bot.quit('resync'); } catch (_) { /* ignore */ }
   }
 }
 
@@ -60,11 +80,11 @@ async function ensurePlanks(w, n) {
 }
 
 async function ensureSticks(w, n) {
-  while (w.count('stick') < n) {
+  for (let i = 0; i < 16 && w.count('stick') < n; i++) {
     if (!(await ensurePlanks(w, 2))) return false;
     if (!(await craftItem(w, 'stick', 1))) return false;
   }
-  return true;
+  return w.count('stick') >= n;
 }
 
 /** Finds a crafting table nearby or places our own (crafts one if needed). */
