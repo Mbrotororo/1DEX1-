@@ -99,8 +99,9 @@ async function climbShaft(w, farm, k) {
     if (solid(w.bot, head) && !(await w.dig(head))) return false;
     const mat = ['dirt', 'cobblestone', 'cobbled_deepslate'].find((m) => w.count(m) > 0);
     if (!mat) return false;
+    // under load the server sometimes refuses a single placement: try again (but not forever)
     let up = false;
-    for (let t = 0; t < 4 && !up; t++) { up = await w.pillarUp(mat); if (!up) await sleep(300); }
+    for (let t = 0; t < 8 && !up; t++) { up = await w.pillarUp(mat); if (!up) await sleep(200 + Math.floor(Math.random() * 300)); }
     if (!up) return false;
   }
   return Math.floor(w.bot.entity.position.y) >= target;

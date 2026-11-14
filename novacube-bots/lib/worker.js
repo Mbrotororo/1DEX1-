@@ -415,6 +415,8 @@ class Worker {
       bot.setControlState('forward', false);
     }
     bot.setControlState('sneak', false);
+    // jump only from a standstill on the ground
+    for (let i = 0; i < 20 && !bot.entity.onGround; i++) await sleep(50);
     await sleep(80);
     const startY = Math.floor(bot.entity.position.y);
     const below = bot.blockAt(bot.entity.position.offset(0, -1, 0).floored());
