@@ -7,6 +7,9 @@ const log = require('./log');
 const S = require('./site');
 const { sleep, fmt, withTimeout } = require('./util');
 
+const HOSTILE = new Set(['zombie', 'husk', 'drowned', 'zombie_villager', 'skeleton', 'stray', 'bogged', 'spider', 'cave_spider',
+  'creeper', 'witch', 'slime', 'pillager', 'vindicator', 'silverfish', 'phantom']);
+
 class Worker {
   constructor(cfg, account, team) {
     this.cfg = cfg;
@@ -91,6 +94,25 @@ class Worker {
           }
         } catch (_) { this.cuttingBush = false; }
       }, 400);
+      // monsters: hit whatever hostile comes close (the bots carry swords for the bamboo anyway)
+      clearInterval(this.guardTimer);
+      this.guardTimer = setInterval(() => {
+        try {
+          if (!bot.entity || bot.health <= 0) return;
+          const now = Date.now();
+          if (this.lastHit && now - this.lastHit < 650) return;
+          const me = bot.entity.position;
+          let best = null, bd = 3.6;
+          for (const e of Object.values(bot.entities)) {
+            if (!e || !e.name || !HOSTILE.has(e.name) || !e.position) continue;
+            const d = e.position.distanceTo(me);
+            if (d < bd) { bd = d; best = e; }
+          }
+          if (!best) return;
+          this.lastHit = now;
+          bot.attack(best);
+        } catch (_) { /* ignore */ }
+      }, 300);
       this.reconnectDelay = 10000;
       await sleep(2500);
       // if the server asked nothing, try to log in anyway (harmless if already logged in)
@@ -100,16 +122,22 @@ class Worker {
     });
 
     bot.on('messagestr', (msg, position) => this.onChat(msg, position));
-    bot.on('kicked', (reason) => this.say(`кикнуло: ${typeof reason === 'string' ? reason : JSON.stringify(reason)}`.slice(0, 300)));
+    bot.on('kicked', (reason) => { this.lastKick = typeof reason === 'string' ? reason : JSON.stringify(reason); this.say(`кикнуло: ${this.lastKick}`.slice(0, 300)); this.explainKick(this.lastKick); });
     bot.on('error', (e) => log.debug(this.name, `ошибка: ${e.message}`));
     bot.on('death', () => this.say('умер, возрождаюсь'));
     bot.on('end', (reason) => {
       this.ready = false;
       clearInterval(this.bushTimer);
+      clearInterval(this.guardTimer);
       if (this.stopped) return;
-      this.say(`отключился (${reason}), переподключусь через ${Math.round(this.reconnectDelay / 1000)} с`);
-      setTimeout(() => this.start(), this.reconnectDelay);
-      this.reconnectDelay = Math.min(120000, this.reconnectDelay * 2);
+      // all bots come from one computer: spread the reconnects, the server limits logins per IP
+      const idx = Math.max(0, this.cfg.bots.findIndex((b) => b.name === this.name));
+      const throttled = /throttl|подожд|wait before|too fast|слишком быстро/i.test(String(this.lastKick || ''));
+      const delay = (throttled ? 6000 : this.reconnectDelay) + idx * 4000 + Math.floor(Math.random() * 3000);
+      this.say(`отключился (${reason}), переподключусь через ${Math.round(delay / 1000)} с`);
+      setTimeout(() => this.start(), delay);
+      if (!throttled) this.reconnectDelay = Math.min(120000, this.reconnectDelay * 2);
+      this.lastKick = '';
     });
   }
 
@@ -123,13 +151,14 @@ class Worker {
     if (/\/reg(ister)?\b|зарегистр/.test(low)) this.sendAuth('register');
     else if (/\/l(ogin)?\b|авториз|войдите|введите пароль/.test(low)) this.sendAuth('login');
     if (/(успешно|successfully).*(вош|авториз|зарегистр|logged|registered)|добро пожаловать/.test(low)) this.authDone = true;
+    this.explainKick(low, true);
     // teleport request from a teammate or from the main account
     if (/tpa|телепорт|teleport/.test(low)) {
       // whole-word match: "RodionDex" must not match inside "RodionDex1"
       const esc = (n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const from = [...this.team.names].sort((a, b) => b.length - a.length)
         .find((n) => n !== this.name && new RegExp(`(^|[^A-Za-z0-9_])${esc(n)}([^A-Za-z0-9_]|$)`).test(msg));
-      if (from && this.acceptTeleports && /(хочет|запрос|request|отправил|просит)/.test(low)) {
+      if (from && this.acceptTeleports && /(хочет|запрос|запраш|request|отправил|просит|wants)/.test(low)) {
         const now = Date.now();
         if (!this.lastAccept || now - this.lastAccept > 3000) {
           this.lastAccept = now;
@@ -137,6 +166,22 @@ class Worker {
           this.say(`принимаю телепорт от ${from}`);
         }
       }
+    }
+  }
+
+  /** Says in plain words what to do when the server refuses the bots (once per kind). */
+  explainKick(text, fromChat = false) {
+    const t = String(text || '').toLowerCase();
+    this.explained = this.explained || {};
+    const tell = (key, msg) => { if (!this.explained[key]) { this.explained[key] = true; this.say(`⚠ ${msg}`); } };
+    if (/max.*(reg|account)|превыш.*(рег|акк)|лимит.*(рег|акк)|слишком много (акк|рег)|registrations? (per|from) (this )?ip/.test(t)) {
+      tell('reg', 'сервер не даёт зарегистрировать больше аккаунтов с одного IP. В конфиге AuthMe поставь maxRegPerIp: 0 и maxLoginPerIp: 0, maxJoinPerIp: 0 (или 12) и сделай /authme reload');
+    } else if (/неверный пароль|wrong password|incorrect password|неправильный пароль/.test(t)) {
+      tell('pass', 'неверный пароль: этот ник уже зарегистрирован с другим паролем. Пароли ботов лежат в accounts.json — не удаляй его. Если файл потерян, сбрось аккаунт: /authme unregister <ник>');
+    } else if (!fromChat && /throttl|too fast|подожд/.test(t)) {
+      tell('throttle', 'сервер ограничивает частоту входа с одного IP — боты заходят по очереди, это нормально');
+    } else if (!fromChat && /(timeout|время.*(вход|авториз))/.test(t) && !this.authDone) {
+      tell('authtimeout', 'не успел войти в аккаунт: проверь, что команды /register и /login в config.json такие же, как на сервере');
     }
   }
 
@@ -315,7 +360,14 @@ class Worker {
     this.act(`ставлю ${itemName} на ${target}`);
     const bot = this.bot;
     const cur = bot.blockAt(target);
-    if (cur && cur.name !== 'air' && cur.name !== 'cave_air' && !cur.name.includes('grass') && cur.boundingBox === 'block') return true;
+    if (cur && cur.name !== 'air' && cur.name !== 'cave_air' && cur.boundingBox === 'block') return true;
+    // a flower, grass or a snow layer there: the server refuses to place into it, so clear it first
+    if (cur && !/^(air|cave_air|water|lava)$/.test(cur.name) && cur.boundingBox !== 'block') {
+      try { await withTimeout(bot.dig(cur, true), 4000, 'растение'); } catch (_) { /* ignore */ }
+      await sleep(100);
+    }
+    const before = bot.blockAt(target);
+    const beforeType = before ? before.type : -1;
     const dirs = [new Vec3(0, -1, 0), new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1), new Vec3(0, 1, 0)];
     const refs = preferRef ? [preferRef] : dirs.map((d) => target.plus(d));
     for (const rp of refs) {
@@ -327,8 +379,9 @@ class Worker {
         await withTimeout(bot.placeBlock(ref, face), 5000, 'установка блока');
         return true;
       } catch (e) {
+        await sleep(150);
         const now = bot.blockAt(target);
-        if (now && now.name !== 'air') return true; // placed, the event was just late
+        if (now && now.type !== beforeType && now.name !== 'air') return true; // placed, the confirmation was just late
         log.debug(this.name, `не поставил ${itemName} на ${target}: ${e.message}`);
       }
     }

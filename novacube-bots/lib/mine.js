@@ -36,9 +36,11 @@ async function mineFor(w, { budgetMs = 300000, done = () => false, prefer = [] }
   const home = w.bot.entity.position.clone();
   const radius = (cfg.miner && cfg.miner.radius) || 24;
   const t0 = Date.now();
+  const bad = new Set();         // protected or unreachable blocks (the warp platform, walls)
+  const bag = () => w.bot.inventory.items().reduce((s, i) => s + (/_pickaxe$/.test(i.name) ? 0 : i.count), 0);
   let misses = 0;
   w.setStatus('копаю в автошахте');
-  while (misses < 8 && Date.now() - t0 < budgetMs && !done()) {
+  while (misses < 10 && Date.now() - t0 < budgetMs && !done()) {
     await w.maybeEat();
     if (!hasPickaxe(w, 0) && !(await ensurePickaxe(w))) break;
     if (w.count('cobblestone') >= 3 && !hasPickaxe(w, 1) && w.count('stick') + w.countMatch(/_planks$/) >= 2) await ensurePickaxe(w);
@@ -48,7 +50,7 @@ async function mineFor(w, { budgetMs = 300000, done = () => false, prefer = [] }
     }
     const stoneTier = hasPickaxe(w, 1);
     const names = ORES.filter((n) => stoneTier || !NEEDS_STONE.test(n)).concat(STONE);
-    const found = w.find(names, radius, 40).filter((p) => p.distanceTo(home) <= radius);
+    const found = w.find(names, radius, 40, (b) => !bad.has(b.position.toString()) && b.position.distanceTo(home) <= radius);
     if (!found.length) { misses++; await sleep(3000); continue; }
     const me = w.bot.entity.position;
     const score = (p) => {
@@ -58,8 +60,10 @@ async function mineFor(w, { budgetMs = 300000, done = () => false, prefer = [] }
     };
     found.sort((a, b) => score(a) - score(b));
     const target = found[0];
-    if (target.distanceTo(me) > 4.2 && !(await w.goto(target, 3, 30000))) { misses++; continue; }
-    if (await w.dig(target)) { misses = 0; await w.collectDrops(4, 3); } else misses++;
+    if (target.distanceTo(me) > 4.2 && !(await w.goto(target, 3, 30000))) { bad.add(target.toString()); misses++; continue; }
+    const before = bag();
+    if (await w.dig(target)) await w.collectDrops(4, 3);
+    if (bag() > before) misses = 0; else { bad.add(target.toString()); misses++; }
   }
   return true;
 }

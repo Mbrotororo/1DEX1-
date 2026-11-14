@@ -15,6 +15,7 @@ async function craftItem(w, name, times = 1, table = null) {
   if (!it) return false;
   const recipes = bot.recipesFor(it.id, null, 1, table);
   if (!recipes.length) return false;
+  if (w.act) w.act(`крафт ${name}`);
   try {
     await withTimeout(bot.craft(recipes[0], times, table), 15000 + times * 1500, `крафт ${name}`);
     log.debug(w.name, `скрафтил ${name} x${times}`);
@@ -36,14 +37,26 @@ async function unstick(w) {
 
 function plankCount(w) { return w.countMatch(/_planks$/); }
 
-/** Makes at least n planks out of logs in the inventory. */
+function plankTypes(w) {
+  const m = {};
+  for (const i of w.bot.inventory.items()) if (/_planks$/.test(i.name)) m[i.name] = (m[i.name] || 0) + i.count;
+  return m;
+}
+
+/** Makes at least n planks OF ONE KIND out of logs (recipes want planks of the same wood). */
 async function ensurePlanks(w, n) {
-  while (plankCount(w) < n) {
-    const logItem = w.bot.inventory.items().find((i) => LOG_RE.test(i.name));
-    if (!logItem) return false;
-    if (!(await craftItem(w, plankFor(logItem.name), 1))) return false;
+  for (let guard = 0; guard < 60; guard++) {
+    const types = plankTypes(w);
+    const best = Object.entries(types).sort((a, b) => b[1] - a[1])[0];
+    if (best && best[1] >= n) return true;
+    const logs = w.bot.inventory.items().filter((i) => LOG_RE.test(i.name));
+    if (!logs.length) return false;
+    // more of the kind we already have most of; otherwise the log we have most of
+    const same = best && logs.find((l) => plankFor(l.name) === best[0]);
+    const log = same || logs.sort((a, b) => b.count - a.count)[0];
+    if (!(await craftItem(w, plankFor(log.name), 1))) return false;
   }
-  return true;
+  return false;
 }
 
 async function ensureSticks(w, n) {

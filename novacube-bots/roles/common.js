@@ -76,22 +76,28 @@ async function ensureFood(w) {
   await w.maybeEat();
 }
 
-/** A crafting table that always stands west of the depot. */
+/** A crafting table west of the depot (the spot is remembered; if it can't be used, the next one). */
 async function workbench(w) {
   const s = site(w);
-  const spot = S.onGround(w.bot, s, S.workbenchSpot(s));
-  let b = w.bot.blockAt(spot);
-  if (b && b.name === 'crafting_table') {
-    if (w.bot.entity.position.distanceTo(spot) > 3.5) await w.goto(spot, 2, 30000);
-    return w.bot.blockAt(spot);
+  const st = w.team.state;
+  const base = S.workbenchSpot(s);
+  const cands = [0, 1, -1, 2, 3].map((dz) => S.onGround(w.bot, s, base.offset(0, 0, dz)));
+  if (st.workbench) cands.unshift(new Vec3(st.workbench.x, st.workbench.y, st.workbench.z));
+  const existing = cands.find((p) => { const b = w.bot.blockAt(p); return b && b.name === 'crafting_table'; });
+  if (existing) {
+    if (w.bot.entity.position.distanceTo(existing) > 3.5) await w.goto(existing, 2, 30000);
+    return w.bot.blockAt(existing);
   }
   if (!w.item('crafting_table')) {
     if (!(await ensurePlanks(w, 4)) || !(await craftItem(w, 'crafting_table', 1))) return null;
   }
-  await w.gotoBlock(spot.offset(1, 0, 0), 30000);
-  await w.placeAt(spot, 'crafting_table', spot.offset(0, -1, 0));
-  b = w.bot.blockAt(spot);
-  return b && b.name === 'crafting_table' ? b : null;
+  for (const spot of cands.slice(st.workbench ? 1 : 0)) {
+    await w.gotoBlock(spot.offset(1, 0, 0), 30000);
+    await w.placeAt(spot, 'crafting_table', spot.offset(0, -1, 0));
+    const b = w.bot.blockAt(spot);
+    if (b && b.name === 'crafting_table') { st.workbench = { x: spot.x, y: spot.y, z: spot.z }; w.team.save(); return b; }
+  }
+  return null;
 }
 
 /** The depot chests: whoever stands at the farms with enough wood puts the missing ones. */
@@ -157,7 +163,7 @@ async function digDirt(w, target) {
     await w.teleport(w.cfg.commands.rtp, {}, 'rtp');
   }
   const reg = bot.registry;
-  const ids = ['grass_block', 'dirt', 'coarse_dirt', 'podzol', 'rooted_dirt'].map((n) => reg.blocksByName[n] && reg.blocksByName[n].id).filter((x) => x !== undefined);
+  const ids = ['grass_block', 'dirt', 'podzol'].map((n) => reg.blocksByName[n] && reg.blocksByName[n].id).filter((x) => x !== undefined);
   const all = w.cfg.bots.map((b) => b.name);
   const me = Math.max(0, all.indexOf(w.name));
   w.digTurn = w.digTurn || 0;

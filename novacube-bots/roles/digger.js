@@ -19,7 +19,7 @@ async function chooseSite(w) {
     const p = bot.entity.position.floored();
     const x = p.x - Math.floor(tmp.spanX / 2), z = p.z - Math.floor(tmp.L / 2);
     const y0 = p.y - 1;
-    let ok = true, top = -999, low = 999, samples = 0, trees = 0;
+    let ok = true, top = -999, low = 999, samples = 0, trees = 0, soil = 0;
     for (let dx = -11; dx <= tmp.spanX + 2 && ok; dx += 3) {
       for (let dz = -3; dz <= tmp.L + 2 && ok; dz += 3) {
         let g = null;
@@ -29,7 +29,7 @@ async function chooseSite(w) {
           if (!b) { ok = false; break; }           // not loaded: too far, try another place
           if (/water|lava|ice|bamboo|cactus|sugar_cane/.test(b.name)) { ok = false; break; }
           if (/leaves|log/.test(b.name)) { tree = true; continue; }   // trees are fine: the lumberjack cuts them
-          if (b.boundingBox === 'block') { g = y; break; }
+          if (b.boundingBox === 'block') { g = y; if (/^(grass_block|dirt|podzol|coarse_dirt)$/.test(b.name)) soil++; break; }
         }
         if (!ok || g === null) { ok = false; break; }
         samples++;
@@ -39,6 +39,7 @@ async function chooseSite(w) {
       }
     }
     if (ok && trees > samples * 0.3) ok = false;   // a forest: too much to cut
+    if (ok && soil < samples * 0.8) ok = false;    // sand, stone, terracotta: no dirt to dig for the floors
     if (ok) return S.makeSite(cfg, x, top, z);
   }
   return null;

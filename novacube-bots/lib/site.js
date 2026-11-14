@@ -227,8 +227,26 @@ async function goToSite(w) {
     await sleep(15000);
     return false;
   }
-  w.setStatus(`иду к фермам (/tpa ${anchors[0].name})`);
-  const ok = await w.teleport(cmds.tpa, { player: anchors[0].name }, 'tpa к ферме', 2);
+  const anchor = anchors[0];
+  // one /tpa at a time for the whole team: a plain /tpaccept takes the newest request
+  const team = w.team;
+  while (team.tpaBusy && Date.now() - team.tpaBusy < 40000) await sleep(1000);
+  team.tpaBusy = Date.now();
+  let ok = false;
+  try {
+    w.setStatus(`иду к фермам (/tpa ${anchor.name})`);
+    for (let i = 0; i < 3 && !ok; i++) {
+      const before = w.bot.entity.position.clone();
+      w.cmd(cmds.tpa, { player: anchor.name });
+      // the anchor is our own bot: it accepts right away instead of waiting to read the request in chat
+      setTimeout(() => { if (anchor.bot) anchor.cmd(cmds.tpaccept, { player: w.name }); }, 1500);
+      ok = await w.waitMoved(before, 20000);
+      if (!ok) await sleep(8000);   // a cooldown, or the request was lost
+    }
+    if (ok) await w.settle();
+  } finally {
+    team.tpaBusy = 0;
+  }
   if (ok && nearSite(w) && cmds.sethome) {
     // remember the place for next time
     w.team.state.homeSet = w.team.state.homeSet || {};
