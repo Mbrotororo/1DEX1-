@@ -195,7 +195,8 @@ class Worker {
   }
 
   cmd(tpl, vars = {}) {
-    const text = fmt(tpl, vars);
+    const text = fmt(tpl || '', vars).trim();
+    if (!text) return;
     if (this.bot) this.bot.chat(text);
     log.debug(this.name, `команда: ${text}`);
   }
