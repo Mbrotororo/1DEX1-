@@ -52,6 +52,14 @@ class Worker {
       safe.maxDropDown = 0;
       safe.blocksToAvoid.add(reg.blocksByName.sweet_berry_bush.id);
       this.safeMovements = safe;
+      // never let path finding break or place blocks on our farm (floors, columns, chests)
+      const farmGuard = (block) => {
+        const f = this.team.state.wideFarm;
+        if (!f || !block || !block.position) return 0;
+        const p = block.position;
+        return p.x >= f.x - 5 && p.x <= f.x + f.W && p.z >= f.z - 1 && p.z <= f.z + f.L && p.y >= f.y - 2 ? 100 : 0;
+      };
+      for (const m of [mv, safe]) { m.exclusionAreasBreak.push(farmGuard); m.exclusionAreasPlace.push(farmGuard); }
       this.say('зашёл на сервер');
       // berry bushes hurt: if we ever stand inside one (a random teleport can drop us there), cut it
       clearInterval(this.bushTimer);

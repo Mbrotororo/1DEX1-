@@ -86,7 +86,7 @@ async function chooseSite(w) {
 // ------------------------------------------------------------------ shaft
 async function toShaftBottom(w, farm, i) {
   const s = shaftOf(farm, i);
-  const gy = groundY(w.bot, s.x, s.z, farm.y);
+  const gy = groundY(w.bot, s.x, s.z, farm.y - 11);
   w.careful(false);
   const ok = await w.gotoBlock(new Vec3(s.x, gy + 1, s.z), 60000);
   return ok;
@@ -96,6 +96,9 @@ async function climbShaft(w, farm, k) {
   const target = floorY(farm, k) + 1;
   let guard = 0;
   while (Math.floor(w.bot.entity.position.y) < target && guard++ < 90) {
+    // our column must be clear above the head (old column pieces can hang there)
+    const head = w.bot.entity.position.floored().offset(0, 2, 0);
+    if (solid(w.bot, head) && !(await w.dig(head))) return false;
     const mat = walkMaterials.find((m) => w.count(m) > 0);
     if (!mat) return false;
     if (!(await w.pillarUp(mat))) { await sleep(300); if (!(await w.pillarUp(mat))) return false; }
@@ -119,7 +122,7 @@ async function walkHome(w, farm, i) {
   const walk = async (tx, tz) => {
     while (dx !== tx || dz !== tz) {
       const nx = dx + Math.sign(tx - dx), nz = dz + Math.sign(tz - dz);
-      if (!(await stepTo(w, cell(nx, nz), true))) return false;
+      if (!(await stepTo(w, cell(nx, nz), true))) { log.debug(w.name, `домой: не прошёл на клетку ${nx},${nz}`); return false; }
       dx = nx; dz = nz;
     }
     return true;
@@ -146,7 +149,9 @@ async function descendShaft(w, farm, i) {
     log.debug(w.name, 'не дошёл до своего столба, спускаюсь прямо вниз');
   }
   let guard = 0;
-  const gy = groundY(w.bot, Math.floor(w.bot.entity.position.x), Math.floor(w.bot.entity.position.z), farm.y - 1);
+  // real ground under us: everything we build starts at farm.y + 3, so look from just above the
+  // highest ground (looking from higher up would find our own column or floors)
+  const gy = groundY(w.bot, Math.floor(w.bot.entity.position.x), Math.floor(w.bot.entity.position.z), farm.y - 11);
   while (Math.floor(w.bot.entity.position.y) > gy + 1 && guard++ < 90) {
     const below = w.bot.blockAt(w.bot.entity.position.offset(0, -1, 0).floored());
     // never dig out a plant pot: step aside to a walkway first
@@ -325,7 +330,10 @@ async function ensureChests(w, farm) {
     const can = Math.min(need, Math.floor((woodCount(w) - tableCost) / 8));
     if (can > 0 && (await ensurePlanks(w, can * 8 + tableCost))) {
       const table = await ensureTable(w);
-      if (table) { await craftItem(w, 'chest', can, table); await pickUpTable(w); }
+      if (table) {
+        for (let i = 0; i < can; i++) if (!(await craftItem(w, 'chest', 1, table))) break;
+        await pickUpTable(w);
+      }
     }
   }
   for (const p of missing) {
@@ -424,6 +432,14 @@ async function run(w) {
       continue;
     }
 
+    // still up on the farm (after a restart or a failed descent)? get down first
+    {
+      const p = w.bot.entity.position;
+      if (p.y > farm.y + 3 && p.x >= farm.x - 2 && p.x < farm.x + farm.W + 1 && p.z >= farm.z - 1 && p.z < farm.z + farm.L + 1) {
+        w.setStatus('спускаюсь с фермы');
+        await descendShaft(w, farm, idx);
+      }
+    }
     // on the ground: chests, torches, materials; accept deliveries here
     w.acceptTeleports = true;
     w.atBase = true;
