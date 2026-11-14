@@ -30,6 +30,8 @@ const ROLES = {
   scout: require('./roles/scout'),
   miner: require('./roles/miner'),
   main: require('./roles/main'),
+  builder: require('./roles/builder'),
+  supplier: require('./roles/supplier'),
 };
 
 async function runRole(w) {
@@ -64,11 +66,18 @@ async function main() {
     runRole(w);
     await sleep((cfg.joinDelaySec || 8) * 1000);
   }
+  // watchdog: if some code ever hogs the program, say so in the log (the bots would time out otherwise)
+  let last = Date.now();
+  setInterval(() => {
+    const lag = Date.now() - last - 1000;
+    if (lag > 3000) log.line('1DEX1', `программа подвисла на ${Math.round(lag / 1000)} с`);
+    last = Date.now();
+  }, 1000);
   // status board every minute
   setInterval(() => {
     const lines = [...team.workers.values()].map((w) => '  ' + w.summary());
-    const farm = team.state.farm;
-    const f = farm ? `ферма ${farm.x} ${farm.y} ${farm.z}: этажей ${farm.built}/${cfg.farm.plants.length}, собрано растений ${team.state.harvested || 0}` : 'ферма ещё не построена';
+    const farm = team.state.wideFarm || team.state.farm;
+    const f = farm ? `ферма ${farm.x} ${farm.y} ${farm.z}, собрано растений ${team.state.harvested || 0}` : 'ферма ещё не построена';
     console.log(`\n\x1b[1m── 1DEX1 боты ─ ${new Date().toTimeString().slice(0, 5)} ─ ${f}\x1b[0m\n${lines.join('\n')}\n`);
   }, 60000);
 }

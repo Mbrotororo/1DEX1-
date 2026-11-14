@@ -43,7 +43,44 @@ class Worker {
       mv.scafoldingBlocks = ['dirt', 'cobblestone', 'cobbled_deepslate', 'netherrack'].map((n) => reg.itemsByName[n] && reg.itemsByName[n].id).filter(Boolean);
       bot.pathfinder.setMovements(mv);
       this.movements = mv;
+      // careful walking on the farm floors: no digging, no own blocks, never step off an edge
+      const safe = new Movements(bot);
+      safe.canDig = false;
+      safe.allowParkour = false;
+      safe.allow1by1towers = false;
+      safe.scafoldingBlocks = [];
+      safe.maxDropDown = 0;
+      safe.blocksToAvoid.add(reg.blocksByName.sweet_berry_bush.id);
+      this.safeMovements = safe;
       this.say('зашёл на сервер');
+      // berry bushes hurt: if we ever stand inside one (a random teleport can drop us there), cut it
+      clearInterval(this.bushTimer);
+      this.bushTimer = setInterval(async () => {
+        try {
+          if (!bot.entity || bot.targetDigBlock || this.cuttingBush) return;
+          // every block the body touches (the body is 0.6 wide, so up to 4 columns, 2 blocks high)
+          const p = bot.entity.position;
+          const seen = new Set();
+          for (const dx of [-0.31, 0.31]) {
+            for (const dz of [-0.31, 0.31]) {
+              for (const dy of [0, 1]) {
+                const v = p.offset(dx, dy, dz).floored();
+                const key = v.toString();
+                if (seen.has(key)) continue;
+                seen.add(key);
+                const b = bot.blockAt(v);
+                if (b && b.name === 'sweet_berry_bush') {
+                  this.cuttingBush = true;
+                  if (bot.health < 10) bot.pathfinder.setGoal(null); // stop walking into it while we cut
+                  await bot.dig(b, true).catch(() => {});
+                  this.cuttingBush = false;
+                  return;
+                }
+              }
+            }
+          }
+        } catch (_) { this.cuttingBush = false; }
+      }, 400);
       this.reconnectDelay = 10000;
       await sleep(2500);
       // if the server asked nothing, try to log in anyway (harmless if already logged in)
@@ -58,6 +95,7 @@ class Worker {
     bot.on('death', () => this.say('умер, возрождаюсь'));
     bot.on('end', (reason) => {
       this.ready = false;
+      clearInterval(this.bushTimer);
       if (this.stopped) return;
       this.say(`отключился (${reason}), переподключусь через ${Math.round(this.reconnectDelay / 1000)} с`);
       setTimeout(() => this.start(), this.reconnectDelay);
@@ -113,6 +151,8 @@ class Worker {
   }
 
   async waitReady() {
+    // a real (timer) pause on every call: role loops that hit nothing to do can't freeze the program
+    await sleep(100);
     while (!this.ready || !this.bot || !this.bot.entity) await sleep(500);
   }
 
@@ -301,6 +341,61 @@ class Worker {
     while (Math.floor(bot.entity.position.y) >= startY && Date.now() - t0 < 2500) await sleep(50);
     await sleep(200);
     return Math.floor(bot.entity.position.y) < startY;
+  }
+
+  /** Switches between careful walking (on the farm) and normal walking (in the wild). */
+  careful(on) {
+    if (!this.bot || !this.bot.pathfinder || !this.safeMovements) return;
+    this.bot.pathfinder.setMovements(on ? this.safeMovements : this.movements);
+  }
+
+  /** Puts items into chests at the given positions. Returns how many were stored. */
+  async depositTo(chestPositions, names, keep = {}) {
+    const bot = this.bot;
+    let stored = 0;
+    for (const p of chestPositions) {
+      const left = names.some((n) => this.count(n) > (keep[n] || 0));
+      if (!left) break;
+      const b = bot.blockAt(p);
+      if (!b || !/chest/.test(b.name)) continue;
+      if (bot.entity.position.distanceTo(p) > 4 && !(await this.goto(p, 2, 30000))) continue;
+      let chest;
+      try { chest = await withTimeout(bot.openContainer(b), 6000, 'сундук'); } catch (_) { continue; }
+      for (const n of names) {
+        let extra = this.count(n) - (keep[n] || 0);
+        while (extra > 0) {
+          const it = this.item(n);
+          if (!it) break;
+          const c = Math.min(extra, it.count);
+          try { await chest.deposit(it.type, null, c); } catch (_) { extra = 0; break; }
+          stored += c; extra -= c;
+        }
+      }
+      chest.close();
+      await sleep(300);
+    }
+    return stored;
+  }
+
+  /** Takes items out of chests until the inventory is nearly full. Returns how many were taken. */
+  async withdrawFrom(chestPositions, names, leaveFree = 2) {
+    const bot = this.bot;
+    let taken = 0;
+    for (const p of chestPositions) {
+      if (this.freeSlots() <= leaveFree) break;
+      const b = bot.blockAt(p);
+      if (!b || !/chest/.test(b.name)) continue;
+      if (bot.entity.position.distanceTo(p) > 4 && !(await this.goto(p, 2, 30000))) continue;
+      let chest;
+      try { chest = await withTimeout(bot.openContainer(b), 6000, 'сундук'); } catch (_) { continue; }
+      for (const it of chest.containerItems()) {
+        if (!names.includes(it.name) || this.freeSlots() <= leaveFree) continue;
+        try { await chest.withdraw(it.type, null, it.count); taken += it.count; } catch (_) { /* full */ }
+      }
+      chest.close();
+      await sleep(300);
+    }
+    return taken;
   }
 
   /** Eats something when hungry (berries count too). */

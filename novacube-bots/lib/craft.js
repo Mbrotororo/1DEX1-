@@ -118,12 +118,21 @@ function woodCount(w) {
 }
 
 /** Chops trees around until we have about `planks` worth of wood. */
-async function chopWood(w, planks = 24, radius = 40) {
+async function chopWood(w, planks = 24, radius = 40, rtpTries = 4) {
   const names = ['oak_log', 'spruce_log', 'birch_log', 'jungle_log', 'acacia_log', 'dark_oak_log', 'mangrove_log', 'cherry_log', 'pale_oak_log'];
   let fails = 0;
+  let rtps = 0;
   while (woodCount(w) < planks && fails < 6) {
+    await sleep(50); // always give the network a moment (keeps the connection alive)
     const found = w.find(names, radius, 30);
-    if (!found.length) return false;
+    if (!found.length) {
+      // no trees around: jump somewhere else with /rtp
+      if (rtps >= rtpTries || !w.cfg.commands.rtp) return false;
+      rtps++;
+      w.setStatus('рядом нет деревьев — /rtp');
+      if (!(await w.teleport(w.cfg.commands.rtp, {}, 'rtp'))) await sleep(5000);
+      continue;
+    }
     const me = w.bot.entity.position;
     found.sort((a, b) => a.distanceTo(me) - b.distanceTo(me));
     // prefer logs reachable from the ground (low ones)

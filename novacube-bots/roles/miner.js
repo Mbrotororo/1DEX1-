@@ -3,6 +3,7 @@
 const { ensurePickaxe, chopWood, woodCount, hasPickaxe, ensureSticks } = require('../lib/craft');
 const { sell } = require('../lib/sell');
 const { sleep } = require('../lib/util');
+const { handOver } = require('./supplier');
 
 const ORES = ['diamond_ore', 'deepslate_diamond_ore', 'emerald_ore', 'deepslate_emerald_ore', 'gold_ore', 'deepslate_gold_ore',
   'iron_ore', 'deepslate_iron_ore', 'lapis_ore', 'deepslate_lapis_ore', 'redstone_ore', 'deepslate_redstone_ore',
@@ -45,8 +46,12 @@ async function run(w) {
       if (w.count('cobblestone') >= 3 && !hasPickaxe(w, 1) && w.count('stick') + w.countMatch(/_planks$/) >= 2) {
         await ensurePickaxe(w); // upgrade to stone right in the mine if a table can be placed
       }
+      if (w.team.state.wideFarm && (w.count('coal') >= 32 || (w.freeSlots() <= 2 && w.count('cobblestone') >= 128))) {
+        // torches and walkways for the big farm
+        if (await handOver(w, ['coal', 'cobblestone', 'cobbled_deepslate'])) break;
+      }
       if (w.freeSlots() <= 2) {
-        if (cfg.miner.sellWhenFull) await sell(w, LOOT, cfg.sell.menuKeywords);
+        if (cfg.miner.sellWhenFull) await sell(w, LOOT.filter((n) => !(w.team.state.wideFarm && ['coal', 'cobblestone', 'cobbled_deepslate'].includes(n))), cfg.sell.menuKeywords);
         if (w.freeSlots() <= 2) await w.tossAll(['cobblestone', 'cobbled_deepslate', 'andesite', 'diorite', 'granite', 'tuff', 'dirt', 'gravel'], { cobblestone: 16 });
         w.setStatus('копаю в автошахте');
       }

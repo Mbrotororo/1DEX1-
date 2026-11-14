@@ -1,20 +1,36 @@
 {
-  "server": { "host": "play.novacube.fun", "port": 25565, "version": "1.21.11" },
-
+  "server": {
+    "host": "play.novacube.fun",
+    "port": 25565,
+    "version": "1.21.11"
+  },
   "main": {
     "name": "RodionDex",
     "controlledByBot": false,
     "password": ""
   },
-
   "bots": [
-    { "name": "RodionDex1", "role": "farmer" },
-    { "name": "RodionDex2", "role": "scout" },
-    { "name": "RodionDex3", "role": "scout" },
-    { "name": "RodionDex4", "role": "miner" },
-    { "name": "RodionDex5", "role": "miner" }
+    {
+      "name": "RodionDex1",
+      "role": "builder"
+    },
+    {
+      "name": "RodionDex2",
+      "role": "builder"
+    },
+    {
+      "name": "RodionDex3",
+      "role": "supplier"
+    },
+    {
+      "name": "RodionDex4",
+      "role": "miner"
+    },
+    {
+      "name": "RodionDex5",
+      "role": "miner"
+    }
   ],
-
   "commands": {
     "register": "/register {pass} {pass}",
     "login": "/login {pass}",
@@ -27,32 +43,57 @@
     "sethome": "",
     "home": ""
   },
-
   "farm": {
-    "plants": ["bamboo", "sweet_berries", "bamboo", "sweet_berries", "bamboo", "sweet_berries", "bamboo", "sweet_berries", "bamboo", "sweet_berries"],
+    "width": 30,
+    "length": 70,
+    "floors": 10,
     "floorGap": 4,
     "firstFloorHeight": 3,
-    "harvestEveryMin": 4,
-    "keepForReplant": 16,
-    "seedsToStart": 16
+    "plants": "bamboo",
+    "seedsToStart": 64,
+    "keepForReplant": 128
   },
-
   "scout": {
     "bamboo": 64,
     "sweet_berries": 64,
     "searchRadius": 56,
     "rtpCooldownSec": 10
   },
-
   "miner": {
     "radius": 24,
     "sellWhenFull": true
   },
-
   "sell": {
-    "mainSells": ["bamboo", "sweet_berries"],
-    "menuKeywords": ["sign", "табличк", "продаж", "скупщик", "sell"]
+    "mainSells": [
+      "bamboo",
+      "sweet_berries"
+    ],
+    "menuKeywords": [
+      "sign",
+      "табличк",
+      "продаж",
+      "скупщик",
+      "sell"
+    ]
   },
-
-  "joinDelaySec": 8
+  "joinDelaySec": 8,
+  "tower": {
+    "plants": [
+      "bamboo",
+      "sweet_berries",
+      "bamboo",
+      "sweet_berries",
+      "bamboo",
+      "sweet_berries",
+      "bamboo",
+      "sweet_berries",
+      "bamboo",
+      "sweet_berries"
+    ],
+    "floorGap": 4,
+    "firstFloorHeight": 3,
+    "harvestEveryMin": 4,
+    "keepForReplant": 16,
+    "seedsToStart": 16
+  }
 }

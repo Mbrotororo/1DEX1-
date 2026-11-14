@@ -160,6 +160,7 @@ async function deliverToMain(w) {
 }
 
 async function run(w) {
+  if (w.cfg.tower) w.cfg = Object.assign({}, w.cfg, { farm: w.cfg.tower });   // the old tower farm has its own settings
   const cfg = w.cfg;
   const team = w.team;
   const floors = cfg.farm.plants.length;
