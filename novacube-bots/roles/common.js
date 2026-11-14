@@ -241,8 +241,8 @@ function countStored(w, stored) {
 /** Harvest into the storage, keeping seeds of the plants we look after. */
 async function storeHarvest(w, plantsKept = []) {
   const keepN = (w.cfg.farm && w.cfg.farm.keepSeeds) || 192;
-  const keep = {};
-  for (const p of plantsKept) keep[p] = keepN;
+  const keep = { sweet_berries: 24 };   // a few berries always stay: that is the food
+  for (const p of plantsKept) keep[p] = Math.max(keepN, keep[p] || 0);
   const plants = ['bamboo', 'sweet_berries'];
   if (!plants.some((p) => w.count(p) > (keep[p] || 0))) return;
   w.setStatus('кладу урожай в хранилище');
