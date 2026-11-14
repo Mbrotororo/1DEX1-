@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SYSTEM</title>
+<style>
+  :root{ --g:#00ff66; --r:#ff1a1a; }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ height:100%; background:#000; overflow:hidden; cursor:none;
+    font-family:"Consolas","Courier New",monospace; color:var(--g); }
+  #matrix{ position:fixed; inset:0; z-index:1; opacity:.55; }
+  #term{ position:fixed; inset:0; z-index:2; padding:18px 22px; font-size:15px;
+    line-height:1.45; white-space:pre-wrap; word-break:break-all; text-shadow:0 0 6px var(--g); overflow:hidden; }
+  #term .r{ color:var(--r); text-shadow:0 0 8px var(--r); }
+  #term .w{ color:#fff; }  #term .y{ color:#ffd500; }
+  #banner{ position:fixed; inset:0; z-index:4; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; text-align:center; pointer-events:none; opacity:0; }
+  #banner.show{ opacity:1; }
+  #banner .skull{ font-size:min(38vw,320px); line-height:1; filter:drop-shadow(0 0 25px var(--r)); }
+  #banner h1{ color:var(--r); font-size:min(11vw,120px); letter-spacing:4px;
+    text-shadow:0 0 18px var(--r),0 0 40px var(--r); font-weight:900; }
+  #banner h2{ color:#fff; font-size:min(5vw,40px); margin-top:10px; letter-spacing:6px; text-shadow:0 0 10px #fff; }
+  #alert{ position:fixed; z-index:5; left:50%; top:50%; transform:translate(-50%,-50%);
+    width:min(520px,86vw); background:#0a0a0a; border:2px solid var(--r);
+    box-shadow:0 0 40px var(--r); padding:22px; display:none; }
+  #alert .hd{ color:var(--r); font-size:20px; font-weight:900; letter-spacing:1px; margin-bottom:6px; }
+  #alert .sub{ color:#ddd; font-size:14px; margin-bottom:14px; }
+  #alert .barwrap{ height:20px; background:#1a0000; border:1px solid var(--r); }
+  #alert .bar{ height:100%; width:0%; background:var(--r); box-shadow:0 0 14px var(--r); }
+  #alert .pct{ margin-top:8px; color:#fff; font-size:13px; }
+  #flash{ position:fixed; inset:0; z-index:3; background:var(--r); opacity:0; pointer-events:none; mix-blend-mode:screen; }
+  #eye{ position:fixed; z-index:4; left:50%; top:50%; transform:translate(-50%,-50%) scale(.2);
+    width:min(60vmin,520px); height:min(60vmin,520px); opacity:0; pointer-events:none; }
+  #fx{ position:fixed; inset:0; z-index:7; pointer-events:none;
+    background:radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.85) 100%); }
+  #intro,#outro{ position:fixed; inset:0; z-index:20; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; text-align:center; gap:18px; background:#000; cursor:pointer; padding:20px; }
+  #outro{ display:none; cursor:default; }
+  #intro h3{ color:var(--g); font-size:min(6vw,30px); letter-spacing:2px; text-shadow:0 0 10px var(--g); }
+  #intro p{ color:#8f8; font-size:16px; max-width:640px; line-height:1.6; }
+  #intro .go{ margin-top:10px; border:2px solid var(--g); color:#000; background:var(--g);
+    padding:14px 34px; font-size:20px; font-weight:900; letter-spacing:2px; border-radius:6px; }
+  #intro small{ color:#4a4; }
+  #outro .ok{ font-size:min(14vw,110px); }
+  #outro h3{ color:#0f6; font-size:min(7vw,44px); text-shadow:0 0 14px #0f6; }
+  #outro p{ color:#bffcd0; font-size:18px; line-height:1.7; }
+  kbd{ background:#111; border:1px solid #0f6; border-radius:4px; padding:2px 9px; color:#0f6; }
+  @keyframes shake{ 0%,100%{transform:translate(0,0)} 20%{transform:translate(-6px,4px)}
+    40%{transform:translate(7px,-5px)} 60%{transform:translate(-5px,-6px)} 80%{transform:translate(6px,5px)} }
+  .shaking{ animation:shake .18s infinite; }
+</style>
+</head>
+<body>
+<canvas id="matrix"></canvas>
+<div id="term"></div>
+<div id="flash"></div>
+<svg id="eye" viewBox="0 0 200 200">
+  <defs><radialGradient id="ir" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#ff5a00"/><stop offset="55%" stop-color="#b00000"/><stop offset="100%" stop-color="#1a0000"/>
+  </radialGradient></defs>
+  <path d="M10 100 Q100 20 190 100 Q100 180 10 100 Z" fill="#000" stroke="#ff2a2a" stroke-width="3"/>
+  <circle cx="100" cy="100" r="46" fill="url(#ir)"/>
+  <circle cx="100" cy="100" r="20" fill="#000"/>
+  <circle cx="112" cy="86" r="7" fill="#fff" opacity=".8"/>
+</svg>
+<div id="banner"><div class="skull">&#9760;</div><h1>&#1057;&#1048;&#1057;&#1058;&#1045;&#1052;&#1040; &#1042;&#1047;&#1051;&#1054;&#1052;&#1040;&#1053;&#1040;</h1><h2>SYSTEM COMPROMISED</h2></div>
+<div id="alert">
+  <div class="hd">&#9888; ENCRYPTING FILES</div>
+  <div class="sub">C:\Users\ &mdash; do not turn off your computer</div>
+  <div class="barwrap"><div class="bar" id="bar"></div></div>
+  <div class="pct" id="pct">0%</div>
+</div>
+<div id="fx"></div>
+<div id="intro">
+  <h3>&#9888; PRANK &mdash; &#1064;&#1059;&#1058;&#1054;&#1063;&#1053;&#1040;&#1071; &#1057;&#1058;&#1056;&#1040;&#1064;&#1048;&#1051;&#1050;&#1040;</h3>
+  <p>&#1041;&#1077;&#1079;&#1086;&#1087;&#1072;&#1089;&#1085;&#1086;. &#1053;&#1080;&#1095;&#1077;&#1075;&#1086; &#1085;&#1077; &#1091;&#1076;&#1072;&#1083;&#1103;&#1077;&#1090;&#1089;&#1103; &#1080; &#1085;&#1077; &#1083;&#1086;&#1084;&#1072;&#1077;&#1090;&#1089;&#1103; &mdash; &#1087;&#1088;&#1086;&#1089;&#1090;&#1086; &#1082;&#1072;&#1088;&#1090;&#1080;&#1085;&#1082;&#1072; &#1085;&#1072; 60 &#1089;&#1077;&#1082;.</p>
+  <p><b>&#1042;&#1099;&#1093;&#1086;&#1076; &#1074; &#1083;&#1102;&#1073;&#1086;&#1081; &#1084;&#1086;&#1084;&#1077;&#1085;&#1090;:</b> <kbd>Esc</kbd> &#1080;&#1083;&#1080; <kbd>F11</kbd></p>
+  <div class="go">&#9654; &#1047;&#1040;&#1055;&#1059;&#1057;&#1058;&#1048;&#1058;&#1068;</div>
+  <small>&#1079;&#1074;&#1091;&#1082; &#1074;&#1082;&#1083;&#1102;&#1095;&#1080;&#1090;&#1089;&#1103; &#1087;&#1086;&#1089;&#1083;&#1077; &#1085;&#1072;&#1078;&#1072;&#1090;&#1080;&#1103;</small>
+</div>
+<div id="outro">
+  <div class="ok">&#128521;</div>
+  <h3>&#1069;&#1058;&#1054; &#1041;&#1067;&#1051; &#1055;&#1056;&#1040;&#1053;&#1050;</h3>
+  <p>&#1058;&#1074;&#1086;&#1081; &#1082;&#1086;&#1084;&#1087; &#1094;&#1077;&#1083;. &#1053;&#1072;&#1078;&#1084;&#1080; <kbd>F11</kbd> &mdash; &#1074;&#1077;&#1088;&#1085;&#1105;&#1090;&#1089;&#1103; &#1086;&#1073;&#1099;&#1095;&#1085;&#1099;&#1081; &#1101;&#1082;&#1088;&#1072;&#1085;.</p>
+</div>
+<script>
+(function(){
+  "use strict";
+  var DURATION=60000;
+  var term=document.getElementById('term'), banner=document.getElementById('banner');
+  var flash=document.getElementById('flash'), eye=document.getElementById('eye');
+  var alertBox=document.getElementById('alert'), bar=document.getElementById('bar'), pct=document.getElementById('pct');
+  var intro=document.getElementById('intro'), outro=document.getElementById('outro'), body=document.body;
+  var timers=[], running=false, ac=null;
+  function T(ms,fn){ timers.push(setTimeout(fn,ms)); }
+  function rnd(a,b){ return a+Math.random()*(b-a); }
+  var cv=document.getElementById('matrix'), cx=cv.getContext('2d');
+  var cols,drops,chars="01<>/\\|{}[]#$%&*ABCDEFGHJKLMNPQRSTUVWXYZ0123456789@".split('');
+  function sizeCanvas(){ cv.width=innerWidth; cv.height=innerHeight; cols=Math.floor(cv.width/16); drops=[]; for(var i=0;i<cols;i++) drops[i]=Math.random()*cv.height/16; }
+  sizeCanvas(); addEventListener('resize',sizeCanvas);
+  function drawMatrix(){
+    cx.fillStyle='rgba(0,0,0,0.08)'; cx.fillRect(0,0,cv.width,cv.height); cx.font='15px monospace';
+    for(var i=0;i<cols;i++){
+      cx.fillStyle=Math.random()<0.015?'#fff':'#00ff66';
+      cx.fillText(chars[Math.floor(Math.random()*chars.length)], i*16, drops[i]*16);
+      if(drops[i]*16>cv.height && Math.random()>0.975) drops[i]=0;
+      drops[i]++;
+    }
+  }
+  var matrixTimer=null;
+  var lines=[
+    "> initializing payload ...",
+    "> bypassing firewall .......... <b class='r'>OK</b>",
+    "> establishing C2 connection 185.x.x.x:4444 <b class='r'>CONNECTED</b>",
+    "> <b class='r'>ACCESS GRANTED</b>",
+    "> scanning drives: C:\\  D:\\  E:\\ ...",
+    "> found <b class='y'>48213</b> files",
+    "> uploading documents to remote host ...",
+    "  Desktop\\passwords.txt  <b class='r'>[STOLEN]</b>",
+    "  Pictures\\private\\*.jpg  <b class='r'>[STOLEN]</b>",
+    "  Browser\\cookies.db  <b class='r'>[STOLEN]</b>",
+    "> enabling webcam .......... <b class='r'>LIVE</b>",
+    "> <b class='r'>rm -rf /  --no-preserve-root</b>",
+    "> formatting C:\\ <b class='y'>[            ]</b>",
+    "> injecting keylogger .......... <b class='r'>DONE</b>",
+    "> <b class='w'>YOUR SYSTEM BELONGS TO US NOW</b>",
+    "> encrypting personal data <b class='r'>AES-256</b> ...",
+    "> deleting system32 ..........",
+    "> <b class='r'>WE ARE WATCHING YOU</b>"
+  ];
+  var li=0;
+  function pushLine(){
+    if(!running) return;
+    var d=document.createElement('div'); d.innerHTML=lines[li%lines.length]; term.appendChild(d);
+    li++; term.scrollTop=term.scrollHeight;
+    while(term.childNodes.length>60) term.removeChild(term.firstChild);
+    beep(rnd(400,1400),0.03,0.04);
+    T(rnd(120,420),pushLine);
+  }
+  function beep(freq,dur,vol){
+    if(!ac) return;
+    try{
+      var o=ac.createOscillator(), g=ac.createGain();
+      o.type='square'; o.frequency.value=freq; g.gain.value=vol||0.05;
+      o.connect(g); g.connect(ac.destination); o.start();
+      g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime+(dur||0.05));
+      o.stop(ac.currentTime+(dur||0.05)+0.02);
+    }catch(e){}
+  }
+  function siren(){
+    if(!ac||!running) return;
+    beep(rnd(200,300),0.25,0.06);
+    T(260,function(){ beep(rnd(700,900),0.25,0.06); });
+    T(560,siren);
+  }
+  function doFlash(){
+    if(!running) return;
+    flash.style.transition='none'; flash.style.opacity=rnd(0.35,0.8);
+    T(60,function(){ flash.style.transition='opacity .25s'; flash.style.opacity=0; });
+    T(rnd(500,2200),doFlash);
+  }
+  var btexts=[["&#1057;&#1048;&#1057;&#1058;&#1045;&#1052;&#1040; &#1042;&#1047;&#1051;&#1054;&#1052;&#1040;&#1053;&#1040;","SYSTEM COMPROMISED"],
+    ["YOU HAVE BEEN HACKED","&#1058;&#1099; &#1074;&#1079;&#1083;&#1086;&#1084;&#1072;&#1085;"],
+    ["GIVE ME YOUR DATA","&#1076;&#1072;&#1085;&#1085;&#1099;&#1077; &#1091;&#1082;&#1088;&#1072;&#1076;&#1077;&#1085;&#1099;"],
+    ["WE SEE YOU","&#1084;&#1099; &#1089;&#1083;&#1077;&#1076;&#1080;&#1084; &#1079;&#1072; &#1090;&#1086;&#1073;&#1086;&#1081;"]];
+  var h1=banner.querySelector('h1'), h2=banner.querySelector('h2');
+  function showBanner(){
+    if(!running) return;
+    var b=btexts[Math.floor(Math.random()*btexts.length)];
+    h1.innerHTML=b[0]; h2.innerHTML=b[1];
+    banner.classList.add('show'); body.classList.add('shaking'); siren();
+    T(1500,function(){ banner.classList.remove('show'); body.classList.remove('shaking'); });
+    T(rnd(5000,9000),showBanner);
+  }
+  function showEye(){
+    if(!running) return;
+    eye.style.transition='transform 1.2s ease, opacity 1s';
+    eye.style.opacity=0.9; eye.style.transform='translate(-50%,-50%) scale(1)';
+    T(2600,function(){ eye.style.opacity=0; eye.style.transform='translate(-50%,-50%) scale(.2)'; });
+    T(rnd(9000,15000),showEye);
+  }
+  function runProgress(){
+    if(!running) return;
+    alertBox.style.display='block'; var p=0;
+    var iv=setInterval(function(){
+      if(!running){ clearInterval(iv); return; }
+      p+=rnd(0.4,2.3); if(p>99) p=99;
+      bar.style.width=p+'%'; pct.textContent=Math.floor(p)+'%  &mdash; files encrypted: '+Math.floor(p*482);
+      pct.innerHTML=Math.floor(p)+'% &mdash; files encrypted: '+Math.floor(p*482);
+    },300);
+    timers.push(iv);
+  }
+  function enterFullscreen(){
+    var el=document.documentElement;
+    var fn=el.requestFullscreen||el.webkitRequestFullscreen||el.msRequestFullscreen;
+    if(fn){ try{ var pr=fn.call(el); if(pr&&pr.catch) pr.catch(function(){}); }catch(e){} }
+  }
+  function start(){
+    if(running) return; running=true;
+    intro.style.display='none';
+    try{ ac=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ ac=null; }
+    enterFullscreen();
+    matrixTimer=setInterval(drawMatrix,45); timers.push(matrixTimer);
+    pushLine(); doFlash();
+    T(2500,showBanner); T(6000,showEye); T(3500,runProgress);
+    T(DURATION,finish);
+  }
+  function finish(){
+    stopAll();
+    outro.style.display='flex';
+  }
+  function stopAll(){
+    running=false;
+    for(var i=0;i<timers.length;i++){ clearTimeout(timers[i]); clearInterval(timers[i]); }
+    timers=[];
+    banner.classList.remove('show'); body.classList.remove('shaking');
+    flash.style.opacity=0; eye.style.opacity=0; alertBox.style.display='none';
+    cx.clearRect(0,0,cv.width,cv.height); term.innerHTML='';
+    try{ if(ac) ac.close(); }catch(e){}
+  }
+  function panic(){
+    stopAll();
+    intro.style.display='none'; outro.style.display='flex';
+    if(document.fullscreenElement){ try{ (document.exitFullscreen||document.webkitExitFullscreen).call(document); }catch(e){} }
+  }
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'){ panic(); }
+  });
+  intro.addEventListener('click',start);
+  // auto-start shortly after load (for launcher), but intro click also works
+  T(1200,function(){ if(!running && intro.style.display!=='none') start(); });
+})();
+</script>
+</body>
+</html>
