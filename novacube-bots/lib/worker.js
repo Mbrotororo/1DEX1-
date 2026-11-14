@@ -4,6 +4,7 @@ const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
 const { Vec3 } = require('vec3');
 const log = require('./log');
+const S = require('./site');
 const { sleep, fmt, withTimeout } = require('./util');
 
 class Worker {
@@ -54,10 +55,9 @@ class Worker {
       this.safeMovements = safe;
       // never let path finding break or place blocks on our farm (floors, columns, chests)
       const farmGuard = (block) => {
-        const f = this.team.state.wideFarm;
-        if (!f || !block || !block.position) return 0;
-        const p = block.position;
-        return p.x >= f.x - 5 && p.x <= f.x + f.W && p.z >= f.z - 1 && p.z <= f.z + f.L && p.y >= f.y - 2 ? 100 : 0;
+        const site = this.team.state.site;
+        if (!site || !block || !block.position) return 0;
+        return S.inZone(site, block.position) ? 100 : 0;
       };
       for (const m of [mv, safe]) { m.exclusionAreasBreak.push(farmGuard); m.exclusionAreasPlace.push(farmGuard); }
       this.say('зашёл на сервер');
@@ -439,7 +439,10 @@ class Worker {
   summary() {
     if (!this.bot || !this.bot.entity) return `${this.name}: ${this.status}`;
     const p = this.bot.entity.position;
-    return `${this.name} (${this.role}): ${this.status} | бамбук ${this.count('bamboo')}, ягоды ${this.count('sweet_berries')}, земля ${this.count('dirt')} | ${p.x.toFixed(0)} ${p.y.toFixed(0)} ${p.z.toFixed(0)}`;
+    const bag = [['бамбук', this.count('bamboo')], ['ягоды', this.count('sweet_berries')], ['земля', this.count('dirt')],
+      ['брёвна', this.countMatch(/_log$/)], ['уголь', this.count('coal')], ['камень', this.count('cobblestone')]]
+      .filter(([, n]) => n > 0).map(([k, n]) => `${k} ${n}`).join(', ');
+    return `${this.name} (${this.role}): ${this.status}${bag ? ' | ' + bag : ''} | ${p.x.toFixed(0)} ${p.y.toFixed(0)} ${p.z.toFixed(0)}`;
   }
 }
 

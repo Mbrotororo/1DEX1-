@@ -12,25 +12,61 @@
   "bots": [
     {
       "name": "RodionDex1",
-      "role": "builder"
+      "role": "berries"
     },
     {
       "name": "RodionDex2",
-      "role": "builder"
+      "role": "bamboo"
     },
     {
       "name": "RodionDex3",
-      "role": "supplier"
+      "role": "lumberjack"
     },
     {
       "name": "RodionDex4",
-      "role": "miner"
+      "role": "digger"
     },
     {
       "name": "RodionDex5",
-      "role": "miner"
+      "role": "smith"
+    },
+    {
+      "name": "RodionDex6",
+      "role": "builder"
+    },
+    {
+      "name": "RodionDex7",
+      "role": "builder"
+    },
+    {
+      "name": "RodionDex8",
+      "role": "planter"
+    },
+    {
+      "name": "RodionDex9",
+      "role": "planter"
+    },
+    {
+      "name": "RodionDex10",
+      "role": "planter"
     }
   ],
+  "teams": {
+    "bamboo": [
+      "RodionDex1",
+      "RodionDex2",
+      "RodionDex3",
+      "RodionDex4",
+      "RodionDex5"
+    ],
+    "sweet_berries": [
+      "RodionDex6",
+      "RodionDex7",
+      "RodionDex8",
+      "RodionDex9",
+      "RodionDex10"
+    ]
+  },
   "commands": {
     "register": "/register {pass} {pass}",
     "login": "/login {pass}",
@@ -49,19 +85,31 @@
     "floors": 10,
     "floorGap": 4,
     "firstFloorHeight": 3,
-    "plants": "bamboo",
-    "seedsToStart": 64,
-    "keepForReplant": 128
+    "plants": [
+      "bamboo",
+      "sweet_berries"
+    ],
+    "keepSeeds": 640
+  },
+  "storage": {
+    "doubleChestsBeforeEveryoneFarms": 12
+  },
+  "depot": {
+    "doubleChests": 4
+  },
+  "smith": {
+    "shovels": 3,
+    "axes": 1,
+    "swords": 8,
+    "swordsBeforeEveryoneFarms": 20,
+    "torches": 128
   },
   "scout": {
-    "bamboo": 64,
-    "sweet_berries": 64,
     "searchRadius": 56,
     "rtpCooldownSec": 10
   },
   "miner": {
-    "radius": 24,
-    "sellWhenFull": true
+    "radius": 24
   },
   "sell": {
     "mainSells": [
@@ -76,24 +124,5 @@
       "sell"
     ]
   },
-  "joinDelaySec": 8,
-  "tower": {
-    "plants": [
-      "bamboo",
-      "sweet_berries",
-      "bamboo",
-      "sweet_berries",
-      "bamboo",
-      "sweet_berries",
-      "bamboo",
-      "sweet_berries",
-      "bamboo",
-      "sweet_berries"
-    ],
-    "floorGap": 4,
-    "firstFloorHeight": 3,
-    "harvestEveryMin": 4,
-    "keepForReplant": 16,
-    "seedsToStart": 16
-  }
+  "joinDelaySec": 8
 }

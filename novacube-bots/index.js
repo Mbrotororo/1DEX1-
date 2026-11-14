@@ -25,13 +25,17 @@ const team = {
   save() { fs.writeFileSync(statePath, JSON.stringify(this.state, null, 2)); },
 };
 
+const seeds = require('./roles/seeds');
 const ROLES = {
-  farmer: require('./roles/farmer'),
-  scout: require('./roles/scout'),
+  berries: seeds,
+  bamboo: seeds,
+  lumberjack: require('./roles/lumberjack'),
+  digger: require('./roles/digger'),
+  smith: require('./roles/smith'),
+  builder: require('./roles/builder'),
+  planter: require('./roles/planter'),
   miner: require('./roles/miner'),
   main: require('./roles/main'),
-  builder: require('./roles/builder'),
-  supplier: require('./roles/supplier'),
 };
 
 async function runRole(w) {
@@ -76,8 +80,15 @@ async function main() {
   // status board every minute
   setInterval(() => {
     const lines = [...team.workers.values()].map((w) => '  ' + w.summary());
-    const farm = team.state.wideFarm || team.state.farm;
-    const f = farm ? `ферма ${farm.x} ${farm.y} ${farm.z}, собрано растений ${team.state.harvested || 0}` : 'ферма ещё не построена';
+    const site = team.state.site;
+    let f = 'место под фермы ещё не выбрано';
+    if (site) {
+      const ru = { bamboo: 'бамбук', sweet_berries: 'ягоды' };
+      const floors = site.farms.map((fm) => `${ru[fm.plant] || fm.plant} ${((team.state.built || {})[fm.id] || []).length}/${site.F}`).join(', ');
+      const st = team.state.stored || {};
+      f = `фермы ${site.x} ${site.y} ${site.z} | этажи: ${floors} | хранилище: ${team.state.storagePairs || 0} двойных сундуков | ` +
+        `сложено: бамбук ${st.bamboo || 0}, ягоды ${st.sweet_berries || 0}`;
+    }
     console.log(`\n\x1b[1m── 1DEX1 боты ─ ${new Date().toTimeString().slice(0, 5)} ─ ${f}\x1b[0m\n${lines.join('\n')}\n`);
   }, 60000);
 }

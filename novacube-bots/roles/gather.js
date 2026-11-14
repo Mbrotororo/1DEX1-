@@ -1,14 +1,15 @@
-// Shared by scouts and the farmer: looking around a random place for bamboo and ripe berry bushes.
+// Used by the seed scouts: looking around a random place for bamboo and ripe berry bushes.
 const { sleep } = require('../lib/util');
+const S = require('../lib/site');
 
 function bushAge(block) {
   try { return Number(block.getProperties().age); } catch (_) { return 0; }
 }
 
-/** Only wild plants on the ground: not our own farm and nothing high up on someone's build. */
+/** Only wild plants on the ground: not our own farms and nothing high up on someone's build. */
 function isWild(w, p) {
-  const f = w.team && w.team.state.wideFarm;
-  if (f && p.x >= f.x - 8 && p.x < f.x + f.W + 4 && p.z >= f.z - 4 && p.z < f.z + f.L + 4) return false;
+  const site = w.team && w.team.state.site;
+  if (site && S.inZone(site, p, 4)) return false;
   return p.y <= w.bot.entity.position.y + 4;
 }
 
