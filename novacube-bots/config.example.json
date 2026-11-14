@@ -89,7 +89,7 @@
       "bamboo",
       "sweet_berries"
     ],
-    "keepSeeds": 640
+    "keepSeeds": 192
   },
   "storage": {
     "doubleChestsBeforeEveryoneFarms": 12
@@ -124,5 +124,8 @@
       "sell"
     ]
   },
-  "joinDelaySec": 8
+  "joinDelaySec": 8,
+  "lumberjack": {
+    "logCap": 384
+  }
 }
