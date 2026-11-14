@@ -14,6 +14,7 @@ const { Vec3 } = require('vec3');
 const { gatherSeeds, bushAge } = require('./gather');
 const { chopWood, woodCount, ensurePlanks, ensureSticks, craftItem, ensureTable, pickUpTable } = require('../lib/craft');
 const { sleep } = require('../lib/util');
+const log = require('../lib/log');
 
 function fc(cfg) {
   const f = cfg.farm;
@@ -102,15 +103,57 @@ async function climbShaft(w, farm, k) {
   return Math.floor(w.bot.entity.position.y) >= target;
 }
 
+function onColumn(w, s) {
+  const p = w.bot.entity.position;
+  return Math.floor(p.x) === s.x && Math.floor(p.z) === s.z;
+}
+
+/** From anywhere on a floor back to our column by walkways only: to an end row, along it to the
+ *  west edge, along the edge to the column. Rows with plants are never crossed. */
+async function walkHome(w, farm, i) {
+  const s = shaftOf(farm, i);
+  const p = w.bot.entity.position;
+  const y = Math.floor(p.y);
+  let dx = Math.floor(p.x) - farm.x, dz = Math.floor(p.z) - farm.z;
+  const cell = (x, z) => new Vec3(farm.x + x, y, farm.z + z);
+  const walk = async (tx, tz) => {
+    while (dx !== tx || dz !== tz) {
+      const nx = dx + Math.sign(tx - dx), nz = dz + Math.sign(tz - dz);
+      if (!(await stepTo(w, cell(nx, nz), true))) return false;
+      dx = nx; dz = nz;
+    }
+    return true;
+  };
+  if (dx % 2 !== 0 && dx > 0) { if (!(await walk(dx - 1, dz))) return false; }   // off a row onto a walkway
+  if (dx !== 0 && dz !== 0 && dz !== farm.L - 1) {
+    if (!(await walk(dx, dz < farm.L / 2 ? 0 : farm.L - 1))) return false;
+  }
+  if (!(await walk(0, dz))) return false;
+  if (!(await walk(0, s.z - farm.z))) return false;
+  await stepTo(w, new Vec3(s.x, y, s.z), true);
+  return onColumn(w, s);
+}
+
 async function descendShaft(w, farm, i) {
   const s = shaftOf(farm, i);
   w.careful(true);
   const y = Math.floor(w.bot.entity.position.y);
-  // step back onto the column top
-  await w.gotoBlock(new Vec3(s.x, y, s.z), 15000);
+  // back onto the column top
+  if (!onColumn(w, s)) await walkHome(w, farm, i);
+  if (!onColumn(w, s)) await w.gotoBlock(new Vec3(s.x, y, s.z), 15000);
+  if (!onColumn(w, s)) {
+    // last resort: straight down through the walkway (the next pass puts the blocks back)
+    log.debug(w.name, 'не дошёл до своего столба, спускаюсь прямо вниз');
+  }
   let guard = 0;
-  const gy = groundY(w.bot, s.x, s.z, farm.y - 1);
+  const gy = groundY(w.bot, Math.floor(w.bot.entity.position.x), Math.floor(w.bot.entity.position.z), farm.y - 1);
   while (Math.floor(w.bot.entity.position.y) > gy + 1 && guard++ < 90) {
+    const below = w.bot.blockAt(w.bot.entity.position.offset(0, -1, 0).floored());
+    // never dig out a plant pot: step aside to a walkway first
+    if (below && below.name === 'dirt' && !onColumn(w, s)) {
+      const p = w.bot.entity.position.floored();
+      if (isRow(p.x - farm.x, p.z - farm.z, farm)) await stepTo(w, p.offset(-1, 0, 0), true);
+    }
     if (!(await w.digDown())) break;
   }
   w.careful(false);
@@ -153,7 +196,7 @@ async function stepTo(w, cell, sneak) {
 
 class Pass {
   constructor(w, farm, k, idx) {
-    this.w = w; this.bot = w.bot; this.farm = farm; this.k = k;
+    this.w = w; this.bot = w.bot; this.farm = farm; this.k = k; this.idx = idx;
     this.L = floorY(farm, k);
     this.s = shaftOf(farm, idx);
     this.plant = plantOf(w.cfg, k);
@@ -254,6 +297,7 @@ class Pass {
       if (!(await stepTo(w, this.cell(dx, dz), true))) break;
     }
     await stepTo(w, new Vec3(s.x, this.L + 1, s.z), true);
+    if (!onColumn(w, s)) await walkHome(w, farm, this.idx);
     return this.harvested;
   }
 }
