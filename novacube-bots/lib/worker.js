@@ -24,6 +24,8 @@ class Worker {
   }
 
   say(msg) { log.line(this.name, msg); }
+  /** Remembers what the bot is doing right now (the stall check in index.js reports it). */
+  act(what) { this.actWhat = what; this.actAt = Date.now(); }
   setStatus(s) { if (s !== this.status) { this.status = s; this.say(s); } }
 
   start() {
@@ -80,7 +82,7 @@ class Worker {
                 if (b && b.name === 'sweet_berry_bush') {
                   this.cuttingBush = true;
                   if (bot.health < 10) bot.pathfinder.setGoal(null); // stop walking into it while we cut
-                  await bot.dig(b, true).catch(() => {});
+                  await withTimeout(bot.dig(b, true), 4000, 'куст').catch(() => {});
                   this.cuttingBush = false;
                   return;
                 }
@@ -217,7 +219,7 @@ class Worker {
   async equip(name) {
     const it = this.item(name);
     if (!it) return false;
-    try { await this.bot.equip(it, 'hand'); return true; } catch (_) { return false; }
+    try { await withTimeout(this.bot.equip(it, 'hand'), 5000, 'взять в руку'); return true; } catch (_) { return false; }
   }
 
   async tossAll(names, keep = {}) {
@@ -227,7 +229,7 @@ class Worker {
         const it = this.item(name);
         if (!it) break;
         const n = Math.min(extra, it.count);
-        try { await this.bot.toss(it.type, null, n); } catch (_) { break; }
+        try { await withTimeout(this.bot.toss(it.type, null, n), 5000, 'выбросить'); } catch (_) { break; }
         extra -= n;
         await sleep(250);
       }
@@ -236,6 +238,7 @@ class Worker {
 
   // ------------------------------------------------------------------ movement / world
   async goto(pos, range = 1, timeout = 60000) {
+    this.act(`иду к ${pos}`);
     const { GoalNear } = goals;
     try {
       await withTimeout(this.bot.pathfinder.goto(new GoalNear(pos.x, pos.y, pos.z, range)), timeout, 'путь');
@@ -248,6 +251,7 @@ class Worker {
   }
 
   async gotoBlock(pos, timeout = 30000) {
+    this.act(`иду на ${pos}`);
     try {
       await withTimeout(this.bot.pathfinder.goto(new goals.GoalBlock(pos.x, pos.y, pos.z)), timeout, 'путь');
       return true;
@@ -269,12 +273,13 @@ class Worker {
   async equipBestFor(block) {
     try {
       const tool = this.bot.pathfinder.bestHarvestTool(block);
-      if (tool) await this.bot.equip(tool, 'hand');
+      if (tool) await withTimeout(this.bot.equip(tool, 'hand'), 5000, 'инструмент');
     } catch (_) { /* hand */ }
   }
 
   /** Digs a block. Returns true only if the block is really gone (on a protected spot the server puts it back). */
   async dig(pos, verify = true) {
+    this.act(`копаю ${pos}`);
     const block = this.bot.blockAt(pos);
     if (!block || block.name === 'air' || !this.bot.canDigBlock(block)) return false;
     const type = block.type;
@@ -307,6 +312,7 @@ class Worker {
 
   /** Places an item from the inventory onto the face of a neighbouring block. */
   async placeAt(target, itemName, preferRef = null) {
+    this.act(`ставлю ${itemName} на ${target}`);
     const bot = this.bot;
     const cur = bot.blockAt(target);
     if (cur && cur.name !== 'air' && cur.name !== 'cave_air' && !cur.name.includes('grass') && cur.boundingBox === 'block') return true;
@@ -331,6 +337,7 @@ class Worker {
 
   /** Jumps and puts a block under itself: one block higher. */
   async pillarUp(itemName = 'dirt') {
+    this.act('столб вверх');
     const bot = this.bot;
     // a flower or grass where we stand (or above the head) would block the new block: clear it
     const feet = bot.entity.position.floored();
@@ -359,6 +366,7 @@ class Worker {
 
   /** Digs the block under its feet and falls one block down. */
   async digDown() {
+    this.act('копаю вниз');
     const bot = this.bot;
     const startY = Math.floor(bot.entity.position.y);
     const below = bot.blockAt(bot.entity.position.offset(0, -1, 0).floored());
@@ -397,7 +405,7 @@ class Worker {
           const it = this.item(n);
           if (!it) break;
           const c = Math.min(extra, it.count);
-          try { await chest.deposit(it.type, null, c); } catch (_) { extra = 0; break; }
+          try { await withTimeout(chest.deposit(it.type, null, c), 5000, 'в сундук'); } catch (_) { extra = 0; break; }
           stored += c; extra -= c;
         }
       }
@@ -420,7 +428,7 @@ class Worker {
       try { chest = await withTimeout(bot.openContainer(b), 6000, 'сундук'); } catch (_) { continue; }
       for (const it of chest.containerItems()) {
         if (!names.includes(it.name) || this.freeSlots() <= leaveFree) continue;
-        try { await chest.withdraw(it.type, null, it.count); taken += it.count; } catch (_) { /* full */ }
+        try { await withTimeout(chest.withdraw(it.type, null, it.count), 5000, 'из сундука'); taken += it.count; } catch (_) { /* full */ }
       }
       chest.close();
       await sleep(300);

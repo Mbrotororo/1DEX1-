@@ -121,6 +121,7 @@ function pairKey(site, p) { const j = p.z - site.z; return `${p.x},${site.z + j 
 
 /** Opens a chest, runs fn(chest) and remembers what is inside (so others know where things are). */
 async function useChest(w, p, fn) {
+  w.act(`сундук ${p}`);
   const bot = w.bot;
   const site = w.team.state.site;
   const b = bot.blockAt(p);
@@ -173,7 +174,7 @@ async function depositRow(w, spots, names, keep = {}) {
           const it = w.bot.inventory.items().find((i) => i.name === n);
           if (!it) break;
           const cnt = Math.min(extra, it.count);
-          try { await chest.deposit(it.type, null, cnt); } catch (_) { extra = 0; break; }
+          try { await withTimeout(chest.deposit(it.type, null, cnt), 5000, 'в сундук'); } catch (_) { extra = 0; break; }
           stored[n] = (stored[n] || 0) + cnt;
           extra -= cnt;
         }
@@ -197,7 +198,7 @@ async function takeRow(w, spots, wants, leaveFree = 3) {
           if (x.count <= 0 || w.freeSlots() <= leaveFree) break;
           if (!match(x.test, it.name)) continue;
           const cnt = Math.min(x.count, it.count);
-          try { await chest.withdraw(it.type, null, cnt); } catch (_) { continue; }
+          try { await withTimeout(chest.withdraw(it.type, null, cnt), 5000, 'из сундука'); } catch (_) { continue; }
           x.count -= cnt;
           taken[it.name] = (taken[it.name] || 0) + cnt;
         }

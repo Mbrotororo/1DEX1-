@@ -5,7 +5,7 @@
 // (sneaking at the edges, so they can't fall), and work the cells to the left and right.
 const { Vec3 } = require('vec3');
 const S = require('./site');
-const { sleep } = require('./util');
+const { sleep, withTimeout } = require('./util');
 const log = require('./log');
 
 const walkMaterials = ['cobblestone', 'cobbled_deepslate', 'dirt'];
@@ -27,6 +27,7 @@ function bushAge(block) { try { return Number(block.getProperties().age); } catc
 function blocksCarried(w) { return walkMaterials.reduce((s, m) => s + w.count(m), 0); }
 
 async function stepTo(w, cell, sneak) {
+  w.act(`шаг на ${cell}`);
   const bot = w.bot;
   const tx = cell.x + 0.5, tz = cell.z + 0.5;
   bot.setControlState('sneak', !!sneak);
@@ -47,17 +48,11 @@ async function stepTo(w, cell, sneak) {
 }
 
 // ------------------------------------------------------------------ column
-/** Where a column stands on the ground: remembered the first time, before any of our blocks are there. */
+/** Ground level of a column = the ground right next to it (west), where nothing is ever built or dug.
+ *  Pieces of an old column above that level are ours and get dug away. */
 function colBase(w, farm, i) {
-  const site = w.team.state.site;
-  const key = `${farm.id}:${i}`;
-  w.team.state.colBase = w.team.state.colBase || {};
-  if (w.team.state.colBase[key] === undefined) {
-    const s = S.shaftOf(farm, i);
-    w.team.state.colBase[key] = S.groundY(w.bot, s.x, s.z, site);
-    w.team.save();
-  }
-  return w.team.state.colBase[key];
+  const s = S.shaftOf(farm, i);
+  return S.groundY(w.bot, s.x - 1, s.z, w.team.state.site);
 }
 
 function rememberShaft(w, farm, i) {
@@ -69,9 +64,18 @@ function rememberShaft(w, farm, i) {
 
 async function toShaftBottom(w, farm, i) {
   const s = S.shaftOf(farm, i);
-  const base = colBase(w, farm, i);
+  const g = colBase(w, farm, i);
   w.careful(false);
-  return w.gotoBlock(new Vec3(s.x, base + 1, s.z), 60000);
+  if (onColumn(w, s) && Math.floor(w.bot.entity.position.y) <= g + 1) return true;
+  // stand next to the column, clear its cell down to the ground level (old pieces, a flower), step in
+  if (!(await w.gotoBlock(new Vec3(s.x - 1, g + 1, s.z), 60000))) return false;
+  for (let y = g + 4; y >= g + 1; y--) {
+    const p = new Vec3(s.x, y, s.z);
+    const b = w.bot.blockAt(p);
+    if (b && b.name !== 'air' && b.name !== 'cave_air') await w.dig(p, false);
+  }
+  await stepTo(w, new Vec3(s.x, g + 1, s.z), false);
+  return onColumn(w, s);
 }
 
 async function climbShaft(w, farm, k) {
@@ -252,7 +256,7 @@ class Pass {
           }
         } else {
           if (here && here.name === 'sweet_berry_bush' && bushAge(here) >= 2) {
-            try { await bot.activateBlock(here); this.harvested++; } catch (_) { /* ignore */ }
+            try { await withTimeout(bot.activateBlock(here), 4000, 'куст'); this.harvested++; } catch (_) { /* ignore */ }
           } else if (here && here.name === 'air' && w.count('sweet_berries') > 0) {
             if (await w.placeAt(top, 'sweet_berries', top.offset(0, -1, 0))) this.planted++;
           }

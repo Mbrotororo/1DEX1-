@@ -77,6 +77,17 @@ async function main() {
     if (lag > 3000) log.line('1DEX1', `программа подвисла на ${Math.round(lag / 1000)} с`);
     last = Date.now();
   }, 1000);
+  // a bot that has been doing the same thing for minutes is stuck somewhere: say where
+  setInterval(() => {
+    for (const w of team.workers.values()) {
+      if (!w.actAt || !w.ready) continue;
+      const min = (Date.now() - w.actAt) / 60000;
+      if (min > 4 && (!w.stallSaid || Date.now() - w.stallSaid > 300000)) {
+        w.stallSaid = Date.now();
+        log.line(w.name, `давно ничего не меняется (${Math.round(min)} мин): ${w.actWhat}`);
+      }
+    }
+  }, 60000);
   // status board every minute
   setInterval(() => {
     const lines = [...team.workers.values()].map((w) => '  ' + w.summary());

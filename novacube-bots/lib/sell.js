@@ -1,7 +1,7 @@
 // Selling to the buyer: "/b" opens a menu, the sign in it opens the list of things the buyer takes,
 // clicking an item there sells it. Every menu is written to the log so it can be tuned later.
 const log = require('./log');
-const { sleep } = require('./util');
+const { sleep, withTimeout } = require('./util');
 
 function label(item) {
   if (!item) return '';
@@ -50,7 +50,7 @@ async function sell(w, itemNames, keywords) {
       topSlots(win).find(({ it }) => kw.some((k) => label(it).toLowerCase().includes(k)));
     if (entry) {
       const next = waitWindow(bot, 2500);
-      await bot.clickWindow(entry.slot, 0, 0).catch(() => {});
+      await withTimeout(bot.clickWindow(entry.slot, 0, 0), 5000, 'меню').catch(() => {});
       const opened = await next;
       if (opened) win = opened;
       await sleep(600);
@@ -67,11 +67,11 @@ async function sell(w, itemNames, keywords) {
       const slot = topSlots(cur).find(({ it }) => it.name === name);
       if (!slot) break;
       const had = w.count(name);
-      await bot.clickWindow(slot.slot, 0, 0).catch(() => {});
+      await withTimeout(bot.clickWindow(slot.slot, 0, 0), 5000, 'меню').catch(() => {});
       await sleep(450);
       if (w.count(name) >= had) {
         // maybe "shift-click sells everything"
-        await bot.clickWindow(slot.slot, 0, 1).catch(() => {});
+        await withTimeout(bot.clickWindow(slot.slot, 0, 1), 5000, 'меню').catch(() => {});
         await sleep(450);
         if (w.count(name) >= had) break;
       }

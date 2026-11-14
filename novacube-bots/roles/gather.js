@@ -1,5 +1,5 @@
 // Used by the seed scouts: looking around a random place for bamboo and ripe berry bushes.
-const { sleep } = require('../lib/util');
+const { sleep, withTimeout } = require('../lib/util');
 const S = require('../lib/site');
 
 function bushAge(block) {
@@ -22,7 +22,8 @@ async function harvestAround(w, want, budgetMs = 120000) {
     let did = false;
     await w.maybeEat();
     if (w.count('sweet_berries') < want.sweet_berries) {
-      const bushes = w.find(['sweet_berry_bush'], radius, 12, (b) => b && bushAge(b) >= 2).filter((p) => isWild(w, p));
+      const bushes = w.find(['sweet_berry_bush'], radius, 80)   // a plain search is cheap; the ripe ones are picked after
+        .filter((p) => { const b = w.bot.blockAt(p); return b && bushAge(b) >= 2 && isWild(w, p); }).slice(0, 12);
       if (bushes.length) {
         w.setStatus(`собираю ягоды (${w.count('sweet_berries')})`);
         const me = w.bot.entity.position;
@@ -34,7 +35,7 @@ async function harvestAround(w, want, budgetMs = 120000) {
           if (!(await w.goto(p, 3, 25000))) continue;
           const b = w.bot.blockAt(p);
           if (b && b.name === 'sweet_berry_bush' && bushAge(b) >= 2) {
-            try { await w.bot.activateBlock(b); } catch (_) { /* ignore */ }
+            try { await withTimeout(w.bot.activateBlock(b), 4000, 'куст'); } catch (_) { /* ignore */ }
             await sleep(400);
           }
           await w.collectDrops(4, 4);

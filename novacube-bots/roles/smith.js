@@ -48,17 +48,17 @@ async function charcoal(w) {
   let f;
   try { f = await withTimeout(w.bot.openFurnace(w.bot.blockAt(spot)), 7000, 'печь'); } catch (_) { return; }
   try {
-    if (f.outputItem()) { await f.takeOutput(); }
+    if (f.outputItem()) { await withTimeout(f.takeOutput(), 5000, 'печь'); }
     // more logs in only when we really lack coal and the depot has wood to spare
     const spare = S.stock(w, C.depot(w), C.LOGS);
     if (!f.inputItem() && w.count('coal') + w.count('charcoal') < 32 && spare + w.countMatch(C.LOGS) >= 24) {
       if (w.countMatch(C.LOGS) < 8) { f.close(); f = null; await S.takeRow(w, C.depot(w), [{ test: C.LOGS, count: 16 }]); f = await withTimeout(w.bot.openFurnace(w.bot.blockAt(spot)), 7000, 'печь'); }
       const log = w.bot.inventory.items().find((i) => C.LOGS.test(i.name));
-      if (log) await f.putInput(log.type, null, Math.min(16, log.count));
+      if (log) await withTimeout(f.putInput(log.type, null, Math.min(16, log.count)), 5000, 'печь');
     }
     if (!f.fuelItem() && f.inputItem()) {
       const fuel = w.bot.inventory.items().find((i) => i.name === 'charcoal') || w.bot.inventory.items().find((i) => /_planks$/.test(i.name));
-      if (fuel) await f.putFuel(fuel.type, null, Math.min(fuel.name === 'charcoal' ? 2 : 11, fuel.count));
+      if (fuel) await withTimeout(f.putFuel(fuel.type, null, Math.min(fuel.name === 'charcoal' ? 2 : 11, fuel.count)), 5000, 'печь');
     }
   } catch (e) { /* the furnace will be checked again next time */ }
   if (f) f.close();
