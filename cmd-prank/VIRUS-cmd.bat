@@ -12,12 +12,14 @@ REM muzyka (track.mp3) skrytno v fone
 if exist "%~dp0_music.vbs" start "" wscript //nologo "%~dp0_music.vbs"
 
 REM otkryvaet COUNT okon kaskadom
-REM 50 - eto uzhe stena okon na ves ekran, no komp perezhivet.
-REM NE stav 500+ : komp zavisnet namertvo i pridetsya zhestko vyklyuchat.
-set COUNT=50
+REM 100 - mnogo okon na ves ekran. Na slabom PC mozhet chut lagnut
+REM poka otkryvayutsya (~10 sek), no komp perezhivet i zakroetsya.
+REM NE stav 300+ : komp mozhet zavisnut namertvo.
+set COUNT=100
 for /L %%i in (1,1,%COUNT%) do (
   start "" "%~f0" worker
-  ping -n 1 -w 130 127.0.0.1 >nul
+  REM ~100 ms pauza (ping na nerabochiy test-IP), chtob okna shli volnoy
+  ping -n 1 -w 100 192.0.2.1 >nul
 )
 exit
 
