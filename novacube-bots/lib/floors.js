@@ -71,11 +71,15 @@ async function toShaftBottom(w, farm, i) {
   if (!onColumn(w, s)) {
     // next to the column, then clear its cell down to the ground (old pieces, a flower) and step in
     if (!(await w.goto(new Vec3(s.x - 1, g + 1, s.z), 1, 60000))) return false;
-    for (let y = g + 4; y >= g + 1; y--) {
-      const p = new Vec3(s.x, y, s.z);
-      const b = w.bot.blockAt(p);
-      if (b && b.name !== 'air' && b.name !== 'cave_air') await w.dig(p, false);
+    // the column cell and the cell in front of it (the way in) must be free above the ground
+    for (const dx of [0, -1]) {
+      for (let y = g + 4; y >= g + 1; y--) {
+        const p = new Vec3(s.x + dx, y, s.z);
+        const b = w.bot.blockAt(p);
+        if (b && b.name !== 'air' && b.name !== 'cave_air' && !/torch|chest/.test(b.name)) await w.dig(p, false);
+      }
     }
+    if (!onColumn(w, s) && Math.abs(w.bot.entity.position.x - (s.x + 0.5)) > 1.2) await stepTo(w, new Vec3(s.x - 1, g + 1, s.z), false);
     await stepTo(w, new Vec3(s.x, g + 1, s.z), false);
     if (!onColumn(w, s)) return false;
   }

@@ -405,19 +405,31 @@ class Worker {
       }
     }
     if (!(await this.equip(itemName))) return false;
+    // stand in the middle of the cell first: off-centre, the new block would touch our own body
+    const c = bot.entity.position.floored().offset(0.5, 0, 0.5);
+    for (let i = 0; i < 20 && Math.hypot(bot.entity.position.x - c.x, bot.entity.position.z - c.z) > 0.12; i++) {
+      await bot.look(Math.atan2(-(c.x - bot.entity.position.x), -(c.z - bot.entity.position.z)), 0, true);
+      bot.setControlState('sneak', true);
+      bot.setControlState('forward', true);
+      await sleep(50);
+      bot.setControlState('forward', false);
+    }
+    bot.setControlState('sneak', false);
+    await sleep(80);
     const startY = Math.floor(bot.entity.position.y);
     const below = bot.blockAt(bot.entity.position.offset(0, -1, 0).floored());
     await bot.look(bot.entity.yaw, -Math.PI / 2, true);
     bot.setControlState('jump', true);
     const t0 = Date.now();
-    while (bot.entity.position.y < startY + 1.05 && Date.now() - t0 < 1500) await sleep(30);
+    while (bot.entity.position.y < startY + 1.15 && Date.now() - t0 < 1500) await sleep(30);
+    let err = '';
     try {
       await withTimeout(bot.placeBlock(below, new Vec3(0, 1, 0)), 3000, 'столб');
-    } catch (_) { /* checked below */ }
+    } catch (e) { err = e.message; }
     bot.setControlState('jump', false);
     await sleep(350);
     const ok = Math.floor(bot.entity.position.y) >= startY + 1;
-    if (!ok) log.debug(this.name, 'не получилось подняться столбом');
+    if (!ok) log.debug(this.name, `не получилось подняться столбом (${bot.entity.position.toString()}, ${err || 'без ошибки'})`);
     return ok;
   }
 
