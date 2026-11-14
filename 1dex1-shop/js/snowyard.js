@@ -1,30 +1,27 @@
 // Снег на сайте под Новый год.
 // Снежинки падают поверх сайта и оседают на карточках, кнопках и плашках — сугробы
-// понемногу растут. Снег можно собрать: зажми на сугробе и веди — получится снежок; чем
-// больше снега собрал, тем он больше (до предела). Отпусти — снежок упадёт на ближайшую
-// карточку или кнопку ниже. Три снежка друг на друге — снеговик (5 видов: в цилиндре,
-// Санта, с ведром и метлой, в ушанке, снежный голем с тыквой). Снежок или голову снеговика
-// можно снова взять. Снег с надписи «1DEX1 SHOP» и с острова не собрать — это 3D-сцены.
-// Снеговики запоминаются (в браузере) и стоят на своих местах, пока не наступит весна.
+// понемногу растут. На компьютере снег можно собрать: зажми на сугробе и веди — получится
+// снежок; чем больше снега собрал, тем он больше (до предела). Отпусти — снежок упадёт на
+// карточку или кнопку ниже, а если отпустить на ходу — полетит, как брошенный. Три снежка
+// друг на друге — снеговик (5 видов: в цилиндре, Санта, с ведром и метлой, в ушанке,
+// снежный голем с тыквой). Снеговики ходят по своей карточке, их можно взять и
+// перетащить; попадёшь в снеговика снежком — развалится. Через 30 секунд снеговик тает,
+// и на его месте остаётся горка снега. На телефоне снег только лежит — лепить нельзя.
+// Снег с надписи «1DEX1 SHOP» и с острова не собрать — это 3D-сцены.
 import {notify} from './achievements.js';
 import {t} from './i18n.js';
 
 const PX = 2; // ширина столбика сугроба, px
 const SEL = '.card, .mcard, .btn, .ny-count, .label';
 const SKIP = 'dialog, .topbar, .hotbar, .adm';
-const KEY = 'dex.snowmen';
 const HINT_KEY = 'dex.snowhint';
 const TYPES = ['classic', 'santa', 'bucket', 'ushanka', 'golem'];
 const MAX_STACKS = 16;
+const LIFE = 30; // сколько секунд живёт снеговик, потом тает
+const MELT = 2.4; // сколько тает
+const G = 1800; // тяжесть для снежков, px/с²
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const rnd = (a, b) => a + Math.random() * (b - a);
-const load = () => {
-	try {
-		return JSON.parse(localStorage.getItem(KEY) || '[]');
-	} catch {
-		return [];
-	}
-};
 
 export const initSnowYard = ({reducedMotion = false, hero = () => null, debug = false} = {}) => {
 	const cv = document.createElement('canvas');
@@ -35,7 +32,15 @@ export const initSnowYard = ({reducedMotion = false, hero = () => null, debug = 
 	let W = 0;
 	let H = 0;
 	let dpr = 1;
-	const maxR = () => (W < 700 ? 16 : 20); // самый большой снежок — не слишком огромный
+	const maxR = () => 20; // самый большой снежок — не слишком огромный
+	// на телефоне снег только лежит: ни снежков, ни снеговиков
+	const phoneMQ = matchMedia('(max-width: 899px)');
+	const toys = () => !phoneMQ.matches;
+	try {
+		localStorage.removeItem('dex.snowmen'); // раньше снеговики запоминались — теперь они тают
+	} catch {
+		// неважно
+	}
 
 	// ---------- снежинки ----------
 	const big = document.createElement('canvas');
@@ -113,7 +118,6 @@ export const initSnowYard = ({reducedMotion = false, hero = () => null, debug = 
 			next.push({el, key: keyOf(el), d, r});
 		}
 		surfaces = next;
-		attachPending();
 	};
 	const add = (d, i, a) => {
 		for (const [k, part] of [[i, 0.6], [i - 1, 0.2], [i + 1, 0.2]]) if (k >= 0 && k < d.cols) d.h[k] = Math.min(limit(d, k), d.h[k] + a * part);
@@ -137,40 +141,31 @@ export const initSnowYard = ({reducedMotion = false, hero = () => null, debug = 
 	};
 
 	// ---------- снежки и снеговики ----------
-	let stacks = []; // {el, key, fx, balls: [радиусы снизу вверх], type, born}
-	const falling = []; // летят вниз: {x, y — в координатах страницы, r, vy}
-	let held = null; // в руке: {x, y, vol, r}
+	// стопка на карточке: {el, key, fx — где на карточке (0…1), balls — радиусы снизу вверх,
+	//   type — вид снеговика (null — просто снежки), born — когда собрался, dir, phase, walk, melt}
+	let stacks = [];
+	const flying = []; // летят: снежки {x, y — страница, r, vx, vy} и снеговики {man, x, y, vx, vy}
+	const chunks = []; // куски развалившегося снеговика
+	let held = null; // в руке: снежок {x, y, vol, r} или снеговик {man, dx, dy}
 	const sparks = [];
-	let pending = load(); // сохранённые снеговики ждут, когда появятся их карточки
 	let lastType = -1;
 	let made = false;
-	const save = () => {
-		try {
-			localStorage.setItem(KEY, JSON.stringify(stacks.filter((s) => s.key).map((s) => ({k: s.key, fx: +s.fx.toFixed(3), b: s.balls.map((r) => +r.toFixed(1)), t: s.type}))));
-		} catch {
-			// приватный режим: снеговики живут до закрытия вкладки
-		}
-	};
-	function attachPending() {
-		if (!pending.length) return;
-		pending = pending.filter((p) => {
-			const s = surfaces.find((x) => x.key === p.k);
-			if (!s) return true;
-			stacks.push({el: s.el, key: p.k, fx: p.fx, balls: p.b, type: p.t || null, born: -9});
-			return false;
-		});
-	}
+	const nowS = () => performance.now() / 1000;
 	const surfaceOf = (el) => surfaces.find((s) => s.el === el);
-	// центры шаров стопки на экране (снизу вверх)
-	const ballsOf = (st, s) => {
+	// центры шаров стопки (снизу вверх), если основание — в точке (x, top)
+	const ballsAt = (balls, x, top) => {
 		const out = [];
-		let y = s.r.top;
-		const x = s.r.left + st.fx * s.r.width;
-		st.balls.forEach((r, i) => {
-			y = i === 0 ? s.r.top - r * 0.9 : y - st.balls[i - 1] * 0.8 - r * 0.8;
+		let y = top;
+		balls.forEach((r, i) => {
+			y = i === 0 ? top - r * 0.9 : y - balls[i - 1] * 0.8 - r * 0.8;
 			out.push({x, y, r});
 		});
 		return out;
+	};
+	const baseOf = (st, s) => ({x: s.r.left + st.fx * s.r.width, y: s.r.top});
+	const ballsOf = (st, s) => {
+		const b = baseOf(st, s);
+		return ballsAt(st.balls, b.x, b.y);
 	};
 	const trim = () => {
 		while (stacks.length > MAX_STACKS) {
@@ -178,23 +173,51 @@ export const initSnowYard = ({reducedMotion = false, hero = () => null, debug = 
 			stacks.splice(i >= 0 ? i : 0, 1);
 		}
 	};
+	const sparkle = (bs) => {
+		for (const b of bs) for (let i = 0; i < 8; i++) sparks.push({x: b.x + rnd(-b.r, b.r), y: b.y + rnd(-b.r, b.r), vx: rnd(-40, 40), vy: rnd(-70, -10), life: rnd(0.5, 0.9)});
+	};
 	const finish = (st) => {
 		st.balls.sort((a, b) => b - a); // самый большой — внизу
 		let k = Math.floor(Math.random() * TYPES.length);
 		if (k === lastType) k = (k + 1 + Math.floor(Math.random() * (TYPES.length - 1))) % TYPES.length;
 		lastType = k;
-		st.type = TYPES[k];
-		st.born = performance.now() / 1000;
+		Object.assign(st, {type: TYPES[k], born: nowS(), dir: Math.random() < 0.5 ? -1 : 1, phase: 0, walk: rnd(2, 4), melt: 0});
 		const s = surfaceOf(st.el);
-		if (s) for (const b of ballsOf(st, s)) for (let i = 0; i < 8; i++) sparks.push({x: b.x + rnd(-b.r, b.r), y: b.y + rnd(-b.r, b.r), vx: rnd(-40, 40), vy: rnd(-70, -10), life: rnd(0.5, 0.9)});
+		if (s) sparkle(ballsOf(st, s));
 		if (!made) {
 			made = true;
 			notify(t('ny.snowman'));
 		}
-		save();
 	};
 	const crumbs = (x, y, n = 10) => {
 		for (let i = 0; i < n; i++) sparks.push({x, y, vx: rnd(-60, 60), vy: rnd(-90, -10), life: rnd(0.3, 0.6), snow: true});
+	};
+	// горка снега: прибавляем к сугробу холмик (может быть выше обычного сугроба)
+	const heap = (s, x, size) => {
+		const d = s.d;
+		const half = clamp(size * 1.6, 8, 34);
+		const peak = clamp(size * 0.9, 5, 22);
+		for (let i = Math.floor((x - half - s.r.left) / PX); i <= Math.ceil((x + half - s.r.left) / PX); i++) {
+			if (i < 0 || i >= d.cols) continue;
+			const k = (s.r.left + i * PX - x) / half;
+			d.h[i] = Math.max(d.h[i], peak * (1 - k * k) + rnd(-0.6, 0.6));
+		}
+	};
+	// снеговик развалился от снежка: шары разлетаются кусками, шапка отлетает, остаётся горка
+	const smash = (st, s) => {
+		const bs = ballsOf(st, s);
+		for (const b of bs) {
+			for (let i = 0; i < 4; i++) chunks.push({x: b.x + rnd(-b.r, b.r) * 0.4, y: b.y + rnd(-b.r, b.r) * 0.4, r: b.r * rnd(0.35, 0.55), vx: rnd(-160, 160), vy: rnd(-260, -60), life: rnd(0.6, 0.9)});
+			crumbs(b.x, b.y, 6);
+		}
+		const top = bs[bs.length - 1];
+		chunks.push({hat: st.type, x: top.x, y: top.y - top.r, r: top.r, vx: rnd(-90, 90), vy: -320, life: 1, spin: rnd(-9, 9)});
+		heap(s, baseOf(st, s).x, bs[0].r * 0.8);
+		stacks.splice(stacks.indexOf(st), 1);
+	};
+	const melted = (st, s) => {
+		heap(s, baseOf(st, s).x, st.balls[0]);
+		stacks.splice(stacks.indexOf(st), 1);
 	};
 
 	// ---------- что под курсором ----------
@@ -207,33 +230,40 @@ export const initSnowYard = ({reducedMotion = false, hero = () => null, debug = 
 		}
 		return null;
 	};
+	// снеговик (за любой шар) или верхний снежок стопки
 	const hitStack = (x, y) => {
 		for (let k = stacks.length - 1; k >= 0; k--) {
-			const s = surfaceOf(stacks[k].el);
-			if (!s) continue;
-			const bs = ballsOf(stacks[k], s);
-			const top = bs[bs.length - 1];
-			if (Math.hypot(x - top.x, y - top.y) < top.r + 6) return {k, top};
+			const st = stacks[k];
+			const s = surfaceOf(st.el);
+			if (!s || st.melt) continue;
+			const bs = ballsOf(st, s);
+			const list = st.type ? bs : [bs[bs.length - 1]];
+			if (list.some((b) => Math.hypot(x - b.x, y - b.y) < b.r + 6)) return {st, s, bs};
 		}
 		return null;
 	};
 
-	// ---------- руками: взять снег, отпустить снежок ----------
+	// ---------- руками: взять снег, снежок или снеговика, отпустить, бросить ----------
 	let ptr = {x: 0, y: 0};
+	const trail = []; // последние положения руки — из них скорость броска
 	let suppressClick = false;
 	let scooped = false;
 	const volOf = (r) => Math.PI * r * r;
 	const grab = (x, y) => {
-		if (hero()?.occupiedAt?.(x, y)) return false; // тут персонаж — клик ему
-		const st = hitStack(x, y);
-		if (st) {
-			// берём верхний шар: у снеговика пропадают шапка и лицо
-			const stack = stacks[st.k];
-			const r = stack.balls.pop();
-			stack.type = null;
-			if (!stack.balls.length) stacks.splice(st.k, 1);
-			held = {x, y, vol: volOf(r), r};
-			save();
+		if (!toys() || hero()?.occupiedAt?.(x, y)) return false; // тут персонаж — клик ему
+		const hit = hitStack(x, y);
+		if (hit) {
+			const {st, s, bs} = hit;
+			if (st.type) {
+				// снеговика берём целиком и несём
+				const b = baseOf(st, s);
+				stacks.splice(stacks.indexOf(st), 1);
+				held = {man: st, dx: b.x - x, dy: b.y - y};
+			} else {
+				const r = st.balls.pop();
+				if (!st.balls.length) stacks.splice(stacks.indexOf(st), 1);
+				held = {x, y, vol: volOf(r), r};
+			}
 			return true;
 		}
 		const s = hitDrift(x, y);
@@ -249,10 +279,28 @@ export const initSnowYard = ({reducedMotion = false, hero = () => null, debug = 
 		}
 		return true;
 	};
+	const throwSpeed = () => {
+		const tNow = performance.now();
+		const recent = trail.filter((p) => tNow - p.t < 110);
+		if (recent.length < 2) return {vx: 0, vy: 0};
+		const a = recent[0];
+		const b = recent[recent.length - 1];
+		const sec = Math.max(16, b.t - a.t) / 1000;
+		let vx = (b.x - a.x) / sec;
+		let vy = (b.y - a.y) / sec;
+		const sp = Math.hypot(vx, vy);
+		if (sp > 1800) {
+			vx *= 1800 / sp;
+			vy *= 1800 / sp;
+		}
+		return sp < 120 ? {vx: 0, vy: 0} : {vx, vy};
+	};
 	const release = () => {
 		if (!held) return;
-		if (held.r < 4.5) crumbs(held.x, held.y, 8); // слишком мало снега — рассыпался
-		else falling.push({x: held.x, y: held.y + scrollY, r: held.r, vy: 0});
+		const {vx, vy} = throwSpeed();
+		if (held.man) flying.push({man: held.man, x: ptr.x + held.dx, y: ptr.y + held.dy + scrollY, vx, vy});
+		else if (held.r < 4.5) crumbs(held.x, held.y, 8); // слишком мало снега — рассыпался
+		else flying.push({x: held.x, y: held.y + scrollY, r: held.r, vx, vy});
 		held = null;
 		document.body.classList.remove('ny-grabbing');
 		setTimeout(() => (suppressClick = false), 350);
@@ -263,6 +311,7 @@ export const initSnowYard = ({reducedMotion = false, hero = () => null, debug = 
 			if (e.pointerType === 'mouse' && e.button !== 0) return;
 			if (!grab(e.clientX, e.clientY)) return;
 			ptr = {x: e.clientX, y: e.clientY};
+			trail.length = 0;
 			suppressClick = true;
 			document.body.classList.add('ny-grabbing');
 			e.preventDefault();
@@ -272,7 +321,10 @@ export const initSnowYard = ({reducedMotion = false, hero = () => null, debug = 
 	);
 	addEventListener('pointermove', (e) => {
 		ptr = {x: e.clientX, y: e.clientY};
-		if (!held && e.pointerType === 'mouse') document.body.classList.toggle('ny-grab', Boolean(hitStack(e.clientX, e.clientY) || hitDrift(e.clientX, e.clientY)));
+		if (held) {
+			trail.push({x: e.clientX, y: e.clientY, t: performance.now()});
+			if (trail.length > 12) trail.shift();
+		} else if (e.pointerType === 'mouse' && toys()) document.body.classList.toggle('ny-grab', Boolean(hitStack(e.clientX, e.clientY) || hitDrift(e.clientX, e.clientY)));
 	});
 	addEventListener('pointerup', release);
 	addEventListener('pointercancel', release);
@@ -286,27 +338,28 @@ export const initSnowYard = ({reducedMotion = false, hero = () => null, debug = 
 		},
 		{capture: true},
 	);
-	// на телефоне: палец на сугробе или снежке не листает страницу
+
+	// планшет с широким экраном: палец на сугробе, снежке или снеговике не листает страницу
 	document.addEventListener(
 		'touchstart',
 		(e) => {
 			const p = e.touches[0];
-			if (p && !hero()?.occupiedAt?.(p.clientX, p.clientY) && (hitStack(p.clientX, p.clientY) || hitDrift(p.clientX, p.clientY))) e.preventDefault();
+			if (p && toys() && !hero()?.occupiedAt?.(p.clientX, p.clientY) && (hitStack(p.clientX, p.clientY) || hitDrift(p.clientX, p.clientY))) e.preventDefault();
 		},
 		{passive: false, capture: true},
 	);
 	document.addEventListener('touchmove', (e) => held && e.cancelable && e.preventDefault(), {passive: false});
 
-	// подсказка один раз: как лепить снеговика
+	// подсказка один раз: как лепить снеговика (только на компьютере)
 	let hinted = false;
 	try {
 		hinted = localStorage.getItem(HINT_KEY) === '1';
 	} catch {
 		// неважно
 	}
-	if (!hinted && !pending.length)
+	if (!hinted)
 		setTimeout(() => {
-			if (scooped) return;
+			if (scooped || !toys()) return;
 			notify(t('ny.snowHint'));
 			try {
 				localStorage.setItem(HINT_KEY, '1');
@@ -461,22 +514,57 @@ export const initSnowYard = ({reducedMotion = false, hero = () => null, debug = 
 			scarf(h.x, h.y, R, '#3d7fd6', '#f4f8ff');
 		} else if (golem) scarf(h.x, h.y + R * 0.1, R, '#9a6bff', '#f4f8ff');
 	};
-	const drawStack = (st, s, nowSec) => {
-		let bs = ballsOf(st, s);
-		const k = st.type ? clamp((nowSec - st.born) / 0.45, 0, 1) : 1;
-		if (k < 1) {
-			// только что собрался — «подпрыгивает»
-			const sc = 1 + Math.sin(k * Math.PI) * 0.12;
-			const base = s.r.top;
-			bs = bs.map((b) => ({x: b.x, y: base + (b.y - base) * sc, r: b.r * sc}));
+	// снеговик целиком: основание в точке (x, top); dir — куда смотрит, tilt — покачивание, squash — тает
+	const drawMan = (man, x, top, {dir = 1, tilt = 0, squash = 0, shadow = true} = {}) => {
+		const bsx = ballsAt(man.balls, x, top);
+		if (shadow) {
+			g.fillStyle = 'rgba(0,0,0,.22)';
+			g.beginPath();
+			g.ellipse(x, top + 1, bsx[0].r * (0.85 + squash * 0.4), Math.max(2, bsx[0].r * 0.18), 0, 0, Math.PI * 2);
+			g.fill();
 		}
-		// тень на карточке
-		g.fillStyle = 'rgba(0,0,0,.22)';
-		g.beginPath();
-		g.ellipse(bs[0].x, s.r.top + 1, bs[0].r * 0.85, Math.max(2, bs[0].r * 0.18), 0, 0, Math.PI * 2);
-		g.fill();
-		if (st.type && bs.length === 3) drawSnowman(st, bs);
-		else for (const b of bs) ball(b.x, b.y, b.r);
+		g.save();
+		g.translate(x, top);
+		g.rotate(tilt);
+		g.scale(dir * (1 + squash * 0.3), 1 - squash * 0.85);
+		g.translate(-x, -top);
+		if (man.type && bsx.length === 3) drawSnowman(man, bsx);
+		else for (const b of bsx) ball(b.x, b.y, b.r);
+		g.restore();
+	};
+	const drawStack = (st, s, t) => {
+		const b = baseOf(st, s);
+		if (!st.type) {
+			drawMan(st, b.x, b.y);
+			return;
+		}
+		const pop = clamp((t - st.born) / 0.45, 0, 1);
+		const walking = st.walk > 0 && !st.melt;
+		const bounce = walking ? Math.abs(Math.sin(st.phase)) * 2 : 0;
+		const squash = st.melt ? clamp((t - st.melt) / MELT, 0, 1) : 0;
+		g.save();
+		if (pop < 1) {
+			// только что собрался — «подпрыгивает»
+			const sc = 1 + Math.sin(pop * Math.PI) * 0.12;
+			g.translate(b.x, b.y);
+			g.scale(sc, sc);
+			g.translate(-b.x, -b.y);
+		}
+		drawMan(st, b.x, b.y - bounce, {dir: st.dir, tilt: walking ? Math.sin(st.phase) * 0.08 : 0, squash});
+		g.restore();
+		// тает — капает
+		if (squash > 0 && Math.random() < 0.3) crumbs(b.x + rnd(-st.balls[0], st.balls[0]), b.y - 2, 1);
+	};
+	const drawChunk = (c) => {
+		if (c.hat) {
+			// отлетевшая шапка
+			const col = {classic: '#1b1720', santa: '#d42a3a', bucket: '#8aa0b8', ushanka: '#6b4a2f', golem: '#e2892b'}[c.hat] || '#d42a3a';
+			g.save();
+			g.translate(c.x, c.y);
+			g.rotate(c.spin * (1 - c.life));
+			rect(-c.r * 0.7, -c.r * 0.5, c.r * 1.4, c.r * 0.8, col);
+			g.restore();
+		} else ball(c.x, c.y, c.r * Math.max(0.2, c.life));
 	};
 
 	// ---------- кадр ----------
@@ -488,7 +576,7 @@ export const initSnowYard = ({reducedMotion = false, hero = () => null, debug = 
 		requestAnimationFrame(frame);
 		const dt = Math.min(0.05, (ms - last) / 1000);
 		last = ms;
-		const nowSec = ms / 1000;
+		const t = ms / 1000;
 		if (ms > refreshAt) {
 			refreshAt = ms + 700;
 			refresh();
@@ -507,21 +595,61 @@ export const initSnowYard = ({reducedMotion = false, hero = () => null, debug = 
 		g.clearRect(0, 0, W, H);
 		const seen = surfaces.filter((s) => s.r.bottom > -40 && s.r.top - 40 < H);
 		for (const s of seen) drawDrift(s);
-		// снеговики и снежки на карточках
-		for (let k = stacks.length - 1; k >= 0; k--) {
-			const st = stacks[k];
+		// снеговики: ходят по своей карточке, через 30 секунд тают
+		if (!toys()) stacks = [];
+		for (const st of [...stacks]) {
 			if (!st.el.isConnected) {
-				// карточку перерисовали — ищем такую же по ключу, иначе снеговик пропал
-				const s = st.key && surfaces.find((x) => x.key === st.key);
-				if (s) st.el = s.el;
-				else if (!st.key) stacks.splice(k, 1);
+				// карточку перерисовали — ищем такую же по ключу; новая может ещё «выезжать» с анимацией,
+				// поэтому ждём до 4 секунд, а не убираем снеговика сразу
+				const s = st.key && surfaces.find((x) => x.key === st.key && x.el.isConnected);
+				st.lost ||= t;
+				if (s) {
+					st.el = s.el;
+					st.lost = 0;
+				} else if (t - st.lost > 4) stacks.splice(stacks.indexOf(st), 1);
 				continue;
 			}
+			st.lost = 0;
 			const s = surfaceOf(st.el);
-			if (s && s.r.bottom > -60 && s.r.top - 140 < H) drawStack(st, s, nowSec);
+			if (!s) continue;
+			if (st.type) {
+				if (!st.melt && t - st.born > LIFE) st.melt = t;
+				if (st.melt && t - st.melt > MELT) {
+					melted(st, s);
+					continue;
+				}
+				if (!st.melt && !reducedMotion) {
+					st.walk -= dt;
+					if (st.walk < -rnd(0.8, 1.6)) st.walk = rnd(2, 5); // постоял — снова пошёл
+					if (st.walk > 0) {
+						st.phase += dt * 7;
+						const margin = (st.balls[0] + 4) / s.r.width;
+						st.fx += (st.dir * 16 * dt) / s.r.width;
+						if (st.fx < margin) {
+							st.fx = margin;
+							st.dir = 1;
+						} else if (st.fx > 1 - margin) {
+							st.fx = 1 - margin;
+							st.dir = -1;
+						}
+						// встретил другого снеговика — разворачивается
+						for (const o of stacks) {
+							if (o === st || o.el !== st.el || !o.type) continue;
+							const gap = (o.fx - st.fx) * s.r.width;
+							if (Math.abs(gap) < st.balls[0] + o.balls[0] && Math.sign(gap) === st.dir) st.dir = -st.dir;
+						}
+					}
+				}
+			}
+			if (s.r.bottom > -60 && s.r.top - 140 < H) drawStack(st, s, t);
 		}
-		// снежок в руке: собирает снег с сугробов, над которыми проходит
-		if (held) {
+		// в руке
+		if (held?.man) {
+			// снеговика несут: болтается за руку
+			const sw = clamp((trail.length > 1 ? trail[trail.length - 1].x - trail[trail.length - 2].x : 0) * 0.02, -0.3, 0.3);
+			drawMan(held.man, ptr.x + held.dx, ptr.y + held.dy, {dir: held.man.dir, tilt: -sw, shadow: false});
+		} else if (held) {
+			// снежок собирает снег с сугробов, над которыми проходит
 			held.x = ptr.x;
 			held.y = ptr.y;
 			if (held.r < maxR()) {
@@ -538,51 +666,82 @@ export const initSnowYard = ({reducedMotion = false, hero = () => null, debug = 
 			held.r = Math.min(maxR(), Math.sqrt(held.vol / Math.PI));
 			ball(held.x, held.y, held.r);
 		}
-		// летят вниз и ложатся на карточку, кнопку или другой снежок
-		for (let i = falling.length - 1; i >= 0; i--) {
-			const f = falling[i];
-			const prev = f.y - scrollY + f.r;
-			f.vy += 1800 * dt;
+		// летят: падают или брошены — попал в снеговика, лёг на стопку, на карточку или улетел
+		for (let i = flying.length - 1; i >= 0; i--) {
+			const f = flying[i];
+			const man = f.man;
+			const r0 = man ? man.balls[0] : f.r;
+			const prev = f.y - scrollY + (man ? 0 : f.r);
+			f.vx *= Math.exp(-0.5 * dt);
+			f.vy += G * dt;
+			f.x += f.vx * dt;
 			f.y += f.vy * dt;
 			const vy = f.y - scrollY;
-			const bottom = vy + f.r;
-			let landed = false;
-			// на стопку снежков
-			for (const st of stacks) {
-				const s = surfaceOf(st.el);
-				if (!s) continue;
-				const bs = ballsOf(st, s);
-				const top = bs[bs.length - 1];
-				if (Math.abs(f.x - top.x) > Math.max(top.r, f.r) * 0.9) continue;
-				const rest = top.y - top.r * 0.8;
-				if (bottom >= rest && vy <= top.y + 2) {
-					if (st.balls.length >= 3) {
-						f.x += (f.x < top.x ? -1 : 1) * (f.r + top.r); // на снеговика не ложится — скатывается вбок
+			const bottom = vy + (man ? 0 : f.r);
+			let done = false;
+			if (!man) {
+				// попал в снеговика — тот разваливается
+				for (const st of stacks) {
+					if (!st.type || st.melt) continue;
+					const s = surfaceOf(st.el);
+					if (!s) continue;
+					if (ballsOf(st, s).some((b) => Math.hypot(f.x - b.x, vy - b.y) < f.r + b.r * 0.9)) {
+						smash(st, s);
+						crumbs(f.x, vy, 10);
+						done = true;
 						break;
 					}
-					st.balls.push(f.r);
-					if (st.balls.length === 3) finish(st);
-					else save();
-					landed = true;
-					break;
+				}
+				// лёг на стопку снежков
+				if (!done) {
+					for (const st of stacks) {
+						if (st.type) continue;
+						const s = surfaceOf(st.el);
+						if (!s) continue;
+						const bs2 = ballsOf(st, s);
+						const top = bs2[bs2.length - 1];
+						if (Math.abs(f.x - top.x) > Math.max(top.r, f.r) * 0.9 || f.vy < 0) continue;
+						if (bottom >= top.y - top.r * 0.8 && vy <= top.y + 2) {
+							st.balls.push(f.r);
+							if (st.balls.length === 3) finish(st);
+							done = true;
+							break;
+						}
+					}
 				}
 			}
-			if (!landed) {
+			if (!done && f.vy > 0) {
 				for (const s of surfaces) {
 					const {r} = s;
-					if (f.x < r.left + 4 || f.x > r.right - 4) continue;
+					const half = man ? r0 * 0.6 : 4;
+					if (f.x < r.left + half || f.x > r.right - half) continue;
 					if (prev <= r.top + 3 && bottom >= r.top) {
-						stacks.push({el: s.el, key: s.key, fx: (f.x - r.left) / r.width, balls: [f.r], type: null, born: -9});
+						const fx = (f.x - r.left) / r.width;
+						if (man) stacks.push(Object.assign(man, {el: s.el, key: s.key, fx}));
+						else stacks.push({el: s.el, key: s.key, fx, balls: [f.r], type: null});
 						trim();
-						save();
 						crumbs(f.x, r.top, 5);
-						landed = true;
+						done = true;
 						break;
 					}
 				}
 			}
-			if (landed || vy > H + 300) falling.splice(i, 1);
+			if (done || vy > H + 300 || f.x < -200 || f.x > W + 200) flying.splice(i, 1);
+			else if (man) drawMan(man, f.x, vy, {dir: man.dir, shadow: false});
 			else ball(f.x, vy, f.r);
+		}
+		// куски развалившегося снеговика
+		for (let i = chunks.length - 1; i >= 0; i--) {
+			const c = chunks[i];
+			c.life -= dt;
+			if (c.life <= 0) {
+				chunks.splice(i, 1);
+				continue;
+			}
+			c.vy += G * 0.6 * dt;
+			c.x += c.vx * dt;
+			c.y += c.vy * dt;
+			drawChunk(c);
 		}
 		// искорки и снежная крошка
 		for (let i = sparks.length - 1; i >= 0; i--) {
@@ -645,22 +804,35 @@ export const initSnowYard = ({reducedMotion = false, hero = () => null, debug = 
 			make: (key, sizes = [18, 13, 10], fx = 0.5, type = null) => {
 				const s = surfaces.find((x) => x.key === key);
 				if (!s) return false;
-				const st = {el: s.el, key, fx, balls: [...sizes], type: null, born: -9};
+				const st = {el: s.el, key, fx, balls: [...sizes], type: null};
 				stacks.push(st);
 				finish(st);
 				if (type) st.type = type;
-				save();
 				return st.type;
 			},
 			clear: () => {
 				stacks = [];
-				save();
 			},
-			state: () => ({surfaces: surfaces.length, stacks: stacks.map((s) => ({key: s.key, balls: s.balls.map((r) => Math.round(r)), type: s.type})), held: held ? Math.round(held.r) : null, falling: falling.length}),
+			// состарить всех снеговиков на sec секунд (проверить таяние)
+			age: (sec) => stacks.forEach((s) => s.type && (s.born -= sec)),
+			// бросить снежок из точки (x, y) со скоростью (vx, vy)
+			throw: (x, y, vx, vy, r = 12) => flying.push({x, y: y + scrollY, r, vx, vy}),
+			state: () => ({surfaces: surfaces.length, stacks: stacks.map((s) => ({key: s.key, balls: s.balls.map((r) => Math.round(r)), type: s.type, fx: +s.fx.toFixed(3), melt: Boolean(s.melt)})), held: held ? (held.man ? 'man' : Math.round(held.r)) : null, flying: flying.length, chunks: chunks.length}),
+			// где стоит снеговик (точка на экране — середина среднего шара)
+			manAt: (i = 0) => {
+				const st = stacks.filter((s) => s.type)[i];
+				const s = st && surfaceOf(st.el);
+				if (!s) return null;
+				const bs2 = ballsOf(st, s);
+				return {x: Math.round(bs2[1].x), y: Math.round(bs2[1].y), base: Math.round(bs2[0].y + bs2[0].r)};
+			},
 			depth: (key) => {
 				const s = surfaces.find((x) => x.key === key);
-				return s ? Math.round(s.d.h.reduce((a, b) => a + b, 0) / s.d.cols * 10) / 10 : null;
+				return s ? Math.round((s.d.h.reduce((a, b) => a + b, 0) / s.d.cols) * 10) / 10 : null;
 			},
-			drop: (x, y, r) => falling.push({x, y: y + scrollY, r, vy: 0}),
+			peak: (key) => {
+				const s = surfaces.find((x) => x.key === key);
+				return s ? Math.round(Math.max(...s.d.h)) : null;
+			},
 		};
 };
