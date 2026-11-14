@@ -215,6 +215,7 @@ class Worker {
   // ------------------------------------------------------------------ teleports
   /** Runs a teleport command and waits until the server moves us. Handles cooldown messages. */
   async teleport(tpl, vars = {}, label = 'телепорт', tries = 6) {
+    this.act(label);
     for (let i = 0; i < tries; i++) {
       await this.waitReady();
       const before = this.bot.entity.position.clone();
