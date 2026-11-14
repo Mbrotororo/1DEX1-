@@ -18,8 +18,13 @@ async function run(w) {
     if (full && site) {
       if (!(await S.goToSite(w))) continue;
       await F.toGround(w);
+      const before = w.count(plant);
       await C.storeHarvest(w, []);
       await C.ensureFood(w);
+      if (w.count(plant) >= before && w.freeSlots() <= 3 || w.count(plant) >= batch) {
+        w.setStatus('хранилище ещё не построено — жду у ферм');
+        await sleep(30000);
+      }
       continue;
     }
     if (full) { w.setStatus(`набрал ${C.PLANT_RU[plant]}, жду, пока выберут место под фермы`); await sleep(30000); continue; }

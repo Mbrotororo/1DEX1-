@@ -28,7 +28,7 @@ async function run(w) {
     if (C.phase2(w)) { await C.tender(w); continue; }
     const site = w.team.state.site;
     // bring the wood home when the bag is full (or has a lot)
-    if (site && (logs(w) >= 160 || w.freeSlots() <= 3)) {
+    if (site && (logs(w) >= 96 || w.freeSlots() <= 3)) {
       if (!(await S.goToSite(w))) continue;
       await F.toGround(w);
       if (S.placedChests(w, C.depot(w)).length < 4) await C.ensureDepot(w);
@@ -39,7 +39,7 @@ async function run(w) {
       if (n) w.say(`отнёс на склад ${n} брёвен`);
       await C.ensureFood(w);
       await C.ensureTool(w, /_axe$/);
-      if (logs(w) >= 160) { w.setStatus('склад полный — жду, пока кузнец поставит сундуки'); await sleep(30000); }
+      if (logs(w) >= 96) { w.setStatus('склад полный — жду, пока кузнец поставит сундуки'); await sleep(30000); }
       continue;
     }
     // trees standing on our place go first (nobody can build through them)
