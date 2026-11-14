@@ -1,0 +1,101 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>SYSTEM</title>
+<meta http-equiv="x-ua-compatible" content="ie=edge">
+<hta:application id="app" applicationname="System" border="none" caption="no" windowstate="maximize" scroll="no" contextmenu="no" selection="no" sysmenu="no" innerborder="no" navigable="no" />
+<style>
+  html,body{height:100%;margin:0;background:#000;overflow:hidden;cursor:none;font-family:Consolas,"Courier New",monospace;}
+  #stage{position:fixed;top:0;left:0;right:0;bottom:0;background:#000;}
+  .win{position:absolute;width:300px;height:170px;background:#000;border:1px solid #333;}
+  .win .bar{height:20px;background:#1f1f1f;color:#cfcfcf;font-size:11px;line-height:20px;padding:0 6px;white-space:nowrap;}
+  .win .body{color:#19ff5a;font-size:11px;line-height:1.25;padding:4px 6px;white-space:pre;}
+  #msg{position:fixed;left:0;right:0;top:42%;text-align:center;color:#ff2a2a;font-size:66px;font-weight:900;text-shadow:0 0 20px #ff2a2a;z-index:10;display:none;}
+  #outro{position:fixed;top:0;left:0;right:0;bottom:0;background:#000;color:#00ff66;display:none;text-align:center;z-index:20;}
+  #outro div{margin-top:22%;font-size:40px;text-shadow:0 0 14px #00ff66;}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="msg">SYSTEM OVERLOAD</div>
+<div id="outro"><div>PRANK :)  Esc / Alt+F4</div></div>
+<audio id="a0" src="track.mp3"></audio>
+<audio id="a1" src="track.mp3"></audio>
+<audio id="a2" src="track.mp3"></audio>
+<audio id="a3" src="track.mp3"></audio>
+<audio id="a4" src="track.mp3"></audio>
+<audio id="a5" src="track.mp3"></audio>
+<script>
+(function(){
+  "use strict";
+  var DURATION=300000, PERWAVE=100, BATCH=6, STEP=8, HOLD=320, GAP=70, RESTART=5000;
+  var stage=document.getElementById('stage'), outro=document.getElementById('outro'), msg=document.getElementById('msg');
+  var running=true, timers=[];
+  function T(ms,fn){ var id=setTimeout(fn,ms); timers.push(id); return id; }
+  function rnd(a,b){ return a+Math.random()*(b-a); }
+  var W=screen.width||1280, H=screen.height||720;
+  function moveFull(){ try{ window.moveTo(0,0); window.resizeTo(screen.width,screen.height); }catch(e){} }
+  var FAKE='C:\\>init_breach.exe --force\n[OK] ACCESS GRANTED\ninjecting payload 0x';
+  function makeWin(i){
+    var d=document.createElement('div'); d.className='win';
+    var x=(i*19)%Math.max(60,(W-300)), y=(i*13)%Math.max(60,(H-170));
+    d.style.left=Math.round(x)+'px'; d.style.top=Math.round(y)+'px';
+    d.innerHTML='<div class="bar">C:\\WINDOWS\\system32\\cmd.exe</div><div class="body">'+FAKE+(Math.floor(rnd(1000,9999)))+'\ndecrypt... OK</div>';
+    return d;
+  }
+  function wave(){
+    if(!running) return;
+    var i=0;
+    (function add(){
+      if(!running) return;
+      if(i<PERWAVE){
+        for(var k=0;k<BATCH && i<PERWAVE;k++,i++){ stage.appendChild(makeWin(i)); }
+        T(STEP, add);
+      } else {
+        msg.style.display='block';
+        T(HOLD, function(){
+          if(!running) return;
+          stage.innerHTML=''; msg.style.display='none';
+          T(GAP, wave);
+        });
+      }
+    })();
+  }
+  var auds=[];
+  for(var qi=0;qi<6;qi++){ var el=document.getElementById('a'+qi); if(el) auds.push(el); }
+  function startMusic(){
+    for(var i=0;i<auds.length;i++){
+      (function(a,idx){
+        try{ a.volume=0.45; }catch(e){}
+        T(idx*120, function(){ try{ a.play(); }catch(e){} });
+        function loop(){ if(!running) return; try{ a.currentTime=0; a.play(); }catch(e){} T(RESTART, loop); }
+        T(RESTART + idx*300, loop);
+      })(auds[i], i);
+    }
+  }
+  function stopMusic(){ for(var i=0;i<auds.length;i++){ try{ auds[i].pause(); auds[i].currentTime=0; }catch(e){} } }
+  function finish(){
+    running=false;
+    for(var i=0;i<timers.length;i++){ clearTimeout(timers[i]); }
+    timers=[]; stopMusic();
+    stage.innerHTML=''; msg.style.display='none';
+    outro.style.display='block';
+  }
+  function quit(){
+    finish();
+    try{ window.close(); }catch(e){}
+  }
+  document.addEventListener('keydown', function(e){
+    e=e||window.event; var kc=e.keyCode||e.which;
+    if(kc===27){ quit(); return; }                       // Esc = exit
+    if(e.ctrlKey && e.shiftKey && kc===81){ quit(); }     // Ctrl+Shift+Q = exit
+  }, true);
+  moveFull();
+  startMusic();
+  wave();
+  T(DURATION, finish);
+})();
+</script>
+</body>
+</html>
