@@ -77,7 +77,10 @@ class Worker {
     if (/(успешно|successfully).*(вош|авториз|зарегистр|logged|registered)|добро пожаловать/.test(low)) this.authDone = true;
     // teleport request from a teammate or from the main account
     if (/tpa|телепорт|teleport/.test(low)) {
-      const from = [...this.team.names].find((n) => n !== this.name && msg.includes(n));
+      // whole-word match: "RodionDex" must not match inside "RodionDex1"
+      const esc = (n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const from = [...this.team.names].sort((a, b) => b.length - a.length)
+        .find((n) => n !== this.name && new RegExp(`(^|[^A-Za-z0-9_])${esc(n)}([^A-Za-z0-9_]|$)`).test(msg));
       if (from && this.acceptTeleports && /(хочет|запрос|request|отправил|просит)/.test(low)) {
         const now = Date.now();
         if (!this.lastAccept || now - this.lastAccept > 3000) {
