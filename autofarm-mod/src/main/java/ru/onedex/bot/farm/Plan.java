@@ -227,7 +227,7 @@ public final class Plan {
                 if (Ctl.count("dirt") >= target || Ctl.freeSlots() <= 3) break;
             }
             if (dug == 0) { Ctl.goTo(found.get(0), 2.5, 200); fails++; continue; }
-            Ctl.collectDrops(3, 4);
+            Ctl.collectDrops(7, 14);   // everything that fell around, not only at our feet
             if (Ctl.count("dirt") > before) fails = 0; else fails++;
         }
         State.save();
