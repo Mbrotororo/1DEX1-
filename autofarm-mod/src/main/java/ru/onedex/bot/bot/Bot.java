@@ -75,6 +75,22 @@ public final class Bot {
         Move.activate(false);
     }
 
+    /** Monsters next to us get hit (with whatever is in the hand — the sword when it is there). */
+    private void defend(MinecraftClient mc) {
+        var p = mc.player;
+        if (p.getAttackCooldownProgress(0.5f) < 0.95f) return;
+        net.minecraft.entity.Entity target = null;
+        double best = 3.2 * 3.2;
+        for (net.minecraft.entity.Entity e : mc.world.getEntities()) {
+            if (!(e instanceof net.minecraft.entity.mob.Monster) || !e.isAlive()) continue;
+            double d = e.squaredDistanceTo(p);
+            if (d < best) { best = d; target = e; }
+        }
+        if (target == null) return;
+        mc.interactionManager.attackEntity(p, target);
+        p.swingHand(net.minecraft.util.Hand.MAIN_HAND);
+    }
+
     /** Every game tick. */
     public void clientTick(MinecraftClient mc) {
         ticks++;
@@ -82,5 +98,6 @@ public final class Bot {
         if (mc.player == null || mc.world == null) { stop(); stage = "Нет игры"; return; }
         if (mc.player.isDead()) mc.player.requestRespawn();
         Move.tick(mc);
+        defend(mc);
     }
 }

@@ -37,6 +37,7 @@ public final class Plan {
     static final Pattern MANMADE = Pattern.compile(".*(fence|_wall|glass|slab|stairs|planks|lantern|sign|carpet|wool|bricks|trapdoor|door|button|pressure|rail|hopper|composter|barrel|water_cauldron|cauldron|campfire|hay_block|scaffolding).*");
 
     static State st() { return State.get(); }
+    static long lastShovelTrip;
     static BotConfig cfg() { return BotConfig.get(); }
 
     public static void run() {
@@ -115,6 +116,7 @@ public final class Plan {
             Chests.close();
         }
         st().stashDone = true;
+        st().noMoreTorches = Ctl.count("torch") == 0;   // nothing to take: build without torches
         String next = st().next != null ? st().next : (st().site == null ? "clear" : "build");
         st().next = null;
         phase(next);
@@ -248,6 +250,11 @@ public final class Plan {
         List<Integer> todo = unbuilt(f);
         if (todo.isEmpty()) { phase(f == 0 && !storageReady() ? "storage" : "farm"); return; }
         if (Ctl.count("torch") == 0 && !st().noMoreTorches) { needStash("факелы", "build"); return; }
+        if (!Ctl.has(n -> n.endsWith("_shovel")) && System.currentTimeMillis() - lastShovelTrip > 15 * 60_000L) {
+            lastShovelTrip = System.currentTimeMillis();
+            needStash("лопаты", "build");
+            return;
+        }
         // a bag of dirt: as much as fits, leaving room for tools and the column
         if (Floors.blocks() < 300) {
             int room = Math.max(0, Ctl.freeSlots() - 4) * 64;
