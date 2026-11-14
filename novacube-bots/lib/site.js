@@ -126,7 +126,7 @@ async function useChest(w, p, fn) {
   const site = w.team.state.site;
   const b = bot.blockAt(p);
   if (!b || !/chest/.test(b.name)) return false;
-  if (bot.entity.position.distanceTo(p.offset(0.5, 0.5, 0.5)) > 4.2 && !(await w.goto(p, 2, 30000))) return false;
+  if (bot.entity.position.distanceTo(p.offset(0.5, 0.5, 0.5)) > 4.2 && !(await w.goto(p, 2, 20000))) { w.rowStuck = Date.now(); return false; }
   let chest;
   try { chest = await withTimeout(bot.openContainer(bot.blockAt(p)), 7000, 'сундук'); } catch (_) { return false; }
   try { await fn(chest); } catch (e) { log.debug(w.name, `сундук: ${e.message}`); }
@@ -159,14 +159,27 @@ function stock(w, spots, test) {
 }
 function match(test, name) { return typeof test === 'string' ? test === name : test.test(name); }
 
+/** Walks to the nearest chest of a row once; if that fails, the row is skipped this time
+ *  (instead of trying every chest with a long timeout each). */
+async function approachRow(w, chests) {
+  if (!chests.length) return false;
+  const me = w.bot.entity.position;
+  const near = chests.slice().sort((a, b) => a.distanceTo(me) - b.distanceTo(me))[0];
+  if (near.distanceTo(me) <= 6) return true;
+  return w.goto(near, 3, 60000);
+}
+
 /** Puts items into the chests of a row. keep: how many of each to keep. Returns what was stored. */
 async function depositRow(w, spots, names, keep = {}) {
   const stored = {};
   const left = () => names.filter((n) => w.count(n) > (keep[n] || 0));
-  for (const p of placedChests(w, spots)) {
+  const chests = placedChests(w, spots);
+  if (!left().length || !(await approachRow(w, chests))) return stored;
+  for (const p of chests) {
     if (!left().length) break;
     const c = cacheOf(w, p);
     if (c && c.free === 0) continue;
+    w.rowStuck = 0;
     await useChest(w, p, async (chest) => {
       for (const n of left()) {
         let extra = w.count(n) - (keep[n] || 0);
@@ -180,6 +193,7 @@ async function depositRow(w, spots, names, keep = {}) {
         }
       }
     });
+    if (w.rowStuck) break;   // could not reach a chest: try again next time
   }
   return stored;
 }
@@ -188,10 +202,13 @@ async function depositRow(w, spots, names, keep = {}) {
 async function takeRow(w, spots, wants, leaveFree = 3) {
   const taken = {};
   const remaining = () => wants.filter((x) => x.count > 0);
-  for (const p of placedChests(w, spots)) {
+  const chests = placedChests(w, spots);
+  if (!(await approachRow(w, chests))) return taken;
+  for (const p of chests) {
     if (!remaining().length || w.freeSlots() <= leaveFree) break;
     const c = cacheOf(w, p);
     if (c && !Object.keys(c.items).some((n) => remaining().some((x) => match(x.test, n)))) continue;
+    w.rowStuck = 0;
     await useChest(w, p, async (chest) => {
       for (const x of remaining()) {
         for (const it of chest.containerItems()) {
@@ -204,6 +221,7 @@ async function takeRow(w, spots, wants, leaveFree = 3) {
         }
       }
     });
+    if (w.rowStuck) break;
   }
   return taken;
 }

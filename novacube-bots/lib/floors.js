@@ -88,7 +88,9 @@ async function climbShaft(w, farm, k) {
     if (solid(w.bot, head) && !(await w.dig(head))) return false;
     const mat = ['dirt', 'cobblestone', 'cobbled_deepslate'].find((m) => w.count(m) > 0);
     if (!mat) return false;
-    if (!(await w.pillarUp(mat))) { await sleep(300); if (!(await w.pillarUp(mat))) return false; }
+    let up = false;
+    for (let t = 0; t < 4 && !up; t++) { up = await w.pillarUp(mat); if (!up) await sleep(300); }
+    if (!up) return false;
   }
   return Math.floor(w.bot.entity.position.y) >= target;
 }
