@@ -113,6 +113,13 @@ function placedChests(w, spots) {
   const site = w.team.state.site;
   return spots.map((s) => onGround(w.bot, site, s)).filter((p) => isChest(w.bot, p));
 }
+/** Chests of a row to work with now: nearest first, without the ones we failed to reach lately. */
+function usableChests(w, spots) {
+  w.badChest = w.badChest || {};
+  const me = w.bot.entity.position;
+  return placedChests(w, spots).filter((p) => !(w.badChest[p.toString()] > Date.now()))
+    .sort((a, b) => a.distanceTo(me) - b.distanceTo(me));
+}
 function missingChests(w, spots) {
   const site = w.team.state.site;
   return spots.map((s) => onGround(w.bot, site, s)).filter((p) => !isChest(w.bot, p));
@@ -126,7 +133,13 @@ async function useChest(w, p, fn) {
   const site = w.team.state.site;
   const b = bot.blockAt(p);
   if (!b || !/chest/.test(b.name)) return false;
-  if (bot.entity.position.distanceTo(p.offset(0.5, 0.5, 0.5)) > 4.2 && !(await w.goto(p, 2, 20000))) { w.rowStuck = Date.now(); return false; }
+  if (bot.entity.position.distanceTo(p.offset(0.5, 0.5, 0.5)) > 4.2 && !(await w.goto(p, 2, 20000))) {
+    w.badChest = w.badChest || {};
+    w.badChest[p.toString()] = Date.now() + 5 * 60000;
+    w.rowMisses = (w.rowMisses || 0) + 1;
+    return false;
+  }
+  w.rowMisses = 0;
   let chest;
   try { chest = await withTimeout(bot.openContainer(bot.blockAt(p)), 7000, 'сундук'); } catch (_) { return false; }
   try { await fn(chest); } catch (e) { log.debug(w.name, `сундук: ${e.message}`); }
@@ -173,13 +186,13 @@ async function approachRow(w, chests) {
 async function depositRow(w, spots, names, keep = {}) {
   const stored = {};
   const left = () => names.filter((n) => w.count(n) > (keep[n] || 0));
-  const chests = placedChests(w, spots);
+  const chests = usableChests(w, spots);
+  w.rowMisses = 0;
   if (!left().length || !(await approachRow(w, chests))) return stored;
   for (const p of chests) {
     if (!left().length) break;
     const c = cacheOf(w, p);
     if (c && c.free === 0) continue;
-    w.rowStuck = 0;
     await useChest(w, p, async (chest) => {
       for (const n of left()) {
         let extra = w.count(n) - (keep[n] || 0);
@@ -193,7 +206,7 @@ async function depositRow(w, spots, names, keep = {}) {
         }
       }
     });
-    if (w.rowStuck) break;   // could not reach a chest: try again next time
+    if (w.rowMisses >= 2) break;   // two chests in a row out of reach: try again next time
   }
   return stored;
 }
@@ -202,13 +215,13 @@ async function depositRow(w, spots, names, keep = {}) {
 async function takeRow(w, spots, wants, leaveFree = 3) {
   const taken = {};
   const remaining = () => wants.filter((x) => x.count > 0);
-  const chests = placedChests(w, spots);
+  const chests = usableChests(w, spots);
+  w.rowMisses = 0;
   if (!(await approachRow(w, chests))) return taken;
   for (const p of chests) {
     if (!remaining().length || w.freeSlots() <= leaveFree) break;
     const c = cacheOf(w, p);
     if (c && !Object.keys(c.items).some((n) => remaining().some((x) => match(x.test, n)))) continue;
-    w.rowStuck = 0;
     await useChest(w, p, async (chest) => {
       for (const x of remaining()) {
         for (const it of chest.containerItems()) {
@@ -221,7 +234,7 @@ async function takeRow(w, spots, wants, leaveFree = 3) {
         }
       }
     });
-    if (w.rowStuck) break;
+    if (w.rowMisses >= 2) break;
   }
   return taken;
 }
@@ -237,33 +250,36 @@ async function goToSite(w) {
     w.setStatus('иду к ферме (/home)');
     if (await w.teleport(cmds.home, {}, 'home', 2) && nearSite(w)) return true;
   }
-  const anchors = [...w.team.workers.values()]
-    .filter((x) => x !== w && x.ready && x.acceptTeleports && x.bot && x.bot.entity && onSiteGround(x))
-    .sort((a, b) => (b.role === 'digger') - (a.role === 'digger'));
-  if (!anchors.length) {
+  const team = w.team;
+  const canAnchor = (x) => x !== w && x.ready && x.acceptTeleports && x.bot && x.bot.entity && onSiteGround(x);
+  const pick = () => [...team.workers.values()].filter(canAnchor).sort((a, b) => (b.role === 'digger') - (a.role === 'digger'))[0];
+  if (!pick()) {
     w.setStatus('жду, кто примет меня у ферм (/tpa)');
     await sleep(15000);
     return false;
   }
-  const anchor = anchors[0];
   // one /tpa at a time for the whole team: a plain /tpaccept takes the newest request
-  const team = w.team;
-  while (team.tpaBusy && Date.now() - team.tpaBusy < 40000) await sleep(1000);
-  team.tpaBusy = Date.now();
+  const me = {};
+  while (team.tpaLock && Date.now() - team.tpaLock.at < 120000) await sleep(1000);
+  team.tpaLock = { me, at: Date.now() };
   let ok = false;
   try {
-    w.setStatus(`иду к фермам (/tpa ${anchor.name})`);
     for (let i = 0; i < 3 && !ok; i++) {
+      const anchor = pick();
+      if (!anchor) break;
+      team.tpaLock.at = Date.now();
+      w.setStatus(`иду к фермам (/tpa ${anchor.name})`);
       const before = w.bot.entity.position.clone();
       w.cmd(cmds.tpa, { player: anchor.name });
-      // the anchor is our own bot: it accepts right away instead of waiting to read the request in chat
-      setTimeout(() => { if (anchor.bot) anchor.cmd(cmds.tpaccept, { player: w.name }); }, 1500);
+      // the anchor is our own bot: it accepts right away (no need to read the request in chat),
+      // but only while it still stands on the ground by the farms
+      setTimeout(() => { if (canAnchor(anchor)) anchor.cmd(cmds.tpaccept, { player: w.name }); }, 1500);
       ok = await w.waitMoved(before, 20000);
       if (!ok) await sleep(8000);   // a cooldown, or the request was lost
     }
     if (ok) await w.settle();
   } finally {
-    team.tpaBusy = 0;
+    if (team.tpaLock && team.tpaLock.me === me) team.tpaLock = null;
   }
   if (ok && nearSite(w) && cmds.sethome) {
     // remember the place for next time
@@ -276,6 +292,6 @@ async function goToSite(w) {
 module.exports = {
   siteCfg, makeSite, inZone, center, nearSite, onSiteGround, farmAt,
   floorY, isRow, isTorch, needsTorches, groundTorches, shaftOf, maxShafts, allFloors, isBuilt, markBuilt, builtCount, allBuilt,
-  groundY, depotSpots, storageSpots, workbenchSpot, onGround, placedChests, missingChests,
+  groundY, depotSpots, storageSpots, workbenchSpot, onGround, placedChests, usableChests, missingChests,
   useChest, stock, depositRow, takeRow, goToSite, match,
 };

@@ -36,7 +36,7 @@ async function unload(w) {
   await w.tossAll(['andesite', 'diorite', 'granite', 'tuff', 'gravel', 'flint', 'cobbled_deepslate']);
   const valuables = [...new Set(w.bot.inventory.items().map((i) => i.name).filter((n) => /^raw_|_ingot$|^(diamond|emerald|redstone|lapis_lazuli)$/.test(n)))];
   if (valuables.length) await S.depositRow(w, C.storage(w), valuables);
-  if (w.count('cobblestone') > 256) await S.depositRow(w, C.depot(w), ['cobblestone'], { cobblestone: 192 });
+  if (w.count('cobblestone') > 256) await S.depositRow(w, C.dirtDepot(w), ['cobblestone'], { cobblestone: 192 });
 }
 
 /** Charcoal from logs in a furnace next to the workbench: torches when the mine gives too little coal. */
@@ -46,9 +46,13 @@ async function charcoal(w) {
   const spot = S.onGround(w.bot, site, new Vec3(site.x - 9, 0, site.z + 4));
   let b = w.bot.blockAt(spot);
   if (!b || b.name !== 'furnace') {
-    if (fuelHave >= 16 || w.count('cobblestone') < 8 + 6) return;   // not needed yet / keep stone for tools
-    const table = await C.workbench(w);
-    if (!table || !(await craftItem(w, 'furnace', 1, table))) return;
+    if (fuelHave >= 16) return;   // not needed yet
+    if (b && b.boundingBox === 'block') return;   // something else stands there: no furnace this time
+    if (!w.item('furnace')) {
+      if (w.count('cobblestone') < 8 + 6) return;   // keep stone for tools
+      const table = await C.workbench(w);
+      if (!table || !(await craftItem(w, 'furnace', 1, table))) return;
+    }
     await w.gotoBlock(spot.offset(1, 0, 0), 30000);
     await w.placeAt(spot, 'furnace', spot.offset(0, -1, 0));
     b = w.bot.blockAt(spot);
@@ -121,10 +125,9 @@ async function placeChests(w, spots, label, keepLogs, maxNow = 8) {
   if (need > 0) {
     await wood(w, need * 8 + keepLogs * 4);
     const can = Math.min(need, Math.floor((woodCount(w) - keepLogs * 4) / 8));
-    if (can > 0 && (await ensurePlanks(w, can * 8))) {
-      const table = await C.workbench(w);
-      if (table) for (let i = 0; i < can; i++) if (!(await craftItem(w, 'chest', 1, table))) break;
-    }
+    const table = can > 0 ? await C.workbench(w) : null;
+    // planks of one kind for each chest (mixed woods are fine this way)
+    if (table) for (let i = 0; i < can; i++) if (!(await ensurePlanks(w, 8)) || !(await craftItem(w, 'chest', 1, table))) break;
   }
   let placed = 0;
   const site = C.site(w);

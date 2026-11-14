@@ -15,7 +15,8 @@ async function run(w) {
     if (C.phase2(w)) { await C.tender(w); continue; }
     const site = w.team.state.site;
     // the first berries go home early: they are everyone's food
-    const early = plant === 'sweet_berries' && site && S.stock(w, C.storage(w), 'sweet_berries') < 64 && w.count(plant) >= 64;
+    const early = plant === 'sweet_berries' && site && (!w.earlyUntil || Date.now() > w.earlyUntil) &&
+      S.placedChests(w, C.storage(w)).length > 0 && S.stock(w, C.storage(w), 'sweet_berries') < 64 && w.count(plant) >= 64;
     const full = w.count(plant) >= batch || w.freeSlots() <= 3 || early;
     if (full && site) {
       if (!(await S.goToSite(w))) continue;
@@ -23,6 +24,7 @@ async function run(w) {
       const before = w.count(plant);
       await C.storeHarvest(w, []);
       await C.ensureFood(w);
+      if (w.count(plant) >= before) w.earlyUntil = Date.now() + 10 * 60000;   // nothing went in: not again for a while
       if (w.count(plant) >= before && w.freeSlots() <= 3 || w.count(plant) >= batch) {
         w.setStatus('хранилище ещё не построено — жду у ферм');
         await sleep(30000);

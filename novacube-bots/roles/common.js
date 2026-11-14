@@ -83,7 +83,7 @@ async function workbench(w) {
   const s = site(w);
   const st = w.team.state;
   const base = S.workbenchSpot(s);
-  const cands = [0, 1, -1, 2, 3].map((dz) => S.onGround(w.bot, s, base.offset(0, 0, dz)));
+  const cands = [0, 1, -1, 2, -2].map((dz) => S.onGround(w.bot, s, base.offset(0, 0, dz)));   // z+4 is the furnace
   if (st.workbench) cands.unshift(new Vec3(st.workbench.x, st.workbench.y, st.workbench.z));
   const existing = cands.find((p) => { const b = w.bot.blockAt(p); return b && b.name === 'crafting_table'; });
   if (existing) {
@@ -111,10 +111,9 @@ async function ensureDepot(w, maxNow = 4) {
     const can = Math.min(need, Math.floor((woodCount(w) - 4) / 8));
     if (can <= 0) return;
     w.setStatus('ставлю сундуки склада');
-    if (!(await ensurePlanks(w, can * 8 + 4))) return;
     const table = await workbench(w);
     if (!table) return;
-    for (let i = 0; i < can; i++) if (!(await craftItem(w, 'chest', 1, table))) break;
+    for (let i = 0; i < can; i++) if (!(await ensurePlanks(w, 8)) || !(await craftItem(w, 'chest', 1, table))) break;
   }
   for (const p of missing) {
     if (!w.item('chest')) break;
@@ -229,7 +228,8 @@ async function digForDepot(w, batch = 64 * 8) {
   await digDirt(w, batch);
   if (w.count('dirt') < 16) { w.setStatus('земли рядом нет — жду'); await sleep(15000); return; }
   w.setStatus('несу землю на склад');
-  await S.depositRow(w, dirtDepot(w), ['dirt', 'cobblestone']);
+  const stored = await S.depositRow(w, dirtDepot(w), ['dirt', 'cobblestone']);
+  if (!stored.dirt && w.count('dirt') >= batch / 2) { w.setStatus('склад земли полный — жду строителей'); await sleep(30000); }
 }
 
 function countStored(w, stored) {
