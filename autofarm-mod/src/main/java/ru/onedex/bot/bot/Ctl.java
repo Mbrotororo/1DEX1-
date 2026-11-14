@@ -392,11 +392,16 @@ public final class Ctl {
     /** Runs a teleport command and waits until we really moved. */
     public static boolean teleport(String cmd, int timeoutTicks) {
         Bot.INSTANCE.act(cmd);
+        Move.stopWalking();          // servers cancel a /home warmup when you move
+        Move.set(false, false, false);
+        ticks(2);
         Vec3d before = pos();
+        long tp = Bot.INSTANCE.teleports();
         command(cmd);
         for (int t = 0; t < timeoutTicks; t++) {
             ticks(1);
-            if (pos().distanceTo(before) > 6) {
+            // moved far, or the server put us somewhere (also onto the spot we already stand on)
+            if (pos().distanceTo(before) > 6 || (t >= 2 && Bot.INSTANCE.teleports() != tp)) {
                 ticks(30);   // let the chunks around arrive
                 return true;
             }

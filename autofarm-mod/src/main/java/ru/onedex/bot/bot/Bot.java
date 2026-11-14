@@ -21,6 +21,11 @@ public final class Bot {
 
     public boolean running() { return running; }
     public long tickCount() { return ticks; }
+
+    private volatile long teleports;
+    /** Counts the server's position packets (game thread). */
+    public void teleported() { teleports++; }
+    public long teleports() { return teleports; }
     public String stage() { return stage; }
     public String act() { return act; }
     public long startedAt() { return startedAt; }
