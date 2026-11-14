@@ -140,35 +140,58 @@ async function ensureSword(w) {
   return false; // by hand then: slower, but works
 }
 
-/** Digs dirt next to the farms (never on our own place). */
+/** Digs dirt next to the farms (never on our own place). Every bot has its own spot around the farms,
+ *  so they don't dig the same pit; it digs everything within reach before moving on. */
 async function digDirt(w, target) {
   const bot = w.bot;
   const s = site(w);
+  if ((w.digRing || 0) > 90) { w.digRing = 0; return; }   // nothing left anywhere near: give up for now
   w.careful(false);
+  const reg = bot.registry;
+  const ids = ['grass_block', 'dirt', 'coarse_dirt', 'podzol', 'rooted_dirt'].map((n) => reg.blocksByName[n] && reg.blocksByName[n].id).filter((x) => x !== undefined);
+  let spot = bot.entity.position.floored();
+  if (s) {
+    const all = w.cfg.bots.map((b) => b.name);
+    const i = Math.max(0, all.indexOf(w.name));
+    const ang = (i / all.length) * 2 * Math.PI;
+    const c = S.center(s);
+    const R = Math.max(s.spanX, s.L) / 2 + 16 + (w.digRing || 0);
+    spot = new Vec3(Math.round(c.x + Math.cos(ang) * R), s.y, Math.round(c.z + Math.sin(ang) * R));
+  }
+  const ok = (b) => {
+    if (!b) return false;
+    const p = b.position;
+    if (s && (S.inZone(s, p, 1) || p.y > s.y + 4 || p.y < s.y - 3)) return false;   // shallow pits only
+    const above = bot.blockAt(p.offset(0, 1, 0));
+    return !!above && above.boundingBox !== 'block' && !/water|lava/.test(above.name);
+  };
   let fails = 0;
-  const startPos = bot.entity.position.clone();
-  while (w.count('dirt') < target && fails < 10 && w.freeSlots() > 2) {
+  while (w.count('dirt') < target && fails < 8 && w.freeSlots() > 2) {
     w.setStatus(`копаю землю (${w.count('dirt')}/${target})`);
-    const found = w.find(['grass_block', 'dirt', 'coarse_dirt', 'podzol', 'rooted_dirt'], 32, 60, (b) => {
-      if (!b) return false;
-      const p = b.position;
-      if (s) {
-        if (S.inZone(s, p, 1)) return false;
-        if (Math.abs(p.y - s.y) > 5 || p.distanceTo(S.center(s)) > 120) return false;
-      } else if (Math.abs(p.y - startPos.y) > 5) return false;
-      const above = bot.blockAt(p.offset(0, 1, 0));
-      return above && above.boundingBox !== 'block' && !/water|lava/.test(above.name);
-    });
-    if (!found.length) { fails += 3; await sleep(1000); continue; }
-    const me = bot.entity.position;
-    found.sort((a, b) => a.distanceTo(me) - b.distanceTo(me));
-    let got = false;
-    for (const p of found.slice(0, 10)) {
-      if (p.distanceTo(bot.entity.position) > 4.3 && !(await w.goto(p, 3, 20000))) continue;
-      if (await w.dig(p)) got = true;
+    const found = bot.findBlocks({ matching: ids, point: spot, maxDistance: 18, count: 40, useExtraInfo: ok });
+    if (!found.length) {
+      // this spot is dug out: a bit further from the farms
+      w.digRing = (w.digRing || 0) + 10;
+      if (s) spot = null;
+      fails++;
+      if (!spot) return digDirt(w, target);
+      continue;
     }
-    await w.collectDrops(5, 6);
-    if (!got) fails++;
+    const eye = () => bot.entity.position.offset(0, 1.6, 0);
+    found.sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
+    let dug = 0;
+    // everything within reach first, no walking
+    for (const p of found) {
+      if (p.offset(0.5, 0.5, 0.5).distanceTo(eye()) > 4.4) continue;
+      if (await w.dig(p)) dug++;
+      if (w.count('dirt') >= target || w.freeSlots() <= 2) break;
+    }
+    if (!dug) {
+      if (!(await w.goto(found[0], 2, 20000))) { fails++; continue; }
+    } else {
+      fails = 0;
+      await w.collectDrops(3, 4);
+    }
   }
 }
 
