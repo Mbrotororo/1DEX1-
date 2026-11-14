@@ -494,7 +494,7 @@ const BODY = 1.35; // центр тела над ногами
 let STAND_R = 3.0; // по какому кругу на верхушке острова можно ходить (в Незере — шире)
 const PLAYER_SCALE = 2.7 / 32;
 const MINE_TIME = 1.0;
-const REACH = 6.2; // как далеко персонаж дотягивается киркой
+const REACH = 11; // как далеко персонаж дотягивается киркой: до любого блока острова, даже до самого низа
 const WALK_SPEED = 2.8;
 const PROGRESS_KEY = 'dex.progress';
 const CHEST_TAKE = 1.75; // сколько секунд достаёт кирку из сундука
@@ -2845,7 +2845,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	};
 	const LOOK = pz({armRx: -0.2, armRz: 0.4, armLx: -0.2, armLz: -0.4, legRz: 0.1, legLz: -0.1, headPitch: 0.05});
 	// руки вперёд-вверх — ладони ложатся на края дыры по бокам от головы; смотрит прямо на тебя
-	const REACH = pz({armRx: -2.1, armRz: 0.14, armLx: -2.1, armLz: -0.14, legRz: 0.1, legLz: -0.1, headPitch: -0.18, drop: 0.02});
+	const GRAB_POSE = pz({armRx: -2.1, armRz: 0.14, armLx: -2.1, armLz: -0.14, legRz: 0.1, legLz: -0.1, headPitch: -0.18, drop: 0.02});
 	// упирается в края и подтягивается: руки опускаются, корпус идёт к тебе
 	const CLIMB = pz({armRx: -1.25, armRz: 0.55, armLx: -1.25, armLz: -0.55, legR: -0.5, legL: 0.2, headPitch: -0.32, drop: -0.08});
 	const LEAP = pz({armRx: -2.4, armRz: 0.5, armLx: -2.4, armLz: -0.5, legR: -0.4, legL: -0.4, headPitch: -0.1, drop: -0.15});
@@ -2861,7 +2861,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		t = addStrike(keys, hits, t + 0.1, 'head', 0, oy, {wind: 0.75, stage: 3, harder: true});
 		// стекло посыпалось — смотрит в дыру; потом хватается за края и вылезает к тебе
 		keys.push(kf(t + 0.85, LOOK, inOut, 1));
-		keys.push(kf(t + 1.85, REACH, inOut, 1, 0, 1.3, 0, 0, 0.35));
+		keys.push(kf(t + 1.85, GRAB_POSE, inOut, 1, 0, 1.3, 0, 0, 0.35));
 		keys.push(kf(t + 2.65, CLIMB, inOut, 1, 0, 1.6, 0, 0, 0.5));
 		keys.push(kf(t + 3.3, LEAP, easeIn, 1, 0, 2.9, 0, 0, 0.78));
 		// дыра «раскрывается» до всего экрана, пока он вылезает: сначала видно только то, что в дыре
@@ -5379,6 +5379,15 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				updatePointer(x, y);
 				return {voxel: !!pickVoxel(), player: pickPlayer(), portal: pickPortal(), busy: busy(), mode: P.mode, warp: !!warp};
 			},
+			// блоки, до которых персонаж сейчас не дотянется (для проверки)
+			unreachable: () => worlds[worldId].blocks.filter((b) => b.minedAt < 0 && !canReach(b, standFor(b))).map((b) => ({type: b.type, pos: b.pos.toArray(), stand: standFor(b).toArray().map((v) => +v.toFixed(2))})),
+			// на каком расстоянии самый далёкий блок этого мира (сколько нужно «дотягиваться»)
+			reachNeed: () => Math.max(...worlds[worldId].blocks.filter((b) => b.type !== 'lava').map((b) => {
+				const st = standFor(b);
+				return +new THREE.Vector3(st.x, 2.3, st.z).distanceTo(b.pos).toFixed(2);
+			})),
+			// экранная точка блока по его координатам на острове
+			blockPxAt: (x, y, z) => page(toPx(island.localToWorld(new THREE.Vector3(x, y, z)))),
 			blockPx: (type) => {
 				const b = worlds[worldId].blocks.find((x) => x.type === type && x.minedAt < 0 && canReach(x, standFor(x)) && (() => {
 					const w = island.localToWorld(tmp.copy(x.pos));
