@@ -44,8 +44,9 @@ async function mineFor(w, { budgetMs = 300000, done = () => false, prefer = [] }
     await w.maybeEat();
     if (!hasPickaxe(w, 0) && !(await ensurePickaxe(w))) break;
     if (w.count('cobblestone') >= 3 && !hasPickaxe(w, 1) && w.count('stick') + w.countMatch(/_planks$/) >= 2) await ensurePickaxe(w);
-    if (w.freeSlots() <= 2) {
+    if (w.freeSlots() <= 5) {
       await w.tossAll(JUNK);
+      await w.tossJunk();
       if (w.freeSlots() <= 2) break;
     }
     const stoneTier = hasPickaxe(w, 1);

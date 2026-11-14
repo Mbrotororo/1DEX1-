@@ -86,7 +86,7 @@ async function climbShaft(w, farm, k) {
     // the column must be clear above the head (old column pieces can hang there)
     const head = w.bot.entity.position.floored().offset(0, 2, 0);
     if (solid(w.bot, head) && !(await w.dig(head))) return false;
-    const mat = walkMaterials.find((m) => w.count(m) > 0);
+    const mat = ['dirt', 'cobblestone', 'cobbled_deepslate'].find((m) => w.count(m) > 0);
     if (!mat) return false;
     if (!(await w.pillarUp(mat))) { await sleep(300); if (!(await w.pillarUp(mat))) return false; }
   }

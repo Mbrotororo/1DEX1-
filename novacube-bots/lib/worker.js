@@ -491,15 +491,25 @@ class Worker {
   }
 
   /** Eats something when hungry (berries count too). */
-  async maybeEat(threshold = 14) {
+  /** Eats when hungry, and keeps eating up to `upTo` (health only comes back with an almost full hunger bar). */
+  async maybeEat(threshold = 14, upTo = 19) {
     const bot = this.bot;
     if (!bot || !bot.entity || bot.food >= threshold || this.eating) return;
     const foods = ['golden_carrot', 'cooked_beef', 'cooked_porkchop', 'cooked_mutton', 'cooked_chicken', 'bread', 'baked_potato', 'apple', 'carrot', 'sweet_berries'];
-    const it = bot.inventory.items().find((i) => foods.includes(i.name));
-    if (!it) return;
     this.eating = true;
-    try { await bot.equip(it, 'hand'); await withTimeout(bot.consume(), 6000, 'еда'); } catch (_) { /* ignore */ }
+    for (let i = 0; i < 12 && bot.food < upTo; i++) {
+      const it = bot.inventory.items().find((x) => foods.includes(x.name));
+      if (!it) break;
+      try { await withTimeout(bot.equip(it, 'hand'), 4000, 'еда'); await withTimeout(bot.consume(), 6000, 'еда'); } catch (_) { break; }
+    }
     this.eating = false;
+  }
+
+  /** Throws away what nobody uses (seeds, flowers, saplings, odd stones) so the bag doesn't clog. */
+  async tossJunk() {
+    const keep = /^(dirt|cobblestone|cobbled_deepslate|torch|bamboo|sweet_berries|stick|coal|charcoal|chest|crafting_table|furnace|apple|bread|carrot|baked_potato|cooked_.*|golden_carrot)$|_(log|planks|sword|shovel|axe|pickaxe|ingot)$|^raw_|^(diamond|emerald|redstone|lapis_lazuli)$/;
+    const junk = [...new Set(this.bot.inventory.items().map((i) => i.name).filter((n) => !keep.test(n)))];
+    if (junk.length) await this.tossAll(junk);
   }
 
   /** Steps out of berry bushes (they hurt) when health gets low. */

@@ -68,12 +68,14 @@ function tendFloors(w) {
 
 // ------------------------------------------------------------------ small helpers
 async function ensureFood(w) {
-  if (w.bot.food >= 14) return;
   const foods = ['bread', 'apple', 'carrot', 'baked_potato', 'cooked_beef', 'cooked_porkchop', 'sweet_berries'];
-  if (!w.bot.inventory.items().some((i) => foods.includes(i.name)) && site(w)) {
-    await S.takeRow(w, storage(w), [{ test: 'sweet_berries', count: 32 }]);
+  const have = w.bot.inventory.items().filter((i) => foods.includes(i.name)).reduce((a, i) => a + i.count, 0);
+  // keep a few berries (or the lumberjack's apples from the depot) in the bag
+  if (have < 8 && site(w) && S.nearSite(w)) {
+    await S.takeRow(w, storage(w), [{ test: 'sweet_berries', count: 24 }]);
+    if (w.bot.inventory.items().filter((i) => foods.includes(i.name)).length === 0) await S.takeRow(w, depot(w), [{ test: 'apple', count: 8 }]);
   }
-  await w.maybeEat();
+  await w.maybeEat(16, 19);
 }
 
 /** A crafting table west of the depot (the spot is remembered; if it can't be used, the next one). */
@@ -182,6 +184,7 @@ async function digDirt(w, target) {
     const above = bot.blockAt(p.offset(0, 1, 0));
     return !!above && above.boundingBox !== 'block' && !/water|lava/.test(above.name);
   };
+  await w.tossJunk();
   let fails = 0;
   while (w.count('dirt') < target && fails < 6 && w.freeSlots() > 2) {
     if (!s && w.team.state.site) return;   // the place got chosen meanwhile: go there
@@ -251,11 +254,12 @@ async function storeHarvest(w, plantsKept = []) {
 
 /** Enough blocks to climb to the highest of these floors (the column is dug back down later). */
 async function ensureColumnBlocks(w, farm, floors) {
+  // columns are made of dirt (stone is for swords and walkways)
   const top = Math.max(...floors.map((k) => S.floorY(farm, k))) - site(w).y + 6;
-  if (F.blocksCarried(w) >= top) return true;
-  await S.takeRow(w, depot(w), [{ test: 'dirt', count: top + 32 - F.blocksCarried(w) }]);
-  if (F.blocksCarried(w) < top) await digDirt(w, top + 16);
-  return F.blocksCarried(w) >= top;
+  if (w.count('dirt') >= top) return true;
+  await S.takeRow(w, depot(w), [{ test: 'dirt', count: top + 32 - w.count('dirt') }]);
+  if (w.count('dirt') < top) await digDirt(w, top + 16);
+  return w.count('dirt') >= top;
 }
 
 // ------------------------------------------------------------------ trips
@@ -263,6 +267,7 @@ async function tendTrip(w, farm, floors, idx) {
   const s = site(w);
   w.atBase = true;
   const keepN = (w.cfg.farm && w.cfg.farm.keepSeeds) || 192;
+  await w.tossJunk();
   await storeHarvest(w, [farm.plant]);
   if (w.count(farm.plant) < keepN / 2) {
     await S.takeRow(w, storage(w), [{ test: farm.plant, count: keepN - w.count(farm.plant) }]);

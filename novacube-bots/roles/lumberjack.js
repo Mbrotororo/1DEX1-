@@ -41,7 +41,7 @@ async function run(w) {
       if (S.missingChests(w, C.depot(w)).length) await C.ensureDepot(w);
       w.setStatus('несу брёвна на склад');
       const names = [...new Set(w.bot.inventory.items().filter((i) => C.LOGS.test(i.name)).map((i) => i.name))];
-      const stored = await S.depositRow(w, C.depot(w), names.concat(['stick', 'apple']));
+      const stored = await S.depositRow(w, C.depot(w).slice(0, 2), names.concat(['stick', 'apple']));   // pair 0: wood, tools, torches
       const n = Object.entries(stored).filter(([k]) => C.LOGS.test(k)).reduce((a, [, c]) => a + c, 0);
       if (n) w.say(`отнёс на склад ${n} брёвен`);
       await C.ensureFood(w);
@@ -59,6 +59,12 @@ async function run(w) {
       w.team.state.siteCleared = true;
       w.team.save();
       w.say('место под фермы чистое, деревьев нет');
+    }
+    // enough wood waiting in the depot and every chest placed: dig dirt for the builders instead
+    if (site && S.nearSite(w) && S.stock(w, C.depot(w), C.LOGS) >= ((w.cfg.lumberjack || {}).logCap ?? 384) &&
+        !S.missingChests(w, C.depot(w)).length && !S.missingChests(w, C.storage(w)).length) {
+      await C.digForDepot(w);
+      continue;
     }
     if (!site && logs(w) >= 192) { w.setStatus('брёвна есть, жду, пока выберут место под фермы'); await sleep(30000); continue; }
     w.setStatus('рублю деревья (/rtp)');

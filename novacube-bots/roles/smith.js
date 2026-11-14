@@ -29,6 +29,16 @@ async function wood(w, planks) {
   return woodCount(w) >= planks;
 }
 
+/** After the mine: junk away, valuables into the storage (RodionDex can sell them), extra stone to the
+ *  depot (the builders use it for walkways). */
+async function unload(w) {
+  await w.tossJunk();
+  await w.tossAll(['andesite', 'diorite', 'granite', 'tuff', 'gravel', 'flint', 'cobbled_deepslate']);
+  const valuables = [...new Set(w.bot.inventory.items().map((i) => i.name).filter((n) => /^raw_|_ingot$|^(diamond|emerald|redstone|lapis_lazuli)$/.test(n)))];
+  if (valuables.length) await S.depositRow(w, C.storage(w), valuables);
+  if (w.count('cobblestone') > 256) await S.depositRow(w, C.depot(w), ['cobblestone'], { cobblestone: 192 });
+}
+
 /** Charcoal from logs in a furnace next to the workbench: torches when the mine gives too little coal. */
 async function charcoal(w) {
   const site = C.site(w);
@@ -158,6 +168,7 @@ async function run(w) {
     await C.ensureFood(w);
     const depot = C.depot(w);
     if (!w.lastLook || Date.now() - w.lastLook > 120000) { await lookInto(w, depot); w.lastLook = Date.now(); }
+    await unload(w);
 
     await placeChests(w, depot, 'склад', 2);
     await charcoal(w);

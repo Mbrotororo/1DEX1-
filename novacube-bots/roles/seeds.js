@@ -14,7 +14,9 @@ async function run(w) {
     await w.waitReady();
     if (C.phase2(w)) { await C.tender(w); continue; }
     const site = w.team.state.site;
-    const full = w.count(plant) >= batch || w.freeSlots() <= 3;
+    // the first berries go home early: they are everyone's food
+    const early = plant === 'sweet_berries' && site && S.stock(w, C.storage(w), 'sweet_berries') < 64 && w.count(plant) >= 64;
+    const full = w.count(plant) >= batch || w.freeSlots() <= 3 || early;
     if (full && site) {
       if (!(await S.goToSite(w))) continue;
       await F.toGround(w);
