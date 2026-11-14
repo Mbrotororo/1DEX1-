@@ -84,7 +84,7 @@ public final class Plan {
 
     // ------------------------------------------------------------------ 1. the stash
     static List<BlockPos> chestsAround(int radius) {
-        return Ctl.call(() -> {
+        return Ctl.direct(() -> {
             BlockPos me = Ctl.player().getBlockPos();
             List<BlockPos> out = new ArrayList<>();
             for (BlockPos p : BlockPos.iterate(me.add(-radius, -3, -radius), me.add(radius, 4, radius))) {
@@ -145,7 +145,7 @@ public final class Plan {
         BlockPos home = Ctl.feet();
         BotConfig c = cfg();
         // the highest ground under the berries farm and its storage
-        int top = Ctl.call(() -> {
+        int top = Ctl.direct(() -> {
             int best = -999;
             int x0 = home.getX() - c.farmWidth / 2 - 7, z0 = home.getZ() - c.farmLength / 2 - 2;
             for (int x = x0; x <= x0 + c.farmWidth + 8; x += 2)
@@ -160,7 +160,7 @@ public final class Plan {
         // break the small farm (berry bushes give seeds) and anything built on the place
         Bot.INSTANCE.stage("Ломаю мини-ферму");
         for (int round = 0; round < 4; round++) {
-            List<BlockPos> todo = Ctl.call(() -> {
+            List<BlockPos> todo = Ctl.direct(() -> {
                 List<BlockPos> out = new ArrayList<>();
                 for (BlockPos p : BlockPos.iterate(new BlockPos(s.x - 7, s.y - 1, s.z - 2), new BlockPos(s.x + s.W + 1, s.y + 6, s.z + s.L + 1))) {
                     BlockState st = Ctl.world().getBlockState(p);
@@ -198,7 +198,7 @@ public final class Plan {
             if (Math.hypot(me.x - spot.getX(), me.z - spot.getZ()) > 16) {
                 Ctl.goTo(new BlockPos(spot.getX(), s.ground(spot.getX(), spot.getZ()) + 1, spot.getZ()), 6, 1200);
             }
-            List<BlockPos> found = Ctl.call(() -> {
+            List<BlockPos> found = Ctl.direct(() -> {
                 List<BlockPos> out = new ArrayList<>();
                 BlockPos c = Ctl.player().getBlockPos();
                 for (BlockPos p : BlockPos.iterate(c.add(-6, -4, -6), c.add(6, 3, 6))) {
@@ -407,7 +407,7 @@ public final class Plan {
         if (!Ctl.teleport(cfg().rtpCommand, 300)) { Ctl.sleep(8000); return; }
         Ctl.ticks(40);
         for (int pick = 0; pick < 30 && Ctl.count("bamboo") < 256 && Ctl.freeSlots() > 3; pick++) {
-            BlockPos base = Ctl.call(() -> {
+            BlockPos base = Ctl.direct(() -> {
                 BlockPos me = Ctl.player().getBlockPos();
                 BlockPos best = null;
                 double bd = 1e9;

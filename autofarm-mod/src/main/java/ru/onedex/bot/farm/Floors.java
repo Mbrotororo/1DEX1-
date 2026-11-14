@@ -244,7 +244,7 @@ public final class Floors {
                         }
                     } else {
                         if (here.equals("sweet_berry_bush")) {
-                            int age = Ctl.call(() -> {
+                            int age = Ctl.direct(() -> {
                                 BlockState st = Ctl.world().getBlockState(top);
                                 return st.contains(Properties.AGE_3) ? st.get(Properties.AGE_3) : 0;
                             });
@@ -299,7 +299,7 @@ public final class Floors {
 
     public static boolean floorDone(Site s, int f, int k) {
         int L = s.floorY(k);
-        return Ctl.call(() -> {
+        return Ctl.direct(() -> {
             for (int dx = 0; dx < s.W; dx++) for (int dz = 0; dz < s.L; dz++) {
                 String n = Ctl.blockName(Ctl.world().getBlockState(new BlockPos(s.farmX(f) + dx, L, s.z + dz)));
                 if (!(s.isRow(dx, dz) ? SOIL : WALK).matcher(n).matches()) return false;

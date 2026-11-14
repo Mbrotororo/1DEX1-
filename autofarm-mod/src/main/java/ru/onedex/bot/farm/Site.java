@@ -73,6 +73,6 @@ public final class Site {
         return fromY - 30;
     }
 
-    public int ground(int gx, int gz) { return Ctl.call(() -> groundNow(Ctl.world(), gx, gz, y + 1)); }
+    public int ground(int gx, int gz) { return Ctl.direct(() -> groundNow(Ctl.world(), gx, gz, y + 1)); }
     public BlockPos onGround(BlockPos p) { return new BlockPos(p.getX(), ground(p.getX(), p.getZ()) + 1, p.getZ()); }
 }

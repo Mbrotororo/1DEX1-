@@ -65,6 +65,14 @@ public final class Ctl {
 
     public static void run(Runnable r) { call(() -> { r.run(); return null; }); }
 
+    /** A read done right on the bot thread (the game may change things meanwhile, a retry fixes that). */
+    public static <T> T direct(Supplier<T> f) {
+        check();
+        for (int i = 0; ; i++) {
+            try { return f.get(); } catch (RuntimeException e) { if (i >= 2) return call(f); }
+        }
+    }
+
     /** Waits n game ticks (20 per second). */
     public static void ticks(int n) {
         long target = Bot.INSTANCE.tickCount() + Math.max(1, n);
@@ -80,10 +88,11 @@ public final class Ctl {
     public static ClientPlayerEntity player() { return mc().player; }
     public static ClientWorld world() { return mc().world; }
 
-    public static Vec3d pos() { return call(() -> player().getEntityPos()); }
-    public static BlockPos feet() { return call(() -> player().getBlockPos()); }
-    public static BlockState state(BlockPos p) { return call(() -> world().getBlockState(p)); }
-    public static String name(BlockPos p) { return call(() -> blockName(world().getBlockState(p))); }
+    // reads go straight from the bot thread (no waiting for a frame); actions go through the game thread
+    public static Vec3d pos() { check(); return player().getEntityPos(); }
+    public static BlockPos feet() { check(); return player().getBlockPos(); }
+    public static BlockState state(BlockPos p) { return world().getBlockState(p); }
+    public static String name(BlockPos p) { return blockName(world().getBlockState(p)); }
 
     public static String blockName(BlockState s) { return Registries.BLOCK.getId(s.getBlock()).getPath(); }
     public static String itemName(ItemStack s) { return s.isEmpty() ? "" : Registries.ITEM.getId(s.getItem()).getPath(); }
@@ -93,16 +102,16 @@ public final class Ctl {
         BlockState s = world().getBlockState(p);
         return s.isFullCube(world(), p) || (!s.getCollisionShape(world(), p).isEmpty() && s.getCollisionShape(world(), p).getMax(Direction.Axis.Y) >= 1.0);
     }
-    public static boolean solid(BlockPos p) { return call(() -> solidNow(p)); }
+    public static boolean solid(BlockPos p) { return solidNow(p); }
     public static boolean airNow(BlockPos p) {
         BlockState s = world().getBlockState(p);
         return s.isAir() || (s.getCollisionShape(world(), p).isEmpty() && !s.getFluidState().isStill() && !blockName(s).contains("bush") && !blockName(s).contains("bamboo"));
     }
-    public static boolean loaded(BlockPos p) { return call(() -> world().isChunkLoaded(p.getX() >> 4, p.getZ() >> 4)); }
+    public static boolean loaded(BlockPos p) { return world().isChunkLoaded(p.getX() >> 4, p.getZ() >> 4); }
 
     // ------------------------------------------------------------------ inventory
     public static int count(String item) {
-        return call(() -> {
+        return direct(() -> {
             int n = 0;
             var inv = player().getInventory();
             for (int i = 0; i < 36; i++) { ItemStack s = inv.getStack(i); if (itemName(s).equals(item)) n += s.getCount(); }
@@ -113,7 +122,7 @@ public final class Ctl {
     }
 
     public static int countMatch(Predicate<String> test) {
-        return call(() -> {
+        return direct(() -> {
             int n = 0;
             var inv = player().getInventory();
             for (int i = 0; i < 36; i++) { ItemStack s = inv.getStack(i); if (!s.isEmpty() && test.test(itemName(s))) n += s.getCount(); }
@@ -124,7 +133,7 @@ public final class Ctl {
     public static boolean has(Predicate<String> test) { return countMatch(test) > 0; }
 
     public static int freeSlots() {
-        return call(() -> {
+        return direct(() -> {
             int n = 0;
             var inv = player().getInventory();
             for (int i = 0; i < 36; i++) if (inv.getStack(i).isEmpty()) n++;
@@ -192,15 +201,15 @@ public final class Ctl {
 
     // ------------------------------------------------------------------ looking and walking
     public static void lookAt(Vec3d target) {
-        Vec3d eye = call(() -> player().getEyePos());
+        Vec3d eye = player().getEyePos();
         double dx = target.x - eye.x, dy = target.y - eye.y, dz = target.z - eye.z;
         float yaw = (float) (MathHelper.atan2(dz, dx) * 180 / Math.PI) - 90f;
         float pitch = (float) -(MathHelper.atan2(dy, Math.sqrt(dx * dx + dz * dz)) * 180 / Math.PI);
         Move.look(yaw, pitch);
         for (int i = 0; i < 8; i++) {
+            float cy = player().getYaw(), cp = player().getPitch();
+            if (Math.abs(MathHelper.wrapDegrees(yaw - cy)) < 3 && Math.abs(pitch - cp) < 3) break;
             ticks(1);
-            float[] cur = call(() -> new float[]{player().getYaw(), player().getPitch()});
-            if (Math.abs(MathHelper.wrapDegrees(yaw - cur[0])) < 2 && Math.abs(pitch - cur[1]) < 2) break;
         }
     }
 
@@ -224,7 +233,7 @@ public final class Ctl {
         long end = Bot.INSTANCE.tickCount() + timeoutTicks;
         for (int attempt = 0; attempt < 4 && Bot.INSTANCE.tickCount() < end; attempt++) {
             if (pos().distanceTo(Vec3d.ofCenter(goal)) <= range + 0.5) return true;
-            List<BlockPos> path = call(() -> Path.find(world(), player().getBlockPos(), goal, range, 12000));
+            List<BlockPos> path = direct(() -> Path.find(world(), player().getBlockPos(), goal, range, 12000));
             if (path == null || path.isEmpty()) { sleep(500); continue; }
             if (follow(path, end)) {
                 if (pos().distanceTo(Vec3d.ofCenter(goal)) <= range + 1.0) return true;
@@ -242,10 +251,10 @@ public final class Ctl {
             int t = 0;
             while (Move.walking() && t++ < 60) {
                 if (Bot.INSTANCE.tickCount() > endTick) { Move.stopWalking(); return false; }
-                boolean onGround = call(() -> player().isOnGround());
+                boolean onGround = player().isOnGround();
                 Move.jump(up && onGround);
                 ticks(1);
-                if (call(() -> player().isTouchingWater())) Move.jump(true);
+                if (player().isTouchingWater()) Move.jump(true);
             }
             Move.jump(false);
             if (Move.walking()) { Move.stopWalking(); return false; }   // stuck: plan again
@@ -256,21 +265,24 @@ public final class Ctl {
 
     // ------------------------------------------------------------------ blocks
     public static double reach(BlockPos p) {
-        return call(() -> player().getEyePos().distanceTo(Vec3d.ofCenter(p)));
+        return player().getEyePos().distanceTo(Vec3d.ofCenter(p));
     }
 
     /** Breaks a block (with the best tool). True if it is gone. */
     public static boolean mine(BlockPos p) {
-        if (call(() -> world().getBlockState(p).isAir())) return false;
+        if (world().getBlockState(p).isAir()) return false;
         if (reach(p) > 5.0) return false;
         Bot.INSTANCE.act("копаю " + p.toShortString());
         holdBestFor(p);
         lookAt(Vec3d.ofCenter(p));
-        Direction face = call(() -> {
-            Vec3d eye = player().getEyePos();
-            return Direction.getFacing(eye.x - (p.getX() + 0.5), eye.y - (p.getY() + 0.5), eye.z - (p.getZ() + 0.5));
+        Vec3d eye = player().getEyePos();
+        Direction face = Direction.getFacing(eye.x - (p.getX() + 0.5), eye.y - (p.getY() + 0.5), eye.z - (p.getZ() + 0.5));
+        boolean instant = call(() -> {
+            mc().interactionManager.attackBlock(p, face);
+            player().swingHand(Hand.MAIN_HAND);
+            return world().getBlockState(p).isAir();
         });
-        run(() -> mc().interactionManager.attackBlock(p, face));
+        if (instant) { ticks(2); return world().getBlockState(p).isAir(); }
         for (int t = 0; t < 200; t++) {
             ticks(1);
             boolean gone = call(() -> {
@@ -281,7 +293,7 @@ public final class Ctl {
             });
             if (gone) {
                 ticks(2);
-                return call(() -> world().getBlockState(p).isAir());   // a protected block comes back
+                return world().getBlockState(p).isAir();   // a protected block comes back
             }
         }
         run(() -> mc().interactionManager.cancelBlockBreaking());
@@ -292,7 +304,7 @@ public final class Ctl {
     public static boolean place(BlockPos target, String item, BlockPos ref) {
         Bot.INSTANCE.act("ставлю " + item);
         if (!hold(item)) return false;
-        String before = name(target);
+        String before = name(target);   // direct read
         Direction face = Direction.fromVector(target.getX() - ref.getX(), target.getY() - ref.getY(), target.getZ() - ref.getZ(), null);
         if (face == null) return false;
         Vec3d hit = Vec3d.ofCenter(ref).add(face.getOffsetX() * 0.5, face.getOffsetY() * 0.5, face.getOffsetZ() * 0.5);
