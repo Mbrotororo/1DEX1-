@@ -5,6 +5,13 @@ function bushAge(block) {
   try { return Number(block.getProperties().age); } catch (_) { return 0; }
 }
 
+/** Only wild plants on the ground: not our own farm and nothing high up on someone's build. */
+function isWild(w, p) {
+  const f = w.team && w.team.state.wideFarm;
+  if (f && p.x >= f.x - 8 && p.x < f.x + f.W + 4 && p.z >= f.z - 4 && p.z < f.z + f.L + 4) return false;
+  return p.y <= w.bot.entity.position.y + 4;
+}
+
 /** Harvests bamboo and berries around the current position for up to `budgetMs`. */
 async function harvestAround(w, want, budgetMs = 120000) {
   const t0 = Date.now();
@@ -14,7 +21,7 @@ async function harvestAround(w, want, budgetMs = 120000) {
     let did = false;
     await w.maybeEat();
     if (w.count('sweet_berries') < want.sweet_berries) {
-      const bushes = w.find(['sweet_berry_bush'], radius, 12, (b) => b && bushAge(b) >= 2);
+      const bushes = w.find(['sweet_berry_bush'], radius, 12, (b) => b && bushAge(b) >= 2).filter((p) => isWild(w, p));
       if (bushes.length) {
         w.setStatus(`собираю ягоды (${w.count('sweet_berries')})`);
         const me = w.bot.entity.position;
@@ -40,7 +47,7 @@ async function harvestAround(w, want, budgetMs = 120000) {
       const all = w.find(['bamboo'], radius, 80);
       const bases = all.filter((p) => {
         const below = w.bot.blockAt(p.offset(0, -1, 0));
-        return below && below.name !== 'bamboo';
+        return below && below.name !== 'bamboo' && isWild(w, p);
       });
       if (bases.length) {
         w.setStatus(`рублю бамбук (${w.count('bamboo')})`);
