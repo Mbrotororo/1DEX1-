@@ -77,7 +77,7 @@ public class BotMenuScreen extends Screen {
 
         // title + live dot
         R2D.textMid("1DEX1", Font.B13, cx + 16, cy + 20, 0xFFFFFFFF);
-        R2D.textMid("BOT", Font.S11, cx + 18 + R2D.width("1DEX1", Font.B13), cy + 20.5f, 0x99FFFFFF);
+        R2D.textMid("BOT", Font.S11, cx + 20 + R2D.width("1DEX1", Font.B13), cy + 20.5f, 0x99FFFFFF);
         int dot = on ? 0xFF3BE07A : 0xFF6B7280;
         float pulse = on ? 0.5f + 0.5f * (float) Math.sin(t * 4) : 0;
         R2D.circle(cx + W - 22, cy + 20, 3.2f + pulse * 2.2f, R2D.withAlpha(dot, 0.25f));
@@ -119,9 +119,8 @@ public class BotMenuScreen extends Screen {
         // start / stop
         bx = cx + 16; by = cy + 140; bw = W - 32; bh = 30;
         boolean hover = mouseX >= bx && mouseX <= bx + bw && mouseY >= by && mouseY <= by + bh;
-        int c1 = on ? 0xFFE5484D : 0xFF22C55E, c2 = on ? 0xFFC0392B : 0xFF16A34A;
+        int c1 = on ? 0xFFE5484D : 0xFF22C55E;
         R2D.roundRect(bx, by, bw, bh, 10, hover ? R2D.lerpColor(c1, 0xFFFFFFFF, 0.08f) : c1);
-        R2D.gradientV(bx + 10, by + bh - 6, bw - 20, 6, 0x00000000, R2D.withAlpha(c2, 0.35f));
         R2D.textMidCentered(on ? "СТОП" : "СТАРТ", Font.B13, bx + bw / 2, by + bh / 2 + 0.5f, 0xFFFFFFFF);
 
         // reset (needs a second click)

@@ -413,6 +413,7 @@ public final class Plan {
         }
         if (!Ctl.teleport(cfg().rtpCommand, 300)) { Ctl.sleep(8000); return; }
         Ctl.ticks(40);
+        java.util.Set<BlockPos> skip = new java.util.HashSet<>();
         for (int pick = 0; pick < 30 && Ctl.count("bamboo") < 256 && Ctl.freeSlots() > 3; pick++) {
             BlockPos base = Ctl.direct(() -> {
                 BlockPos me = Ctl.player().getBlockPos();
@@ -421,6 +422,7 @@ public final class Plan {
                 for (BlockPos p : BlockPos.iterate(me.add(-48, -12, -48), me.add(48, 12, 48))) {
                     if (!Ctl.blockName(Ctl.world().getBlockState(p)).equals("bamboo")) continue;
                     if (Ctl.blockName(Ctl.world().getBlockState(p.down())).equals("bamboo")) continue;
+                    if (skip.contains(p)) continue;
                     double d = p.getSquaredDistance(me);
                     if (d < bd) { bd = d; best = p.toImmutable(); }
                 }
@@ -428,8 +430,8 @@ public final class Plan {
             });
             if (base == null) break;
             Bot.INSTANCE.stage("Нашёл бамбук! Собираю");
-            if (Ctl.reach(base) > 4.4 && !Ctl.goTo(base, 2.5, 600)) continue;
-            Ctl.mine(base);
+            if (Ctl.reach(base) > 4.4 && !Ctl.goTo(base, 2.5, 600)) { skip.add(base); continue; }
+            if (!Ctl.mine(base)) skip.add(base);
             Ctl.collectDrops(5, 6);
         }
         if (Ctl.count("bamboo") >= 64) {
