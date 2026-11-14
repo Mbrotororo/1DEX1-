@@ -49,12 +49,19 @@
   @keyframes shake{ 0%,100%{transform:translate(0,0)} 20%{transform:translate(-6px,4px)}
     40%{transform:translate(7px,-5px)} 60%{transform:translate(-5px,-6px)} 80%{transform:translate(6px,5px)} }
   .shaking{ animation:shake .18s infinite; }
+  #ggl{ position:fixed; inset:0; z-index:3; pointer-events:none; opacity:0; mix-blend-mode:screen;
+    background:repeating-linear-gradient(0deg, rgba(0,255,80,.12) 0, rgba(0,255,80,.12) 3px, transparent 3px, transparent 7px),
+      linear-gradient(0deg, rgba(0,255,80,.22), rgba(0,40,10,.08)); }
+  #ggl.on{ animation:gflick .10s steps(2) infinite; }
+  @keyframes gflick{ 0%{opacity:.45; transform:translateY(0) skewX(0)} 33%{opacity:.8; transform:translateY(-5px) skewX(0.6deg)}
+    66%{opacity:.35; transform:translateY(4px) skewX(-0.6deg)} 100%{opacity:.6; transform:translateY(-2px)} }
 </style>
 </head>
 <body>
 <canvas id="matrix"></canvas>
 <div id="term"></div>
 <div id="flash"></div>
+<div id="ggl"></div>
 <svg id="eye" viewBox="0 0 200 200">
   <defs><radialGradient id="ir" cx="50%" cy="50%" r="50%">
     <stop offset="0%" stop-color="#ff5a00"/><stop offset="55%" stop-color="#b00000"/><stop offset="100%" stop-color="#1a0000"/>
@@ -199,7 +206,8 @@
     var b=btexts[Math.floor(Math.random()*btexts.length)];
     h1.innerHTML=b[0]; h2.innerHTML=b[1];
     banner.classList.add('show'); body.classList.add('shaking'); siren();
-    T(1500,function(){ banner.classList.remove('show'); body.classList.remove('shaking'); });
+    var ggl=document.getElementById('ggl'); if(ggl) ggl.classList.add('on');
+    T(1500,function(){ banner.classList.remove('show'); body.classList.remove('shaking'); if(ggl) ggl.classList.remove('on'); });
     T(rnd(5000,9000),showBanner);
   }
   function showEye(){
