@@ -126,38 +126,42 @@ function woodCount(w) {
   return w.countMatch(LOG_RE) * 4 + plankCount(w);
 }
 
-/** Chops trees around until we have about `planks` worth of wood. */
+/** Chops trees around until we have about `planks` worth of wood. Goes elsewhere with /rtp when there are
+ *  no trees, or when the trees here can't be cut (a protected spawn puts the logs back). */
 async function chopWood(w, planks = 24, radius = 40, rtpTries = 4) {
   const names = ['oak_log', 'spruce_log', 'birch_log', 'jungle_log', 'acacia_log', 'dark_oak_log', 'mangrove_log', 'cherry_log', 'pale_oak_log'];
-  let fails = 0;
   let rtps = 0;
-  while (woodCount(w) < planks && fails < 6) {
+  let idle = 0;               // passes that brought no wood
+  const bad = new Set();      // logs we could not reach or cut
+  while (woodCount(w) < planks) {
     await sleep(50); // always give the network a moment (keeps the connection alive)
-    const found = w.find(names, radius, 30);
+    const found = idle < 3 ? w.find(names, radius, 30, (b) => !bad.has(b.position.toString())) : [];
     if (!found.length) {
-      // no trees around: jump somewhere else with /rtp
       if (rtps >= rtpTries || !w.cfg.commands.rtp) return false;
       rtps++;
-      w.setStatus('рядом нет деревьев — /rtp');
+      idle = 0;
+      bad.clear();
+      w.setStatus('здесь не нарубить дерева — /rtp');
       if (!(await w.teleport(w.cfg.commands.rtp, {}, 'rtp'))) await sleep(5000);
       continue;
     }
+    const before = woodCount(w);
     const me = w.bot.entity.position;
     found.sort((a, b) => a.distanceTo(me) - b.distanceTo(me));
     // prefer logs reachable from the ground (low ones)
     const target = found.find((p) => p.y <= me.y + 3) || found[0];
     w.setStatus('рублю дерево');
-    if (!(await w.goto(target, 2, 40000))) { fails++; continue; }
-    if (!(await w.dig(target))) { fails++; continue; }
+    if (!(await w.goto(target, 2, 40000)) || !(await w.dig(target))) { bad.add(target.toString()); idle++; continue; }
     // the rest of the trunk above, while reachable
-    for (let dy = 1; dy <= 3; dy++) {
+    for (let dy = 1; dy <= 4; dy++) {
       const up = target.offset(0, dy, 0);
       const b = w.bot.blockAt(up);
-      if (b && LOG_RE.test(b.name) && w.bot.entity.position.distanceTo(up) < 4.5) await w.dig(up);
+      if (b && LOG_RE.test(b.name) && w.bot.canDigBlock(b)) await w.dig(up);
     }
     await w.collectDrops(6, 8);
+    if (woodCount(w) > before) idle = 0; else idle++;
   }
-  return woodCount(w) >= planks;
+  return true;
 }
 
 module.exports = { craftItem, ensurePlanks, ensureSticks, ensureTable, pickUpTable, ensurePickaxe, ensureShovel, chopWood, woodCount, hasPickaxe, LOG_RE };

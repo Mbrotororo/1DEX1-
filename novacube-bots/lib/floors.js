@@ -9,8 +9,20 @@ const { sleep } = require('./util');
 const log = require('./log');
 
 const walkMaterials = ['cobblestone', 'cobbled_deepslate', 'dirt'];
+// what counts as a finished floor cell: plant rows need soil, walkways any of our blocks
+const SOIL = /^(dirt|grass_block|coarse_dirt|podzol|rooted_dirt|moss_block)$/;
+const WALK = /^(dirt|grass_block|coarse_dirt|podzol|rooted_dirt|moss_block|cobblestone|cobbled_deepslate|stone|deepslate)$/;
 
 function solid(bot, p) { const b = bot.blockAt(p); return !!b && b.boundingBox === 'block'; }
+function floorOk(bot, farm, dx, dz, y) {
+  const b = bot.blockAt(new Vec3(farm.x + dx, y, farm.z + dz));
+  return !!b && (S.isRow(dx, dz, farm) ? SOIL : WALK).test(b.name);
+}
+/** Something solid that is not ours (a bamboo stalk, leaves, a log) where the floor or the way goes. */
+function foreign(b) {
+  return !!b && b.name !== 'air' && b.name !== 'cave_air' && !/torch|bamboo_sapling/.test(b.name) &&
+    (b.boundingBox === 'block' || /bamboo|leaves|log|vine|bush|flower|grass|fern/.test(b.name));
+}
 function bushAge(block) { try { return Number(block.getProperties().age); } catch (_) { return 0; } }
 function blocksCarried(w) { return walkMaterials.reduce((s, m) => s + w.count(m), 0); }
 
@@ -35,16 +47,36 @@ async function stepTo(w, cell, sneak) {
 }
 
 // ------------------------------------------------------------------ column
-async function toShaftBottom(w, farm, i) {
+/** Where a column stands on the ground: remembered the first time, before any of our blocks are there. */
+function colBase(w, farm, i) {
   const site = w.team.state.site;
+  const key = `${farm.id}:${i}`;
+  w.team.state.colBase = w.team.state.colBase || {};
+  if (w.team.state.colBase[key] === undefined) {
+    const s = S.shaftOf(farm, i);
+    w.team.state.colBase[key] = S.groundY(w.bot, s.x, s.z, site);
+    w.team.save();
+  }
+  return w.team.state.colBase[key];
+}
+
+function rememberShaft(w, farm, i) {
+  w.shaftIdx = i;
+  w.team.state.shafts = w.team.state.shafts || {};
+  const cur = w.team.state.shafts[w.name];
+  if (!cur || cur.farm !== farm.id || cur.idx !== i) { w.team.state.shafts[w.name] = { farm: farm.id, idx: i }; w.team.save(); }
+}
+
+async function toShaftBottom(w, farm, i) {
   const s = S.shaftOf(farm, i);
-  const gy = S.groundY(w.bot, s.x, s.z, site);
+  const base = colBase(w, farm, i);
   w.careful(false);
-  return w.gotoBlock(new Vec3(s.x, gy + 1, s.z), 60000);
+  return w.gotoBlock(new Vec3(s.x, base + 1, s.z), 60000);
 }
 
 async function climbShaft(w, farm, k) {
   const target = S.floorY(farm, k) + 1;
+  if (!onColumn(w, S.shaftOf(farm, w.shaftIdx || 0))) return false;
   let guard = 0;
   while (Math.floor(w.bot.entity.position.y) < target && guard++ < 120) {
     // the column must be clear above the head (old column pieces can hang there)
@@ -92,13 +124,17 @@ async function descendShaft(w, farm, i) {
   const y = Math.floor(w.bot.entity.position.y);
   if (!onColumn(w, s)) await walkHome(w, farm, i);
   if (!onColumn(w, s)) await w.gotoBlock(new Vec3(s.x, y, s.z), 15000);
-  if (!onColumn(w, s)) log.debug(w.name, 'не дошёл до своего столба, спускаюсь прямо вниз');
+  const onCol = onColumn(w, s);
+  if (!onCol) log.debug(w.name, 'не дошёл до своего столба, спускаюсь прямо вниз (дыру потом заделают)');
+  // on our column we go down to its base; anywhere else to the real ground under us
+  // (groundY looks from just above the highest ground, so floors and columns above are not mistaken for it)
+  const p0 = w.bot.entity.position.floored();
+  const stopY = onCol ? colBase(w, farm, i) + 1 : S.groundY(w.bot, p0.x, p0.z, site) + 1;
   let guard = 0;
-  const gy = S.groundY(w.bot, Math.floor(w.bot.entity.position.x), Math.floor(w.bot.entity.position.z), site);
-  while (Math.floor(w.bot.entity.position.y) > gy + 1 && guard++ < 120) {
+  while (Math.floor(w.bot.entity.position.y) > stopY && guard++ < 120) {
     const below = w.bot.blockAt(w.bot.entity.position.offset(0, -1, 0).floored());
     // never dig out a plant pot: step aside to a walkway first
-    if (below && below.name === 'dirt' && !onColumn(w, s)) {
+    if (below && !onColumn(w, s)) {
       const p = w.bot.entity.position.floored();
       if (S.isRow(p.x - farm.x, p.z - farm.z, farm)) await stepTo(w, p.offset(-1, 0, 0), true);
     }
@@ -107,15 +143,17 @@ async function descendShaft(w, farm, i) {
   w.careful(false);
 }
 
-/** If we are up on a farm (after a restart or a failed descent), get down first. */
+/** If we are up on a farm (after a restart or a failed descent), get down by our own column. */
 async function toGround(w) {
   const site = w.team.state.site;
   if (!site || !w.bot.entity) return;
   const p = w.bot.entity.position;
   if (p.y <= site.y + 2.6 || !S.inZone(site, p)) return;
-  const farm = S.farmAt(site, Math.floor(p.x)) || site.farms[0];
+  const mine = (w.team.state.shafts || {})[w.name];
+  const farm = (mine && site.farms[mine.farm]) || S.farmAt(site, Math.floor(p.x)) || site.farms[0];
+  const idx = mine ? mine.idx : (w.shaftIdx || 0);
   w.setStatus('спускаюсь с фермы');
-  await descendShaft(w, farm, w.shaftIdx || 0);
+  await descendShaft(w, farm, idx);
 }
 
 // ------------------------------------------------------------------ one pass over a floor
@@ -147,17 +185,31 @@ class Pass {
     if (S.isRow(dx, dz, this.farm)) return w.count('dirt') ? 'dirt' : null;
     return walkMaterials.find((m) => w.count(m) > 0) || null;
   }
+  /** Makes sure the floor cell is ours: clears anything foreign there, puts a block if missing.
+   *  Builders always do it; planters only patch holes with the dirt they carry. */
   async placeFloor(dx, dz, refDx, refDz) {
     const p = new Vec3(this.farm.x + dx, this.L, this.farm.z + dz);
-    if (solid(this.bot, p)) return true;
-    if (this.mode !== 'build') return false;
+    if (floorOk(this.bot, this.farm, dx, dz, this.L)) return true;
+    const b = this.bot.blockAt(p);
+    if (b && b.boundingBox === 'block' && !foreign(b) && this.mode !== 'build') return true;  // something solid: walkable
+    if (foreign(b)) await this.w.dig(p, false);
     const mat = this.material(dx, dz);
     if (!mat) return false;
+    if (this.mode !== 'build' && this.w.count('dirt') < 24) return false;   // keep enough to get down and up again
     return this.w.placeAt(p, mat, new Vec3(this.farm.x + refDx, this.L, this.farm.z + refDz));
   }
   stop(reason) { this.blocked = true; this.reason = this.reason || reason; return false; }
+  /** Clears what stands in the way at walking height (leaves, logs, a bamboo stalk). */
+  async clearWay(dx, dz) {
+    for (const up of [1, 2]) {
+      const p = new Vec3(this.farm.x + dx, this.L + up, this.farm.z + dz);
+      const b = this.bot.blockAt(p);
+      if (foreign(b)) await this.w.dig(p, false);
+    }
+  }
   async step(dx, dz, fromDx, fromDz) {
     if (!(await this.placeFloor(dx, dz, fromDx, fromDz))) return this.stop(this.mode === 'build' ? 'нет блоков' : 'этаж не достроен');
+    await this.clearWay(dx, dz);
     if (!(await stepTo(this.w, this.cell(dx, dz), this.edge(dx, dz)))) return this.stop('не прошёл');
     this.path.push([dx, dz]);
     return true;
@@ -177,12 +229,10 @@ class Pass {
   /** The cells left and right of the walkway cell (lane c, row z). */
   async work(c, z) {
     const w = this.w, bot = this.bot, farm = this.farm;
-    if (this.mode === 'build') {
-      for (const d of [-1, 1, -2, 2]) {
-        const x = c + d;
-        if (x < 0 || x >= farm.W) continue;
-        await this.placeFloor(x, z, c + Math.sign(d) * (Math.abs(d) - 1), z);
-      }
+    for (const d of [-1, 1, -2, 2]) {
+      const x = c + d;
+      if (x < 0 || x >= farm.W) continue;
+      await this.placeFloor(x, z, c + Math.sign(d) * (Math.abs(d) - 1), z);
     }
     for (const d of [-2, -1, 0, 1, 2]) {
       const x = c + d;
@@ -196,7 +246,7 @@ class Pass {
           const up = bot.blockAt(top.offset(0, 1, 0));
           if (here && here.name === 'bamboo' && up && up.name === 'bamboo') {
             // cut above the first piece: the plant grows back by itself
-            if (await w.dig(top.offset(0, 1, 0))) this.harvested++;
+            if (await w.dig(top.offset(0, 1, 0), false)) this.harvested++;
           } else if (here && here.name === 'air' && w.count('bamboo') > 0) {
             if (await w.placeAt(top, 'bamboo', top.offset(0, -1, 0))) this.planted++;
           }
@@ -207,7 +257,7 @@ class Pass {
             if (await w.placeAt(top, 'sweet_berries', top.offset(0, -1, 0))) this.planted++;
           }
         }
-      } else if (S.isTorch(x, z, farm, this.k) && here && here.name === 'air' && w.count('torch') > 0) {
+      } else if (S.isTorch(x, z, farm) && here && here.name === 'air' && w.count('torch') > 0) {
         await w.placeAt(top, 'torch', top.offset(0, -1, 0));
       }
     }
@@ -226,9 +276,14 @@ class Pass {
     const name = farm.plant === 'bamboo' ? 'бамбук' : 'ягоды';
     w.setStatus(this.mode === 'build' ? `строю этаж ${this.k + 1} (${name})` : `сажаю и собираю: этаж ${this.k + 1} (${name})`);
     const lanes = lanesOf(farm.W);
+    // start where the last trip stopped (a full bag), otherwise at the first lane
+    const from = Math.min(this.startLane || 0, lanes.length - 1);
     let x = 0, z = entryDz;
-    if (await this.line(x, z, 0, 0)) z = 0;
-    for (const c of lanes) {
+    const zStart = from % 2 === 0 ? 0 : farm.L - 1;
+    if (await this.line(x, z, 0, zStart)) z = zStart;
+    for (let li = from; li < lanes.length; li++) {
+      const c = lanes[li];
+      this.lane = li;
       if (this.blocked) break;
       if (!(await this.line(x, z, c, z))) break;
       x = c;
@@ -236,6 +291,7 @@ class Pass {
       const zEnd = z === 0 ? farm.L - 1 : 0;
       if (!(await this.line(c, z, c, zEnd, (cx, cz) => this.work(cx, cz)))) break;
       z = zEnd;
+      if (li === lanes.length - 1) this.finished = true;
     }
     // back along our own steps to the column
     for (let i = this.path.length - 2; i >= 0; i--) {
@@ -250,7 +306,7 @@ class Pass {
 function floorDone(w, farm, k) {
   const L = S.floorY(farm, k);
   for (let dx = 0; dx < farm.W; dx++) for (let dz = 0; dz < farm.L; dz++) {
-    if (!solid(w.bot, new Vec3(farm.x + dx, L, farm.z + dz))) return false;
+    if (!floorOk(w.bot, farm, dx, dz, L)) return false;
   }
   return true;
 }
@@ -261,17 +317,24 @@ function floorDone(w, farm, k) {
  */
 async function trip(w, farm, floors, idx, mode) {
   const res = { harvested: 0, planted: 0, built: [], reason: '' };
-  w.shaftIdx = idx;
+  rememberShaft(w, farm, idx);
   w.atBase = false;
   w.acceptTeleports = false;
   if (!(await toShaftBottom(w, farm, idx))) { res.reason = 'не дошёл до столба'; w.acceptTeleports = true; return res; }
-  for (const k of [...floors].sort((a, b) => a - b)) {
+  // a trip that stopped on a full bag goes on from that floor and lane
+  const r = w.resume && w.resume.farm === farm.id && w.resume.mode === mode && floors.includes(w.resume.k) ? w.resume : null;
+  let order = [...floors].sort((a, b) => a - b);
+  if (r) order = order.filter((k) => k >= r.k).concat(order.filter((k) => k < r.k));
+  for (const k of order) {
     if (!(await climbShaft(w, farm, k))) { res.reason = 'не поднялся'; break; }
     const pass = new Pass(w, farm, k, idx, mode);
+    if (r && r.k === k) pass.startLane = r.lane;
     await pass.run();
     res.harvested += pass.harvested;
     res.planted += pass.planted;
     if (mode === 'build' && floorDone(w, farm, k)) res.built.push(k);
+    if (pass.finished) { if (w.resume && w.resume.k === k) w.resume = null; }
+    else if (pass.reason === 'инвентарь полный' || pass.reason === 'нет блоков') w.resume = { farm: farm.id, k, lane: pass.lane || 0, mode };
     if (pass.blocked && pass.reason !== 'этаж не достроен') { res.reason = pass.reason; break; }
   }
   await descendShaft(w, farm, idx);
@@ -279,4 +342,4 @@ async function trip(w, farm, floors, idx, mode) {
   return res;
 }
 
-module.exports = { walkMaterials, solid, bushAge, blocksCarried, stepTo, toShaftBottom, climbShaft, descendShaft, walkHome, toGround, Pass, floorDone, trip, lanesOf };
+module.exports = { walkMaterials, SOIL, WALK, floorOk, foreign, colBase, solid, bushAge, blocksCarried, stepTo, toShaftBottom, climbShaft, descendShaft, walkHome, toGround, Pass, floorDone, trip, lanesOf };

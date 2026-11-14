@@ -48,14 +48,17 @@ function farmAt(site, x) {
 // ------------------------------------------------------------------ floors
 const floorY = (farm, k) => farm.y + farm.first + k * farm.gap;
 const isRow = (dx, dz, farm) => dx % 2 === 1 && dz > 0 && dz < farm.L - 1;
-/** Torches only where daylight from the open sides does not reach (6+ blocks in), never on the top floor. */
-function isTorch(dx, dz, farm, k) {
-  if (k >= farm.F - 1) return false;
-  return dx % 4 === 0 && dz % 6 === 3 && dx >= 6 && dx <= farm.W - 7 && dz >= 6 && dz <= farm.L - 7;
+/** Torches on a 4 x 6 grid over every floor: enough light for the plants everywhere, and no dark spot
+ *  where monsters could appear at night. They stand on walkway cells (never on plant rows). */
+function isTorch(dx, dz, farm) {
+  return dx % 4 === 0 && dz % 6 === 3 && dz < farm.L - 1;
 }
-function needsTorches(farm, k) {
-  for (let dx = 0; dx < farm.W; dx += 4) for (let dz = 3; dz < farm.L; dz += 6) if (isTorch(dx, dz, farm, k)) return true;
-  return false;
+function needsTorches(farm) { return farm.W > 0 && farm.L > 3; }
+/** Torches on the ground under the first floor: monsters must not appear in the dark under it. */
+function groundTorches(farm) {
+  const out = [];
+  for (let dx = 3; dx < farm.W; dx += 9) for (let dz = 4; dz < farm.L; dz += 9) out.push([dx, dz]);
+  return out;
 }
 function shaftOf(farm, i) { return new Vec3(farm.x - 1, 0, farm.z + 1 + i * 3); }
 function maxShafts(site) { return Math.floor((site.L - 2) / 3) + 1; }
@@ -235,7 +238,7 @@ async function goToSite(w) {
 
 module.exports = {
   siteCfg, makeSite, inZone, center, nearSite, onSiteGround, farmAt,
-  floorY, isRow, isTorch, needsTorches, shaftOf, maxShafts, allFloors, isBuilt, markBuilt, builtCount, allBuilt,
+  floorY, isRow, isTorch, needsTorches, groundTorches, shaftOf, maxShafts, allFloors, isBuilt, markBuilt, builtCount, allBuilt,
   groundY, depotSpots, storageSpots, workbenchSpot, onGround, placedChests, missingChests,
   useChest, stock, depositRow, takeRow, goToSite, match,
 };

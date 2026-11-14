@@ -273,11 +273,22 @@ class Worker {
     } catch (_) { /* hand */ }
   }
 
-  async dig(pos) {
+  /** Digs a block. Returns true only if the block is really gone (on a protected spot the server puts it back). */
+  async dig(pos, verify = true) {
     const block = this.bot.blockAt(pos);
     if (!block || block.name === 'air' || !this.bot.canDigBlock(block)) return false;
+    const type = block.type;
     await this.equipBestFor(block);
-    try { await withTimeout(this.bot.dig(block, true), 20000, 'копание'); return true; } catch (e) { log.debug(this.name, `не выкопал ${block.name}: ${e.message}`); return false; }
+    try { await withTimeout(this.bot.dig(block, true), 20000, 'копание'); } catch (e) { log.debug(this.name, `не выкопал ${block.name}: ${e.message}`); return false; }
+    if (!verify) return true;
+    await sleep(120);
+    const now = this.bot.blockAt(pos);
+    if (now && now.type === type) {
+      this.protectedDigs = (this.protectedDigs || 0) + 1;
+      log.debug(this.name, `${block.name} на ${pos} не ломается (защита?)`);
+      return false;
+    }
+    return true;
   }
 
   /** Walks over dropped items nearby so they get picked up. */
@@ -321,6 +332,14 @@ class Worker {
   /** Jumps and puts a block under itself: one block higher. */
   async pillarUp(itemName = 'dirt') {
     const bot = this.bot;
+    // a flower or grass where we stand (or above the head) would block the new block: clear it
+    const feet = bot.entity.position.floored();
+    for (const p of [feet, feet.offset(0, 1, 0), feet.offset(0, 2, 0)]) {
+      const b = bot.blockAt(p);
+      if (b && b.name !== 'air' && b.name !== 'cave_air' && b.boundingBox !== 'block' && !/torch/.test(b.name)) {
+        try { await withTimeout(bot.dig(b, true), 5000, 'растение'); } catch (_) { /* ignore */ }
+      }
+    }
     if (!(await this.equip(itemName))) return false;
     const startY = Math.floor(bot.entity.position.y);
     const below = bot.blockAt(bot.entity.position.offset(0, -1, 0).floored());
@@ -343,9 +362,11 @@ class Worker {
     const bot = this.bot;
     const startY = Math.floor(bot.entity.position.y);
     const below = bot.blockAt(bot.entity.position.offset(0, -1, 0).floored());
-    if (!below || below.name === 'air') return true;
-    await this.equipBestFor(below);
-    try { await withTimeout(bot.dig(below, true), 10000, 'копание вниз'); } catch (_) { return false; }
+    if (below && below.name !== 'air' && below.name !== 'cave_air') {
+      await this.equipBestFor(below);
+      try { await withTimeout(bot.dig(below, true), 10000, 'копание вниз'); } catch (_) { return false; }
+    }
+    // (if there was air under us we are falling or standing on an edge: either way wait and see)
     const t0 = Date.now();
     while (Math.floor(bot.entity.position.y) >= startY && Date.now() - t0 < 2500) await sleep(50);
     await sleep(200);

@@ -1,5 +1,6 @@
 // Lumberjack: chops trees in the wild (/rtp), brings the logs to the depot at the farms.
 // The smith makes chests, sticks and tools out of them.
+const { Vec3 } = require('vec3');
 const S = require('../lib/site');
 const F = require('../lib/floors');
 const C = require('./common');
@@ -9,15 +10,21 @@ const { sleep } = require('../lib/util');
 function logs(w) { return w.countMatch(C.LOGS); }
 const LOG_NAMES = ['oak_log', 'spruce_log', 'birch_log', 'jungle_log', 'acacia_log', 'dark_oak_log', 'mangrove_log', 'cherry_log', 'pale_oak_log'];
 
-/** Cuts the trees that stand where the farms will be. */
+/** Cuts the trees that stand where the farms will be. Logs it can't reach are remembered and skipped
+ *  (the builders clear whatever is left in their way). */
 async function clearSite(w, found) {
   w.setStatus(`вырубаю деревья на месте ферм (${found.length})`);
   await C.ensureTool(w, /_axe$/);
+  w.badLogs = w.badLogs || new Set();
   const me = w.bot.entity.position;
   found.sort((a, b) => a.distanceTo(me) - b.distanceTo(me));
-  for (const p of found.slice(0, 6)) {
-    if (p.distanceTo(w.bot.entity.position) > 4.3 && !(await w.goto(p, 3, 25000))) continue;
-    await w.dig(p);
+  for (const p of found.slice(0, 8)) {
+    const b = w.bot.blockAt(p);
+    if (!b || !w.bot.canDigBlock(b)) {
+      // stand right under (or next to) the log and try again
+      if (!(await w.goto(p, 2, 25000)) && !(await w.goto(new Vec3(p.x, p.y - 4, p.z), 1, 20000))) { w.badLogs.add(p.toString()); continue; }
+    }
+    if (!(await w.dig(p))) w.badLogs.add(p.toString());
   }
   await w.collectDrops(6, 8);
 }
@@ -31,7 +38,7 @@ async function run(w) {
     if (site && (logs(w) >= 96 || w.freeSlots() <= 3)) {
       if (!(await S.goToSite(w))) continue;
       await F.toGround(w);
-      if (S.placedChests(w, C.depot(w)).length < 4) await C.ensureDepot(w);
+      if (S.missingChests(w, C.depot(w)).length) await C.ensureDepot(w);
       w.setStatus('несу брёвна на склад');
       const names = [...new Set(w.bot.inventory.items().filter((i) => C.LOGS.test(i.name)).map((i) => i.name))];
       const stored = await S.depositRow(w, C.depot(w), names.concat(['stick', 'apple']));
@@ -46,7 +53,8 @@ async function run(w) {
     if (site && !w.team.state.siteCleared) {
       if (!(await S.goToSite(w))) continue;
       await F.toGround(w);
-      const inSite = w.find(LOG_NAMES, 90, 30).filter((p) => S.inZone(site, p, 2));
+      w.badLogs = w.badLogs || new Set();
+      const inSite = w.find(LOG_NAMES, 100, 60, (b) => S.inZone(site, b.position, 2) && !w.badLogs.has(b.position.toString()));
       if (inSite.length) { await clearSite(w, inSite); continue; }
       w.team.state.siteCleared = true;
       w.team.save();

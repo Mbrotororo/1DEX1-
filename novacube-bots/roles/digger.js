@@ -75,7 +75,7 @@ async function run(w) {
         continue;
       }
     }
-    await C.digForDepot(w);
+    await C.digForDepot(w, 64 * 26);
   }
 }
 

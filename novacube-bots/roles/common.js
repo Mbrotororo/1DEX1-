@@ -58,7 +58,11 @@ function tendFloors(w) {
   const pool = w.cfg.bots.filter((b) => b.role === 'planter' || (b.role === 'builder' && builderDone(w, b.name))).map((b) => b.name);
   const i = pool.indexOf(w.name);
   if (i < 0) return [];
-  const built = S.allFloors(site(w)).filter((f) => S.isBuilt(w.team, f.farm, f.k));
+  const s = site(w);
+  // bamboo grows up to the floor above: plant a bamboo floor only once the floor above it is there
+  const ready = (f) => S.isBuilt(w.team, f.farm, f.k) &&
+    (s.farms[f.farm].plant !== 'bamboo' || f.k === s.F - 1 || S.isBuilt(w.team, f.farm, f.k + 1));
+  const built = S.allFloors(s).filter(ready);
   return built.filter((f, j) => j % pool.length === i);
 }
 
@@ -140,43 +144,57 @@ async function ensureSword(w) {
   return false; // by hand then: slower, but works
 }
 
-/** Digs dirt next to the farms (never on our own place). Every bot has its own spot around the farms,
+/** Digs dirt next to the farms (never on our own place). Every bot has its own direction from the farms,
  *  so they don't dig the same pit; it digs everything within reach before moving on. */
 async function digDirt(w, target) {
   const bot = w.bot;
   const s = site(w);
-  if ((w.digRing || 0) > 90) { w.digRing = 0; return; }   // nothing left anywhere near: give up for now
   w.careful(false);
+  if (!s && !w.preSiteRtp && w.cfg.commands.rtp) {
+    // not at the spawn: it is usually protected, and digging there does nothing
+    w.preSiteRtp = true;
+    w.setStatus('ухожу со спавна копать землю (/rtp)');
+    await w.teleport(w.cfg.commands.rtp, {}, 'rtp');
+  }
   const reg = bot.registry;
   const ids = ['grass_block', 'dirt', 'coarse_dirt', 'podzol', 'rooted_dirt'].map((n) => reg.blocksByName[n] && reg.blocksByName[n].id).filter((x) => x !== undefined);
-  let spot = bot.entity.position.floored();
-  if (s) {
-    const all = w.cfg.bots.map((b) => b.name);
-    const i = Math.max(0, all.indexOf(w.name));
-    const ang = (i / all.length) * 2 * Math.PI;
+  const all = w.cfg.bots.map((b) => b.name);
+  const me = Math.max(0, all.indexOf(w.name));
+  w.digTurn = w.digTurn || 0;
+  const spotFor = () => {
+    if (!s) return bot.entity.position.floored();
+    const ang = ((me + w.digTurn * 0.5) / all.length) * 2 * Math.PI;
     const c = S.center(s);
     const R = Math.max(s.spanX, s.L) / 2 + 16 + (w.digRing || 0);
-    spot = new Vec3(Math.round(c.x + Math.cos(ang) * R), s.y, Math.round(c.z + Math.sin(ang) * R));
-  }
+    return new Vec3(Math.round(c.x + Math.cos(ang) * R), s.y, Math.round(c.z + Math.sin(ang) * R));
+  };
+  let spot = spotFor();
   const ok = (b) => {
     if (!b) return false;
     const p = b.position;
-    if (s && (S.inZone(s, p, 1) || p.y > s.y + 4 || p.y < s.y - 3)) return false;   // shallow pits only
+    if (s && (S.inZone(s, p, 1) || p.y > s.y + 4 || p.y < s.y - 6)) return false;
     const above = bot.blockAt(p.offset(0, 1, 0));
     return !!above && above.boundingBox !== 'block' && !/water|lava/.test(above.name);
   };
   let fails = 0;
-  while (w.count('dirt') < target && fails < 8 && w.freeSlots() > 2) {
+  while (w.count('dirt') < target && fails < 6 && w.freeSlots() > 2) {
+    if (!s && w.team.state.site) return;   // the place got chosen meanwhile: go there
     w.setStatus(`копаю землю (${w.count('dirt')}/${target})`);
-    const found = bot.findBlocks({ matching: ids, point: spot, maxDistance: 18, count: 40, useExtraInfo: ok });
+    // walk to our spot first: far chunks are not loaded and would look empty
+    if (s && Math.hypot(bot.entity.position.x - spot.x, bot.entity.position.z - spot.z) > 20) {
+      await w.goto(new Vec3(spot.x, s.y + 1, spot.z), 8, 40000);
+    }
+    const found = bot.findBlocks({ matching: ids, point: s ? spot : bot.entity.position.floored(), maxDistance: 18, count: 40, useExtraInfo: ok });
     if (!found.length) {
-      // this spot is dug out: a bit further from the farms
+      if (!s) { fails += 2; await sleep(1000); continue; }
+      // this spot is dug out: further out, and after a while in another direction
       w.digRing = (w.digRing || 0) + 10;
-      if (s) spot = null;
+      if (w.digRing > 70) { w.digRing = 0; w.digTurn++; }
+      spot = spotFor();
       fails++;
-      if (!spot) return digDirt(w, target);
       continue;
     }
+    const before = w.count('dirt');
     const eye = () => bot.entity.position.offset(0, 1.6, 0);
     found.sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
     let dug = 0;
@@ -186,21 +204,23 @@ async function digDirt(w, target) {
       if (await w.dig(p)) dug++;
       if (w.count('dirt') >= target || w.freeSlots() <= 2) break;
     }
-    if (!dug) {
-      if (!(await w.goto(found[0], 2, 20000))) { fails++; continue; }
-    } else {
-      fails = 0;
-      await w.collectDrops(3, 4);
-    }
+    if (!dug && !(await w.goto(found[0], 2, 20000))) { fails++; continue; }
+    if (dug) await w.collectDrops(3, 4);
+    // no dirt came in (protected land, drops lost): that counts as a failure too
+    if (w.count('dirt') > before) fails = 0; else if (dug) fails++;
   }
 }
 
-/** Dirt for the depot: dig until the bag is full, then put it in. */
-async function digForDepot(w) {
+/** Dirt goes to every depot pair but the first one: that one stays free for logs, tools and torches. */
+function dirtDepot(w) { return depot(w).slice(2); }
+
+/** Dirt for the depot: dig a batch, then put it in. */
+async function digForDepot(w, batch = 64 * 8) {
   await ensureTool(w, /_shovel$/);
-  await digDirt(w, 64 * 26);
+  await digDirt(w, batch);
+  if (w.count('dirt') < 16) { w.setStatus('земли рядом нет — жду'); await sleep(15000); return; }
   w.setStatus('несу землю на склад');
-  await S.depositRow(w, depot(w), ['dirt', 'cobblestone']);
+  await S.depositRow(w, dirtDepot(w), ['dirt', 'cobblestone']);
 }
 
 function countStored(w, stored) {
@@ -211,7 +231,7 @@ function countStored(w, stored) {
 
 /** Harvest into the storage, keeping seeds of the plants we look after. */
 async function storeHarvest(w, plantsKept = []) {
-  const keepN = (w.cfg.farm && w.cfg.farm.keepSeeds) || 640;
+  const keepN = (w.cfg.farm && w.cfg.farm.keepSeeds) || 192;
   const keep = {};
   for (const p of plantsKept) keep[p] = keepN;
   const plants = ['bamboo', 'sweet_berries'];
@@ -236,13 +256,13 @@ async function ensureColumnBlocks(w, farm, floors) {
 async function tendTrip(w, farm, floors, idx) {
   const s = site(w);
   w.atBase = true;
-  const keepN = (w.cfg.farm && w.cfg.farm.keepSeeds) || 640;
+  const keepN = (w.cfg.farm && w.cfg.farm.keepSeeds) || 192;
   await storeHarvest(w, [farm.plant]);
-  if (w.count(farm.plant) < Math.min(256, keepN)) {
+  if (w.count(farm.plant) < keepN / 2) {
     await S.takeRow(w, storage(w), [{ test: farm.plant, count: keepN - w.count(farm.plant) }]);
   }
   if (farm.plant === 'bamboo') await ensureSword(w);
-  if (floors.some((k) => S.needsTorches(farm, k)) && w.count('torch') < 16) await S.takeRow(w, depot(w), [{ test: 'torch', count: 64 }]);
+  if (w.count('torch') < 16) await S.takeRow(w, depot(w), [{ test: 'torch', count: 64 }]);
   if (!(await ensureColumnBlocks(w, farm, floors))) { w.setStatus('нет земли, чтобы подняться'); return; }
   const res = await F.trip(w, farm, floors, idx, 'tend');
   if (res.harvested || res.planted) {
@@ -255,14 +275,39 @@ async function tendTrip(w, farm, floors, idx) {
   await storeHarvest(w, [farm.plant]);
 }
 
+/** Lights the ground under the first floor of a farm (once), so no monsters appear in the dark there. */
+async function lightUnder(w, farm) {
+  const s = site(w);
+  w.team.state.groundLit = w.team.state.groundLit || {};
+  if (w.team.state.groundLit[farm.id]) return;
+  const spots = S.groundTorches(farm);
+  if (w.count('torch') < spots.length) await S.takeRow(w, depot(w), [{ test: 'torch', count: spots.length + 16 }]);
+  if (w.count('torch') < spots.length) return;   // later, when the smith has made torches
+  w.setStatus(`ставлю факелы под фермой «${PLANT_RU[farm.plant]}»`);
+  w.careful(false);
+  let ok = 0;
+  for (const [dx, dz] of spots) {
+    const x = farm.x + dx, z = farm.z + dz;
+    const g = S.groundY(w.bot, x, z, s);
+    const p = new Vec3(x, g + 1, z);
+    const here = w.bot.blockAt(p);
+    if (here && /torch/.test(here.name)) { ok++; continue; }
+    if (!(await w.goto(p, 3, 30000))) continue;
+    if (here && here.name !== 'air' && here.boundingBox !== 'block') await w.dig(p, false);   // grass, a flower
+    if (await w.placeAt(p, 'torch', p.offset(0, -1, 0))) ok++;
+  }
+  if (ok >= spots.length) { w.team.state.groundLit[farm.id] = true; w.team.save(); }
+}
+
 async function buildTrip(w, farm, floors, idx) {
   const s = site(w);
   w.atBase = true;
   // materials from the depot: a full bag of blocks and some torches
   if (F.blocksCarried(w) < 64 * 20) {
-    await S.takeRow(w, depot(w), [{ test: 'dirt', count: 64 * 30 }, { test: 'cobblestone', count: 64 * 6 }], 5);
+    await S.takeRow(w, depot(w), [{ test: 'dirt', count: 64 * 30 }, { test: 'cobblestone', count: 64 * 6 }], 5);   // dirt is in pairs 1+, cobble anywhere
   }
-  if (floors.some((k) => S.needsTorches(farm, k)) && w.count('torch') < 32) await S.takeRow(w, depot(w), [{ test: 'torch', count: 128 }]);
+  if (w.count('torch') < 32) await S.takeRow(w, depot(w), [{ test: 'torch', count: 128 }]);
+  await lightUnder(w, farm);
   if (F.blocksCarried(w) < 300) await digDirt(w, 640);   // nothing on the depot yet: dig some ourselves
   if (F.blocksCarried(w) < 100) return;
   const res = await F.trip(w, farm, floors, idx, 'build');
@@ -296,7 +341,7 @@ async function tendOnce(w) {
     if (!byFarm[fi].length) fi = byFarm.findIndex((a) => a.length);
     farm = s.farms[fi]; floors = byFarm[fi]; idx = climberIndex(w);
   }
-  if (w.count('dirt') > 64 * 3 && w.role !== 'builder') await S.depositRow(w, depot(w), ['dirt'], { dirt: 96 });
+  if (w.count('dirt') > 64 * 3) await S.depositRow(w, dirtDepot(w), ['dirt'], { dirt: 96 });
   await tendTrip(w, farm, floors, idx);
   return true;
 }
@@ -307,7 +352,7 @@ async function tender(w) {
 }
 
 module.exports = {
-  PLANT_RU, LOGS, site, depot, storage, names, phase2, myTeam, climberIndex, builderFloors, builderDone, tendFloors,
+  PLANT_RU, LOGS, site, depot, dirtDepot, storage, names, phase2, myTeam, climberIndex, builderFloors, builderDone, tendFloors,
   ensureFood, workbench, ensureDepot, craftTool, ensureTool, ensureSword, digDirt, digForDepot, storeHarvest, countStored,
-  ensureColumnBlocks, tendTrip, buildTrip, tendOnce, tender,
+  ensureColumnBlocks, lightUnder, tendTrip, buildTrip, tendOnce, tender,
 };
