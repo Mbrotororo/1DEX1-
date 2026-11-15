@@ -25,7 +25,11 @@ public final class Move {
     private static volatile boolean hasLast;
 
     private static volatile Entity fight;          // set by Bot on the game thread
+    private static volatile Vec3d fleeTo;          // running away from a creeper (set by Bot)
     private static volatile boolean restoring;     // turning back to the bot thread's look after a fight
+    private static volatile boolean fleeForward;
+    private static float aimDx, aimDy, aimDz;      // where on the monster we aim (not always the exact middle)
+    private static int aimFor = -1;
 
     public static void activate(boolean on) {
         active = on;
@@ -41,6 +45,7 @@ public final class Move {
         wantPitch = null;
         hasLast = false;
         fight = null;
+        fleeTo = null;
         restoring = false;
     }
 
@@ -65,28 +70,73 @@ public final class Move {
     static void fight(Entity e) {
         Entity was = fight;
         fight = e;
-        if (was != null && e == null) {
-            // back to what the bot was doing: its walk sets the yaw itself, otherwise its last look
-            restoring = true;
-            if (walkTarget == null && hasLast) { wantYaw = lastYaw; wantPitch = lastPitch; }
+        if (e != null && e.getId() != aimFor) {
+            aimFor = e.getId();
+            java.util.concurrent.ThreadLocalRandom r = java.util.concurrent.ThreadLocalRandom.current();
+            aimDx = (float) r.nextDouble(-0.15, 0.15);
+            aimDy = (float) r.nextDouble(-0.2, 0.25);
+            aimDz = (float) r.nextDouble(-0.15, 0.15);
         }
+        if (was != null && e == null) backToWork();
+    }
+
+    /** Runs away to this point (a creeper close by), or stops running with null. */
+    static void flee(Vec3d to) {
+        Vec3d was = fleeTo;
+        fleeTo = to;
+        if (was != null && to == null) backToWork();
+    }
+
+    public static boolean fleeing() { return fleeTo != null; }
+
+    /** Back to what the bot was doing: its walk sets the yaw itself, otherwise its last look comes back. */
+    private static void backToWork() {
+        restoring = true;
+        if (walkTarget == null && hasLast) { wantYaw = lastYaw; wantPitch = lastPitch; }
     }
 
     public static Entity fighting() { return fight; }
 
-    /** The bot thread waits while this is true (a fight, or turning back after it). */
-    public static boolean busy() { return fight != null || restoring; }
+    /** The bot thread waits while this is true (a fight, running from a creeper, or turning back after it). */
+    public static boolean busy() { return fight != null || fleeTo != null || restoring; }
 
     /** Buttons for the keyboard mixin; null = the player's own keys. */
     public static PlayerInput override() {
         if (!active) return null;
+        if (fleeTo != null) {
+            ClientPlayerEntity p = MinecraftClient.getInstance().player;
+            boolean blocked = p != null && p.horizontalCollision;
+            return new PlayerInput(fleeForward, false, false, false, fleeForward && blocked, false, fleeForward);
+        }
         if (busy()) return new PlayerInput(false, false, false, false, false, sneak, false);
         return new PlayerInput(forward, back, false, false, jump, sneak, sprint);
     }
 
-    private static float turn(float cur, float want, float max) {
-        float diff = MathHelper.wrapDegrees(want - cur);
-        return cur + Math.max(-max, Math.min(max, diff));
+    /**
+     * Turns the head like a mouse does: at most `maxYaw`/`maxPitch` this tick, in whole steps of what one
+     * mouse count turns at the player's sensitivity (a hand on a mouse never turns by any other amount).
+     */
+    private static void rotate(MinecraftClient mc, ClientPlayerEntity p, Float yaw, Float pitch, float maxYaw, float maxPitch) {
+        double sens = mc.options.getMouseSensitivity().getValue();
+        double f = sens * 0.6 + 0.2;
+        float step = (float) (f * f * f * 8.0 * 0.15);
+        if (yaw != null) {
+            float d = MathHelper.wrapDegrees(yaw - p.getYaw());
+            d = Math.max(-maxYaw, Math.min(maxYaw, d));
+            d = Math.round(d / step) * step;
+            p.setYaw(p.getYaw() + d);
+            p.setHeadYaw(p.getYaw());
+        }
+        if (pitch != null) {
+            float d = pitch - p.getPitch();
+            d = Math.max(-maxPitch, Math.min(maxPitch, d));
+            d = Math.round(d / step) * step;
+            p.setPitch(MathHelper.clamp(p.getPitch() + d, -90f, 90f));
+        }
+    }
+
+    private static float yawTo(ClientPlayerEntity p, Vec3d at) {
+        return (float) (MathHelper.atan2(at.z - p.getZ(), at.x - p.getX()) * (180 / Math.PI)) - 90f;
     }
 
     /** Called every client tick. */
@@ -95,17 +145,28 @@ public final class Move {
         ClientPlayerEntity p = mc.player;
         if (p == null) return;
 
+        // no head turning while a chest or menu is open: with a window open the mouse moves the cursor
+        // (and the bot thread, which opened it, must not wait for a turn that cannot happen now)
+        if (mc.currentScreen instanceof net.minecraft.client.gui.screen.ingame.HandledScreen<?>) { restoring = false; return; }
+
+        Vec3d run = fleeTo;
+        if (run != null) {
+            float yaw = yawTo(p, run);
+            fleeForward = Math.abs(MathHelper.wrapDegrees(yaw - p.getYaw())) < 50f;
+            rotate(mc, p, yaw, 5f, 45f, 20f);
+            return;
+        }
+
         Entity f = fight;
         if (f != null) {
-            // aim at the middle of the monster's body
+            // aim at a point of the monster's body (not always the exact middle)
             Vec3d eye = p.getEyePos();
-            Vec3d at = f.getBoundingBox().getCenter();
+            var b = f.getBoundingBox();
+            Vec3d at = b.getCenter().add(aimDx * b.getLengthX(), aimDy * b.getLengthY(), aimDz * b.getLengthZ());
             double dx = at.x - eye.x, dy = at.y - eye.y, dz = at.z - eye.z;
             float yaw = (float) (MathHelper.atan2(dz, dx) * (180 / Math.PI)) - 90f;
             float pitch = (float) -(MathHelper.atan2(dy, Math.sqrt(dx * dx + dz * dz)) * (180 / Math.PI));
-            p.setYaw(turn(p.getYaw(), yaw, 40f));
-            p.setHeadYaw(p.getYaw());
-            p.setPitch(MathHelper.clamp(p.getPitch() + Math.max(-30f, Math.min(30f, pitch - p.getPitch())), -90f, 90f));
+            rotate(mc, p, yaw, pitch, 40f, 30f);
             return;
         }
 
@@ -126,20 +187,15 @@ public final class Move {
             }
         }
         boolean yawDone = true, pitchDone = true;
-        if (wantYaw != null) {
-            // turn smoothly (looks natural on video) but fast enough to work
-            float diff = MathHelper.wrapDegrees(wantYaw - p.getYaw());
-            p.setYaw(turn(p.getYaw(), wantYaw, 35f));
-            p.setHeadYaw(p.getYaw());
-            yawDone = Math.abs(diff) < 0.5f;
+        // turn smoothly (looks natural on video) but fast enough to work
+        Float wy = wantYaw, wp = wantPitch;
+        rotate(mc, p, wy, wp, 35f, 25f);
+        if (wy != null) {
+            yawDone = Math.abs(MathHelper.wrapDegrees(wy - p.getYaw())) < 0.5f;
             if (yawDone && walkTarget == null) wantYaw = null;
         }
-        if (wantPitch != null) {
-            float cur = p.getPitch();
-            float diff = wantPitch - cur;
-            float step = Math.max(-25f, Math.min(25f, diff));
-            p.setPitch(MathHelper.clamp(cur + step, -90f, 90f));
-            pitchDone = Math.abs(diff) < 0.5f;
+        if (wp != null) {
+            pitchDone = Math.abs(wp - p.getPitch()) < 0.5f;
             if (pitchDone && walkTarget == null) wantPitch = null;
         }
         if (restoring && ((yawDone && pitchDone) || walkTarget != null && !turnedAway)) restoring = false;

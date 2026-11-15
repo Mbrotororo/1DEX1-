@@ -149,6 +149,45 @@ public final class Ctl {
     /** Screen-handler slot id of an inventory slot (player's own inventory screen). */
     private static int handlerSlot(int invSlot) { return invSlot < 9 ? 36 + invSlot : invSlot; }
 
+    /**
+     * The hotbar slot a bag item is swapped into: the selected one, unless the sword is there (the sword stays
+     * in the hotbar for fights, where no inventory clicks are made). Game thread.
+     */
+    private static int swapTarget(net.minecraft.entity.player.PlayerInventory inv) {
+        int sel = inv.getSelectedSlot();
+        if (!itemName(inv.getStack(sel)).endsWith("_sword")) return sel;
+        for (int i = 0; i < 9; i++) if (inv.getStack(i).isEmpty()) return i;
+        for (int i = 8; i >= 0; i--) if (!itemName(inv.getStack(i)).endsWith("_sword")) return i;
+        return sel;
+    }
+
+    /**
+     * After clicks in our own bag: the close a player's inventory screen sends when it is shut. Without it a
+     * server-side check would think the inventory stays open while we walk and dig. Game thread.
+     */
+    private static void bagClosed(ClientPlayerEntity p) {
+        p.networkHandler.sendPacket(new net.minecraft.network.packet.c2s.play.CloseHandledScreenC2SPacket(p.playerScreenHandler.syncId));
+    }
+
+    /** The sword into the hotbar (after the stash: shift-clicks may have put it in the bag). */
+    public static void swordToHotbar() {
+        closeScreen();
+        boolean moved = call(() -> {
+            ClientPlayerEntity p = player();
+            var inv = p.getInventory();
+            int sword = -1;
+            for (int i = 0; i < 36; i++) if (itemName(inv.getStack(i)).endsWith("_sword")) { sword = i; if (i < 9) return false; }
+            if (sword < 0) return false;
+            int t = -1;
+            for (int i = 8; i >= 0 && t < 0; i--) if (inv.getStack(i).isEmpty()) t = i;
+            if (t < 0) t = 8;
+            mc().interactionManager.clickSlot(p.playerScreenHandler.syncId, handlerSlot(sword), t, SlotActionType.SWAP, p);
+            bagClosed(p);
+            return true;
+        });
+        if (moved) ticks(2);
+    }
+
     /** Closes a chest or menu that is still open (inventory clicks of our own bag need it closed). */
     public static void closeScreen() {
         boolean open = call(() -> player().currentScreenHandler != player().playerScreenHandler
@@ -179,8 +218,10 @@ public final class Ctl {
             }
             if (best < 0) return 0;
             if (best < 9) { inv.setSelectedSlot(best); return 1; }
-            int hb = inv.getSelectedSlot();
+            int hb = swapTarget(inv);
+            inv.setSelectedSlot(hb);
             mc().interactionManager.clickSlot(p.playerScreenHandler.syncId, handlerSlot(best), hb, SlotActionType.SWAP, p);
+            bagClosed(p);
             return 2;
         });
     }
@@ -209,8 +250,11 @@ public final class Ctl {
                 if (sp > bestSpeed) { bestSpeed = sp; best = i; }
             }
             if (best < 0 || best == inv.getSelectedSlot()) return false;
-            if (best < 9) inv.setSelectedSlot(best);
-            else mc().interactionManager.clickSlot(p.playerScreenHandler.syncId, handlerSlot(best), inv.getSelectedSlot(), SlotActionType.SWAP, p);
+            if (best < 9) { inv.setSelectedSlot(best); return true; }
+            int hb = swapTarget(inv);
+            inv.setSelectedSlot(hb);
+            mc().interactionManager.clickSlot(p.playerScreenHandler.syncId, handlerSlot(best), hb, SlotActionType.SWAP, p);
+            bagClosed(p);
             return true;
         });
     }
@@ -230,12 +274,14 @@ public final class Ctl {
             });
             if (thrown) { n++; ticks(2 + (i % 3)); }
         }
+        if (n > 0) run(() -> bagClosed(player()));
         return n;
     }
 
     /** Throws away stacks of one item until no more than `keep` (plus part of a stack) are left. */
     public static void tossExcess(String item, int keep) {
         closeScreen();
+        boolean any = false;
         for (int i = 0; i < 36; i++) {
             final int slot = i;
             boolean thrown = call(() -> {
@@ -249,8 +295,9 @@ public final class Ctl {
                 mc().interactionManager.clickSlot(p.playerScreenHandler.syncId, handlerSlot(slot), 1, SlotActionType.THROW, p);
                 return true;
             });
-            if (thrown) ticks(2 + (i % 3));
+            if (thrown) { any = true; ticks(2 + (i % 3)); }
         }
+        if (any) run(() -> bagClosed(player()));
     }
 
     // ------------------------------------------------------------------ looking and walking

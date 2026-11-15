@@ -3,12 +3,12 @@ package ru.onedex.bot.bot;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.mob.CreeperEntity;
 import net.minecraft.entity.mob.EndermanEntity;
 import net.minecraft.entity.mob.Monster;
 import net.minecraft.entity.mob.PiglinEntity;
 import net.minecraft.entity.mob.ZombifiedPiglinEntity;
 import net.minecraft.item.ItemStack;
-import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.math.Vec3d;
@@ -109,18 +109,20 @@ public final class Bot {
 
     // ------------------------------------------------------------------ fights
     private final Map<Integer, Long> ignoreUntil = new HashMap<>();
+    private final Map<Integer, Long> seenSince = new HashMap<>();
     private int fightId = -1;
-    private long fightSince;
+    private long lastOnCrosshair;
+    private long fleeSince;
 
-    /** A monster that may be fought: not one that only gets angry when hit (and then calls its friends). */
-    private static boolean enemy(Entity e) {
-        if (!(e instanceof Monster) || !e.isAlive()) return false;
+    /** A monster that may be fought: not one that only gets angry when hit (and calls its friends). */
+    static boolean enemy(Entity e) {
+        if (!(e instanceof Monster) || !e.isAlive() || e instanceof CreeperEntity) return false;
         if (e instanceof EndermanEntity en) return en.isAngry();
         return !(e instanceof ZombifiedPiglinEntity) && !(e instanceof PiglinEntity);
     }
 
     /** From our eye to the nearest point of the entity's box. */
-    private static double reachTo(ClientPlayerEntity p, Entity e) {
+    static double reachTo(ClientPlayerEntity p, Entity e) {
         Vec3d eye = p.getEyePos();
         var b = e.getBoundingBox();
         double x = Math.max(b.minX, Math.min(eye.x, b.maxX));
@@ -129,54 +131,105 @@ public final class Bot {
         return eye.distanceTo(new Vec3d(x, y, z));
     }
 
+    /** Up on a farm floor (a gap under the block we stand on): no running about up there. */
+    private static boolean onFloor(MinecraftClient mc, ClientPlayerEntity p) {
+        return mc.world.getBlockState(p.getBlockPos().down(2)).isAir() && !mc.world.getBlockState(p.getBlockPos().down()).isAir();
+    }
+
+    /** Something hurts us or comes for us: a chest window should be closed now (game thread). */
+    public boolean danger() {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        ClientPlayerEntity p = mc.player;
+        if (p == null || mc.world == null) return false;
+        if (p.hurtTime > 0) return true;
+        for (Entity e : mc.world.getEntities()) {
+            if ((enemy(e) || (e instanceof CreeperEntity && e.isAlive())) && reachTo(p, e) < 4.5 && p.canSee(e)) return true;
+        }
+        return false;
+    }
+
     /**
      * Fights monsters that come close the way a player does: turn to it, hit only when the crosshair is on it
-     * and the swing is charged. The bot thread waits meanwhile (see Ctl.ticks).
+     * and the swing is charged; walks away from creepers. The bot thread waits meanwhile (see Ctl.ticks).
      */
     private void defend(MinecraftClient mc) {
         ClientPlayerEntity p = mc.player;
-        if (mc.currentScreen instanceof net.minecraft.client.gui.screen.ingame.HandledScreen<?> || p.isUsingItem()) { Move.fight(null); return; }
+        if (mc.currentScreen instanceof net.minecraft.client.gui.screen.ingame.HandledScreen<?> || p.isUsingItem()) {
+            Move.fight(null);
+            Move.flee(null);
+            return;
+        }
         long now = ticks;
         ignoreUntil.values().removeIf(t -> t < now);
+        seenSince.entrySet().removeIf(en -> mc.world.getEntityById(en.getKey()) == null);
+        double range = p.getEntityInteractionRange();
+
+        // a creeper close by: on the ground we walk away from it; up on a floor there is nowhere to go
+        boolean floor = onFloor(mc, p);
+        Entity creeper = null;
+        double cd = 7.0;
+        for (Entity e : mc.world.getEntities()) {
+            if (!(e instanceof CreeperEntity) || !e.isAlive()) continue;
+            double d = e.distanceTo(p);
+            if (d < cd && p.canSee(e)) { cd = d; creeper = e; }
+        }
+        if (creeper != null && !floor) {
+            if (!Move.fleeing()) fleeSince = now;
+            if (now - fleeSince < 160) {
+                Move.fight(null);
+                Vec3d away = p.getEntityPos().subtract(creeper.getEntityPos()).multiply(1, 0, 1);
+                if (away.lengthSquared() < 1e-4) away = new Vec3d(1, 0, 0);
+                Move.flee(p.getEntityPos().add(away.normalize().multiply(10)));
+                return;
+            }
+        }
+        if (Move.fleeing() && (creeper == null || now - fleeSince >= 160)) Move.flee(null);
 
         Entity cur = Move.fighting();
-        if (cur != null && (!enemy(cur) || cur.isRemoved() || reachTo(p, cur) > 4.5 || !p.canSee(cur))) cur = null;
-        if (cur != null && cur.getId() == fightId && now - fightSince > 200) {
-            ignoreUntil.put(cur.getId(), now + 600);   // could not get it in 10 s: leave it for half a minute
-            cur = null;
+        if (cur != null) {
+            boolean keep = (enemy(cur) || cur instanceof CreeperEntity) && !cur.isRemoved() && reachTo(p, cur) <= range + 0.6 && p.canSee(cur);
+            long since = seenSince.getOrDefault(cur.getId(), now);
+            // hit it within a moment, or leave it (it is out of reach; we do not chase)
+            if (keep && now - lastOnCrosshair > 30 && now - since > 30) keep = false;
+            if (keep && now - since > 300) keep = false;   // ten seconds without getting it
+            if (!keep) { ignoreUntil.put(cur.getId(), now + 300); cur = null; }
         }
         if (cur == null) {
-            double best = 3.6;
+            double best = range - 0.2;
             for (Entity e : mc.world.getEntities()) {
-                if (!enemy(e) || ignoreUntil.containsKey(e.getId())) continue;
+                boolean can = enemy(e) || (floor && e instanceof CreeperEntity && e.isAlive());
+                if (!can || ignoreUntil.containsKey(e.getId())) continue;
                 double d = reachTo(p, e);
                 if (d < best && p.canSee(e)) { best = d; cur = e; }
+            }
+            if (cur != null) {
+                seenSince.putIfAbsent(cur.getId(), now);
+                lastOnCrosshair = now;
             }
         }
         if (cur == null) { fightId = -1; Move.fight(null); return; }
         if (cur.getId() != fightId) {
             fightId = cur.getId();
-            fightSince = now;
-            holdSword(mc, p);
+            holdSword(p);
         }
         Move.fight(cur);
         // hit only what the crosshair is on (vanilla reach and sight), with a charged swing
-        if (mc.crosshairTarget instanceof EntityHitResult hit && hit.getEntity() == cur && p.getAttackCooldownProgress(0.5f) >= 0.92f) {
-            mc.interactionManager.attackEntity(p, cur);
-            p.swingHand(Hand.MAIN_HAND);
+        if (mc.crosshairTarget instanceof EntityHitResult hit && hit.getEntity() == cur) {
+            lastOnCrosshair = now;
+            if (p.getAttackCooldownProgress(0.5f) >= 0.92f) {
+                mc.interactionManager.attackEntity(p, cur);
+                p.swingHand(Hand.MAIN_HAND);
+            }
         }
     }
 
-    private static void holdSword(MinecraftClient mc, ClientPlayerEntity p) {
+    /** The sword, if it is in the hotbar (no inventory clicks in a fight). */
+    private static void holdSword(ClientPlayerEntity p) {
         var inv = p.getInventory();
-        int best = -1;
-        for (int i = 0; i < 36; i++) {
+        for (int i = 0; i < 9; i++) {
             ItemStack s = inv.getStack(i);
-            if (!s.isEmpty() && Ctl.itemName(s).endsWith("_sword")) { best = i; if (i < 9) break; }
+            if (!s.isEmpty() && Ctl.itemName(s).endsWith("_sword")) { inv.setSelectedSlot(i); return; }
         }
-        if (best < 0) return;
-        if (best < 9) inv.setSelectedSlot(best);
-        else mc.interactionManager.clickSlot(p.playerScreenHandler.syncId, best, inv.getSelectedSlot(), SlotActionType.SWAP, p);
     }
 
     /** Every game tick. */
@@ -184,7 +237,7 @@ public final class Bot {
         ticks++;
         if (!running) return;
         if (mc.player == null || mc.world == null) { stop(); stage = "Нет игры"; return; }
-        if (mc.player.isDead()) { Move.fight(null); mc.player.requestRespawn(); return; }
+        if (mc.player.isDead()) { Move.fight(null); Move.flee(null); mc.player.requestRespawn(); return; }
         defend(mc);
         Move.tick(mc);
     }

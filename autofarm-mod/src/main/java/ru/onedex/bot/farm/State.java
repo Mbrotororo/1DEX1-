@@ -32,6 +32,8 @@ public final class State {
     public int digRing;
     public List<Integer> lit = new ArrayList<>();         // farms whose ground under floor 0 has its torches
     public List<Integer> badStorage = new ArrayList<>();  // storage spots where no chest could be put
+    public boolean noMoreChests;   // the stash had no chests left: the storage stays as it is
+    public Map<Integer, List<Integer>> ever = new HashMap<>();   // floors built at least once (they have their torches)
 
     private static State INSTANCE;
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -63,6 +65,7 @@ public final class State {
         if (INSTANCE.built == null) INSTANCE.built = new HashMap<>();
         if (INSTANCE.lit == null) INSTANCE.lit = new ArrayList<>();
         if (INSTANCE.badStorage == null) INSTANCE.badStorage = new ArrayList<>();
+        if (INSTANCE.ever == null) INSTANCE.ever = new HashMap<>(INSTANCE.built);
     }
 
     /** Written to a temp file and moved over the old one, so a crash never leaves half a file. */
@@ -92,6 +95,7 @@ public final class State {
         INSTANCE.site = old.site;
         INSTANCE.built = old.built;
         INSTANCE.lit = old.lit;
+        INSTANCE.ever = old.ever;
         save();
     }
 
@@ -101,6 +105,7 @@ public final class State {
         built = new HashMap<>();
         lit = new ArrayList<>();
         badStorage = new ArrayList<>();
+        ever = new HashMap<>();
         digTurn = 0;
         digRing = 0;
     }
@@ -115,8 +120,12 @@ public final class State {
     public void markBuilt(int f, int k) {
         List<Integer> l = built.computeIfAbsent(f, x -> new ArrayList<>());
         if (!l.contains(k)) l.add(k);
+        List<Integer> e = ever.computeIfAbsent(f, x -> new ArrayList<>());
+        if (!e.contains(k)) e.add(k);
         save();
     }
+
+    public boolean everBuilt(int f, int k) { return ever.getOrDefault(f, List.of()).contains(k); }
 
     public int builtCount(int f) { return built.getOrDefault(f, List.of()).size(); }
 }

@@ -164,13 +164,15 @@ public final class Plan {
             take(h, n -> n.endsWith("_sword"), Math.max(0, 1 - Ctl.countMatch(n -> n.endsWith("_sword"))));
             take(h, n -> n.endsWith("_pickaxe"), Math.max(0, 1 - Ctl.countMatch(n -> n.endsWith("_pickaxe"))));
             take(h, n -> FOOD.matcher(n).matches() && !n.equals("sweet_berries"), 64 - Ctl.countMatch(n -> FOOD.matcher(n).matches()));
-            take(h, n -> n.equals("sweet_berries") || n.equals("bamboo"), 256);
+            take(h, n -> n.equals("sweet_berries") || n.equals("bamboo"), 256 - Ctl.count("sweet_berries") - Ctl.count("bamboo"));
             take(h, n -> n.equals("dirt") || n.equals("cobblestone"), Math.max(0, (Ctl.freeSlots() - 10) * 64));
             Chests.close();
         }
         st().stashDone = true;
-        // no torches at all although there was room for them: the stash is out of torches
+        Ctl.swordToHotbar();   // fights never click in the bag: the sword has to be at hand
+        // nothing of it at all although there was room: the stash is out of it
         st().noMoreTorches = Ctl.count("torch") == 0 && Ctl.freeSlots() > 2;
+        st().noMoreChests = Ctl.count("chest") == 0 && Ctl.freeSlots() > 2;
         phase(takeNext(st().site == null ? "clear" : "build"));
     }
 
@@ -183,10 +185,16 @@ public final class Plan {
     // ------------------------------------------------------------------ 2. the place
     static Site site() { return st().site; }
 
+    /** Over our area (by x and z: the farm floors are high above the ground, the column base can be low). */
+    static boolean nearFarm(Site s, BlockPos p, int margin) {
+        return p.getX() >= s.x - 7 - margin && p.getX() <= s.farmX(1) + s.W + 1 + margin &&
+                p.getZ() >= s.z - 2 - margin && p.getZ() <= s.z + s.L + 1 + margin;
+    }
+
     /** At the farm (or brought there with the home command). False if the teleport did not work. */
     static boolean goFarm() {
         Site s = site();
-        if (s != null && s.inZone(Ctl.feet(), 8) && Floors.shaftFails < 2) return true;
+        if (s != null && nearFarm(s, Ctl.feet(), 8) && Floors.shaftFails < 2) return true;
         Bot.INSTANCE.stage("Иду на ферму (" + cfg().farmCommand + ")");
         boolean ok = Ctl.teleport(cfg().farmCommand, 200);
         if (ok) Floors.shaftFails = 0;
@@ -200,7 +208,7 @@ public final class Plan {
         BlockPos home = Ctl.feet();
         BotConfig c = cfg();
         Site old = site();
-        if (old != null && old.inZone(home, 4) && st().builtCount(0) + st().builtCount(1) > 0) {
+        if (old != null && nearFarm(old, home, 4) && st().builtCount(0) + st().builtCount(1) > 0) {
             // the farm already stands here (the progress was reset): go on with it
             BotClient.LOGGER.info("[bot] ферма уже стоит: {} {} {}", old.x, old.y, old.z);
             phase(takeNext("build"));
@@ -260,18 +268,19 @@ public final class Plan {
             double cx = s.x + s.W + 4, cz = s.z + s.L / 2.0;   // between the two farms
             double R = Math.max(s.W * 2 + 8, s.L) / 2.0 + 14 + ring;
             BlockPos spot = new BlockPos((int) Math.round(cx + Math.cos(ang) * R), s.y, (int) Math.round(cz + Math.sin(ang) * R));
-            // the top layer of this spot: nothing below it is dug, so a hole is never more than 1 deep
-            // (the highest ground around the spot: where part of it is dug already, only the rest goes)
-            int layer = Ctl.direct(() -> {
-                int top = -999;
-                for (int ox = -4; ox <= 4; ox += 2) for (int oz = -4; oz <= 4; oz += 2)
-                    top = Math.max(top, Site.groundNow(Ctl.world(), spot.getX() + ox, spot.getZ() + oz, s.y + 1));
-                return top;
-            });
             Vec3d me = Ctl.pos();
             if (Math.hypot(me.x - spot.getX(), me.z - spot.getZ()) > 16) {
-                Ctl.goTo(new BlockPos(spot.getX(), layer + 1, spot.getZ()), 6, 1200);
+                Ctl.goTo(new BlockPos(spot.getX(), s.ground(spot.getX(), spot.getZ()) + 1, spot.getZ()), 6, 1200);
             }
+            // the top layer here: nothing below it is dug, so a hole is never more than 1 deep
+            // (the highest ground around us, looked for from well above us: hills count too)
+            int layer = Ctl.direct(() -> {
+                BlockPos c = Ctl.player().getBlockPos();
+                int top = -999;
+                for (int ox = -4; ox <= 4; ox += 2) for (int oz = -4; oz <= 4; oz += 2)
+                    top = Math.max(top, Site.groundNow(Ctl.world(), c.getX() + ox, c.getZ() + oz, c.getY() + 12));
+                return top;
+            });
             climbOut(layer + 1);
             List<BlockPos> found = Ctl.direct(() -> {
                 List<BlockPos> out = new ArrayList<>();
@@ -334,7 +343,7 @@ public final class Plan {
         Site s = site();
         if (s == null) { phase("clear"); return; }
         if (!goFarm()) return;
-        if (!s.inZone(Ctl.feet(), 40)) {
+        if (!nearFarm(s, Ctl.feet(), 40)) {
             // the home command leads somewhere else now: a new place for the farm
             BotClient.LOGGER.info("[bot] /home g теперь в другом месте — новая ферма");
             st().forgetSite();
@@ -348,7 +357,10 @@ public final class Plan {
             else phase(takeNext("farm"));
             return;
         }
-        if (Ctl.count("torch") == 0) {
+        // torches are needed for floors never built (a floor mended after a hole has its torches)
+        boolean fresh = false;
+        for (int k : todo) if (!st().everBuilt(f, k)) fresh = true;
+        if (fresh && Ctl.count("torch") == 0) {
             if (!st().noMoreTorches) { needStash("факелы", "build"); return; }
             // the stash had none: wait for them; a dark farm grows nothing and monsters spawn on it
             Bot.INSTANCE.stage("Положи факелы в стеш (" + cfg().stashCommand + ")");
@@ -383,11 +395,13 @@ public final class Plan {
         return out;
     }
 
+    /** Every spot has its chest; or the stash is out of chests and at least one stands (we use what there is). */
     static boolean storageReady() {
         List<BlockPos> l = storage();
-        if (l.isEmpty()) return false;
-        for (BlockPos p : l) if (!Ctl.name(p).contains("chest")) return false;
-        return true;
+        int have = 0;
+        for (BlockPos p : l) if (Ctl.name(p).contains("chest")) have++;
+        if (have == 0) return false;
+        return have == l.size() || st().noMoreChests;
     }
 
     static final Map<Integer, Integer> storageFails = new HashMap<>();
@@ -410,7 +424,10 @@ public final class Plan {
             if (st().badStorage.contains(i)) continue;
             BlockPos p = s.onGround(spots.get(i));
             if (Ctl.name(p).contains("chest")) continue;
-            if (Ctl.count("chest") == 0) { st().next = takeNext("farm"); needStash("сундуки", "storage"); return; }
+            if (Ctl.count("chest") == 0) {
+                if (!st().noMoreChests) { st().next = takeNext("farm"); needStash("сундуки", "storage"); return; }
+                break;   // the stash had none: we go on with the chests that stand
+            }
             // stand west of the row: both halves of a pair face the same way and join into a double chest
             BlockPos stand = p.add(-2, 0, 0);
             boolean ok = Ctl.goTo(stand, 0.8, 400);
@@ -428,7 +445,13 @@ public final class Plan {
                 if (n >= 3) { st().badStorage.add(i); State.save(); BotClient.LOGGER.info("[bot] место для сундука {} пропущено", i); }
             }
         }
-        if (storageReady()) phase(takeNext("farm"));
+        if (storageReady()) { phase(takeNext("farm")); return; }
+        // not a single chest could be put: tell it and wait (the owner brings chests or frees the place)
+        Bot.INSTANCE.stage(Ctl.count("chest") == 0 ? "Положи сундуки в стеш (" + cfg().stashCommand + ")" : "Нет места для сундуков у фермы");
+        Ctl.sleep(60_000);
+        st().noMoreChests = false;
+        if (storage().isEmpty()) st().badStorage.clear();
+        State.save();
     }
 
     /** Harvest into the storage, keeping some seeds. False when the storage is full. */

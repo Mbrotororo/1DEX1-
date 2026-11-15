@@ -72,13 +72,23 @@ public final class Chests {
         return Ctl.call(() -> Ctl.player().currentScreenHandler == h);
     }
 
+    /**
+     * Hit, or a monster close by: shut the window so the fight can happen (nothing fights with a chest open).
+     * The caller just goes on with the next chest; the plan waits while the fight lasts.
+     */
+    static boolean leaveForFight() {
+        if (!Ctl.call(() -> Bot.INSTANCE.danger())) return false;
+        close();
+        return true;
+    }
+
     /** Puts matching items from the bag into the chest, leaving `keep` of each in the bag. Returns how many went in. */
     public static int deposit(GenericContainerScreenHandler h, Predicate<String> test, Map<String, Integer> keep) {
         int moved = 0;
         for (int pass = 0; pass < 2; pass++) {
             boolean any = false;
             for (int k = 0; k < 36; k++) {
-                if (!stillOpen(h)) return moved;
+                if (!stillOpen(h) || leaveForFight()) return moved;
                 final int slotInBag = k;
                 int done = Ctl.call(() -> {
                     ClientPlayerEntity p = Ctl.player();
@@ -112,7 +122,7 @@ public final class Chests {
         int got = 0;
         int n = Ctl.call(() -> h.getRows() * 9);
         for (int i = 0; i < n && got < want; i++) {
-            if (!stillOpen(h)) break;
+            if (!stillOpen(h) || leaveForFight()) break;
             final int slot = i;
             int c = Ctl.call(() -> {
                 ItemStack s = h.getSlot(slot).getStack();

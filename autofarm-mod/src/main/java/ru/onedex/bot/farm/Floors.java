@@ -53,11 +53,15 @@ public final class Floors {
         return f.getX() == s.getX() && f.getZ() == s.getZ();
     }
 
-    /** Ground of a column = lowest ground in the free strip next to it (nothing is built or dug there). */
+    /**
+     * Ground of a column = lowest ground of the column cell and the free strip next to it (nothing is built
+     * or dug there), so the bot can always step into the column from the side.
+     */
     static int colBase(Site s, int f) {
         BlockPos c = s.shaft(f);
         int a = s.ground(c.getX() - 1, c.getZ()), b = s.ground(c.getX() - 1, c.getZ() - 1), d = s.ground(c.getX() - 1, c.getZ() + 1);
-        return Math.min(a, Math.min(b, d));
+        int here = s.ground(c.getX(), c.getZ());
+        return Math.min(Math.min(a, here), Math.min(b, d));
     }
 
     static boolean toShaftBottom(Site s, int f) {
@@ -178,15 +182,23 @@ public final class Floors {
                 int x = s.farmX(f) + dx, z = s.z + dz;
                 spots.add(new BlockPos(x, s.ground(x, z) + 1, z));
             }
-        if (Ctl.count("torch") < spots.size()) return false;
+        int missing = 0;
+        for (BlockPos spot : spots) if (!Ctl.name(spot).contains("torch")) missing++;
+        if (missing == 0) return true;
+        if (Ctl.count("torch") < missing) return false;
         Bot.INSTANCE.stage("Свечу под фермой");
         for (BlockPos spot : spots) {
             if (Ctl.name(spot).contains("torch")) continue;
-            if (!Ctl.goTo(spot, 2.5, 400)) continue;
+            if (!Ctl.goTo(spot, 1.5, 400)) continue;
             String n = Ctl.name(spot);
             if (!air(n) && !container(n) && !Ctl.solid(spot)) Ctl.mine(spot);   // grass or a flower on the spot
-            Ctl.place(spot, "torch", spot.down());
+            if (Ctl.place(spot, "torch", spot.down())) continue;
+            // grass next to it in the way of the look: clear it and try again
+            BlockPos ob = Ctl.lastObstacle;
+            if (ob != null && !ob.equals(spot.down()) && !container(Ctl.name(ob)) && !Ctl.solid(ob) && Ctl.mine(ob))
+                Ctl.place(spot, "torch", spot.down());
         }
+        for (BlockPos spot : spots) if (!Ctl.name(spot).contains("torch")) return false;
         return true;
     }
 
@@ -254,9 +266,11 @@ public final class Floors {
             if (bridge != null) Ctl.edgeToward(ref, bridge);
             if (ref != null && Ctl.solid(ref) && Ctl.place(p, mat, ref, bridge != null)) return true;
             if (Ctl.placeAny(p, mat)) return true;
-            // a plant between the eye and the face: clear it and try once more
+            // leaves or the like between the eye and the face: clear it and try once more (never a crop of the farm)
             BlockPos ob = Ctl.lastObstacle;
-            if (ob != null && !ob.equals(ref) && foreign(Ctl.name(ob)) && Ctl.mine(ob)) {
+            String obn = ob == null ? "" : Ctl.name(ob);
+            boolean crop = obn.equals("sweet_berry_bush") || obn.startsWith("bamboo");
+            if (ob != null && !ob.equals(ref) && !crop && foreign(obn) && Ctl.mine(ob)) {
                 if (ref != null && Ctl.solid(ref) && Ctl.place(p, mat, ref, bridge != null)) return true;
                 return Ctl.placeAny(p, mat);
             }
@@ -283,6 +297,8 @@ public final class Floors {
         boolean step(int dx, int dz, int fx, int fz) {
             Direction dir = Direction.fromVector(dx - fx, 0, dz - fz, null);
             noMaterial = false;
+            // leaves or a stalk above the next cell first: the body leans over there to see the face
+            clearWay(dx, dz);
             if (!placeFloor(dx, dz, floor(fx, fz), dir)) {
                 if (mode == Mode.TEND) r.hole = true;
                 BotClient.LOGGER.info("[bot] этаж {}: не поставил блок {},{} ({})", k + 1, dx, dz, noMaterial ? "нет блоков" : Ctl.name(floor(dx, dz)));
@@ -359,6 +375,7 @@ public final class Floors {
             int entryDz = col.getZ() - s.z;
             BlockPos colTop = new BlockPos(col.getX(), L, col.getZ());
             noMaterial = false;
+            clearWay(0, entryDz);
             if (!placeFloor(0, entryDz, colTop, Direction.EAST)) {
                 if (mode == Mode.TEND) r.hole = true;
                 stop(false, noMaterial);

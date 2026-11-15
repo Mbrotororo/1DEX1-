@@ -88,6 +88,7 @@ public final class Sell {
         final ScreenHandler g = goods;
         for (String item : items) {
             for (int tries = 0; tries < 80 && Ctl.count(item) > 0; tries++) {
+                if (Chests.leaveForFight()) break;
                 int slot = Ctl.call(() -> {
                     int n = Math.max(0, g.slots.size() - 36);
                     for (int i = 0; i < n; i++) if (Ctl.itemName(g.getSlot(i).getStack()).equals(item)) return i;
