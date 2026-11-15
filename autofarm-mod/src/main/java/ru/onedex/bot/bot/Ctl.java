@@ -371,6 +371,31 @@ public final class Ctl {
         return ahead > 0.05 && eye.distanceTo(c) <= 4.4;
     }
 
+    /**
+     * A point on `face` of `ref` that a straight look from the eye really reaches (nothing in front of it):
+     * the middle first, then points nearer the edges. Null if none (game thread).
+     */
+    static Vec3d aimAt(BlockPos ref, Direction face) {
+        Vec3d eye = player().getEyePos();
+        Vec3d c = faceCenter(ref, face);
+        // the two directions along the face
+        Direction.Axis ax = face.getAxis();
+        Vec3d u = ax == Direction.Axis.X ? new Vec3d(0, 0, 1) : new Vec3d(1, 0, 0);
+        Vec3d v = ax == Direction.Axis.Y ? new Vec3d(0, 0, 1) : new Vec3d(0, 1, 0);
+        double[] offs = {0, 0.3, -0.3};
+        BlockPos firstHit = null;
+        for (double a : offs) for (double b : offs) {
+            Vec3d pt = c.add(u.multiply(a)).add(v.multiply(b));
+            Vec3d end = pt.add(pt.subtract(eye).normalize().multiply(0.05));   // just past the face
+            BlockHitResult h = world().raycast(new net.minecraft.world.RaycastContext(eye, end,
+                    net.minecraft.world.RaycastContext.ShapeType.OUTLINE, net.minecraft.world.RaycastContext.FluidHandling.NONE, player()));
+            if (h.getType() == HitResult.Type.BLOCK && h.getBlockPos().equals(ref) && h.getSide() == face) return pt;
+            if (firstHit == null && h.getType() == HitResult.Type.BLOCK) firstHit = h.getBlockPos();
+        }
+        lastObstacle = firstHit;
+        return null;
+    }
+
     /** The block the crosshair was on after the last failed place() (something in the way), or null. */
     public static volatile BlockPos lastObstacle;
 
@@ -386,7 +411,8 @@ public final class Ctl {
         Bot.INSTANCE.act("ставлю " + item);
         if (!hold(item)) return false;
         String before = name(target);   // direct read
-        Vec3d aim = faceCenter(ref, face);
+        Vec3d aim = call(() -> aimAt(ref, face));
+        if (aim == null) return false;   // no point of that face is in sight from here (lastObstacle says what is in the way)
         lookAt(aim);
         BlockHitResult hit = call(() -> {
             HitResult h = player().raycast(4.5, 1.0f, false);
