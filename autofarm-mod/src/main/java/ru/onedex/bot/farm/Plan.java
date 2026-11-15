@@ -372,10 +372,14 @@ public final class Plan {
             return;
         }
         // a bag of dirt: the rows can only be dirt (cobblestone is for the walkways and the column)
-        if (Ctl.count("dirt") < 200) {
+        // the first floor is the ground itself: it is dug level right away (holes take only a little dirt,
+        // and what is dug off the bumps comes in); for the floors above, a bag of dirt first
+        boolean groundFloor = todo.get(0) == 0 && s.first == 0;
+        int need = groundFloor ? 32 : 200;
+        if (Ctl.count("dirt") < need) {
             int room = Math.max(0, Ctl.freeSlots() - 4) * 64;
             digDirt(Ctl.count("dirt") + room);
-            if (Ctl.count("dirt") < 64) { Ctl.sleep(2000); return; }
+            if (Ctl.count("dirt") < Math.min(need, 64)) { Ctl.sleep(2000); return; }
         }
         Bot.INSTANCE.stage("Строю ферму " + (f == 0 ? "ягод" : "бамбука"));
         Floors.trip(s, f, todo, Floors.Mode.BUILD);
