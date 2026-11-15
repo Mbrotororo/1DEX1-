@@ -450,6 +450,31 @@ public final class Plan {
                 return;
             }
         }
+        // the chests right after the ground floor: what grows while the rest is built has somewhere to go
+        if (f == 0 && st().isBuilt(0, 0) && !storageReady()) {
+            if (st().next != null && !st().next.equals("build")) st().after = st().next;
+            st().next = "build";
+            phase("storage");
+            return;
+        }
+        // every ten minutes a harvest round over the floors already built: what is ripe is picked and planted on
+        // the empty rows, so the farm fills up floor by floor while the rest goes up
+        List<Integer> done = new ArrayList<>();
+        for (int k = 0; k < s.F; k++) if (st().isBuilt(f, k)) done.add(k);
+        long now = System.currentTimeMillis();
+        // the first time: right away when several floors already stand (plants on them may be ripe), else the
+        // clock starts now (the ground floor was just planted)
+        if (st().tendAt == 0 && !done.isEmpty()) { st().tendAt = done.size() > 1 ? 1 : now; State.save(); }
+        if (!done.isEmpty() && now - st().tendAt > cfg().harvestEveryMinutes * 60_000L && Ctl.freeSlots() > 3) {
+            st().tendAt = now;
+            State.save();
+            Bot.INSTANCE.stage("Собираю урожай и сажаю");
+            Floors.Result r = Floors.trip(s, f, done, Floors.Mode.TEND);
+            st().harvested += r.harvested;
+            if (storageReady()) store();   // more than is needed for planting goes into the chests
+            State.save();
+            return;
+        }
         Bot.INSTANCE.stage("Строю ферму " + (f == 0 ? "ягод" : "бамбука"));
         Floors.trip(s, f, todo, Floors.Mode.BUILD);
     }

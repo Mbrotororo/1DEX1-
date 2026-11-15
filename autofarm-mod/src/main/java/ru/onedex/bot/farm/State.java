@@ -22,6 +22,7 @@ public final class State {
     public Site site;
     public Map<Integer, List<Integer>> built = new HashMap<>();
     public long farmedMs;          // time spent farming in this round
+    public long tendAt;            // the last harvest round while the farm was still being built
     public long sold;              // items sold in total
     public long harvested;
     public boolean stashDone;

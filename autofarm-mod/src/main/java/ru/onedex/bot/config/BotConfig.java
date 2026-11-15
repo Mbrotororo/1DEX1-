@@ -28,6 +28,8 @@ public final class BotConfig {
     /** Free blocks between the berries farm and the bamboo farm. */
     public int farmSpacing = 30;
     public int farmMinutes = 120;
+    /** While the farm is still being built: a harvest-and-plant round over the built floors this often. */
+    public int harvestEveryMinutes = 10;
     public int storagePairs = 10;
     public int keepSeeds = 192;
 

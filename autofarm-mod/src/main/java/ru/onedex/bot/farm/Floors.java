@@ -306,14 +306,26 @@ public final class Floors {
             for (int tries = 0; tries < 3 && ob != null && !ob.equals(ref); tries++) {
                 String obn = Ctl.name(ob);
                 if (container(obn) || (!air(obn) && !foreign(obn))) break;
+                BlockPos cut = ob;
                 if (!air(obn)) Ctl.mine(ob);
                 Ctl.ticks(2);   // the rest of a cut stalk falls a moment later
-                if (ref != null && Ctl.solid(ref) && Ctl.place(p, mat, ref, bridge != null)) return true;
+                boolean ok = ref != null && Ctl.solid(ref) && Ctl.place(p, mat, ref, bridge != null);
                 ob = Ctl.lastObstacle;
-                if (Ctl.placeAny(p, mat)) return true;
+                if (!ok) ok = Ctl.placeAny(p, mat);
+                if (ok) {
+                    // a plant of the farm that had to go is planted again right away
+                    if (crop(obn)) replant(cut);
+                    return true;
+                }
                 if (ob == null) ob = Ctl.lastObstacle;
             }
             return false;
+        }
+
+        /** Puts this farm's plant back where one was cut (on its row). */
+        void replant(BlockPos at) {
+            if (!air(Ctl.name(at)) || !SOIL.matcher(Ctl.name(at.down())).matches() || Ctl.count(plant) == 0) return;
+            Ctl.place(at, plant, at.down());
         }
 
         /** The two cells above a walkway cell must be free to walk there. */
