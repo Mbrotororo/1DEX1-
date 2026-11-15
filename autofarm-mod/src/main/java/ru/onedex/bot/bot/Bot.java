@@ -394,6 +394,9 @@ public final class Bot {
         if (!running) return;
         if (mc.player == null || mc.world == null) { stop(); stage = "Нет игры"; return; }
         if (mc.player.isDead()) { Move.fight(null); Move.flee(null); mc.player.requestRespawn(); return; }
+        // the game lowers its frame rate after a minute without keys or mouse (to 10 after ten minutes): the bot
+        // works by frames, so while it plays the player counts as active
+        mc.getInactivityFpsLimiter().onInput();
         defend(mc);
         Move.tick(mc);
     }

@@ -259,7 +259,9 @@ public final class Move {
     private static double step(double err, double gain, double maxSpeed, double minSpeed, double dt, double quantum) {
         double a = Math.abs(err);
         if (a < quantum * 0.5) return 0;
-        double speed = Math.max(minSpeed, Math.min(maxSpeed, a * gain));
-        return Math.signum(err) * Math.min(a, speed * dt);
+        // the same easing at any frame rate: this frame closes the part of the gap a smooth hand would
+        double part = a * (1 - Math.exp(-gain * dt));
+        double move = Math.max(minSpeed * dt, Math.min(maxSpeed * dt, part));
+        return Math.signum(err) * Math.min(a, move);
     }
 }
