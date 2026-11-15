@@ -523,6 +523,10 @@ public final class Floors {
             int zStart = from % 2 == 0 ? 0 : s.L - 1;
             if (line(x, z, 0, zStart, false)) z = zStart;
             for (int li = from; li < lanes.size() && !blocked; li++) {
+                // a harvest round while building: the bag holds what the empty rows need and this floor has
+                // none: the rest of it is not walked
+                if (mode == Mode.TEND && harvestCap != Integer.MAX_VALUE && Ctl.count(plant) >= harvestCap
+                        && emptyRows(s, f, List.of(k))[0] == 0) break;
                 int c = lanes.get(li);
                 r.lane = li;
                 // along the end line two cells past the lane and back: the end-line cells beside the lane are
@@ -593,7 +597,8 @@ public final class Floors {
         if (r != null) {
             // from the floor where we stopped up; the floors below come on the next trip (we only climb up)
             List<Integer> o2 = new ArrayList<>();
-            for (int k : order) if (k >= r[1]) o2.add(k);
+            // (a floor below that lost a block, found on a harvest round, is mended on the way up)
+            for (int k : order) if (k >= r[1] || (mode == Mode.BUILD && State.get().everBuilt(f, k))) o2.add(k);
             order = o2;
         }
         for (int k : order) {

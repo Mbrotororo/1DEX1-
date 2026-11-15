@@ -407,6 +407,8 @@ public final class Plan {
             if (Ctl.count("dirt") < need) {
                 if (!nearFarm(s, Ctl.feet(), 150)) { if (!goFarm()) return; }
                 Floors.toGround(s);
+                // a bag full of plants: into the chests first (with no room the dirt cannot be dug)
+                if (Ctl.freeSlots() <= 4 && storageReady()) store();
                 int room = Math.min(12, Math.max(0, Ctl.freeSlots() - 4)) * 64;   // 12 stacks a trip at most
                 digDirt(Ctl.count("dirt") + room);
                 if (Ctl.count("dirt") < Math.min(need, 64)) { Ctl.sleep(1000); return; }   // more next time, from here
@@ -482,6 +484,8 @@ public final class Plan {
         // clock starts now (the ground floor was just planted)
         if (st().tendAt == 0) { st().tendAt = done.size() > 1 ? 1 : now; State.save(); }
         if (now - st().tendAt < every * 60_000L || Ctl.freeSlots() < 6) return false;
+        // the rows are read at the farm: from the stash its chunks are not loaded (a failed teleport: next call)
+        if (!goFarm()) return false;
         st().tendAt = now;   // a round cut short (a fight, a restart) is not begun again at once
         State.save();
         // the floors with empty rows, and how many plants they need: none, no round (until a new floor stands)
@@ -489,13 +493,14 @@ public final class Plan {
         int need = 0, top = -1;
         for (int i = 0; i < done.size(); i++) if (empty[i] > 0) { need += empty[i]; top = done.get(i); }
         if (need == 0) return false;
-        if (!goFarm()) return false;
         Floors.toGround(s);
         List<Integer> floors = new ArrayList<>();
         for (int k : done) if (k <= top) floors.add(k);   // the floors above the last empty row are not walked
         Bot.INSTANCE.stage("Собираю урожай и сажаю");
         Floors.Result r;
-        Floors.harvestCap = need + 32;
+        // only what the empty rows need, and never more than fits with room left for the dirt that comes next
+        int fits = Ctl.count(s.plant(f)) + Math.max(0, Ctl.freeSlots() - 8) * 64;
+        Floors.harvestCap = Math.min(need + 32, fits);
         try {
             r = Floors.trip(s, f, floors, Floors.Mode.TEND);
         } finally {
