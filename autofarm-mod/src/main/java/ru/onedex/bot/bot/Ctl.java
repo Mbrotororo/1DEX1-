@@ -270,6 +270,7 @@ public final class Ctl {
     /** Walks straight to the middle of a cell (on the same level). Sneaking keeps it from falling off edges. */
     public static boolean stepTo(BlockPos cell, boolean sneak) {
         Bot.INSTANCE.act("шаг " + cell.toShortString());
+        if (!solid(cell.down())) return false;   // nothing to stand on there (a block the server took back)
         boolean wasSneaking = Move.sneaking();
         Move.sneak(sneak);
         Move.walkTo(Vec3d.ofBottomCenter(cell), 0.2);
