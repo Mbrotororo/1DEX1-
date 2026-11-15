@@ -36,7 +36,7 @@ final class Prof {
                 if (System.currentTimeMillis() > next) {
                     List<Map.Entry<String, Integer>> l = new ArrayList<>(hits.entrySet());
                     l.sort((a, b) -> b.getValue() - a.getValue());
-                    StringBuilder out = new StringBuilder("[prof] " + n + " samples");
+                    StringBuilder out = new StringBuilder("[prof] " + n + " samples, " + net.minecraft.client.MinecraftClient.getInstance().getCurrentFps() + " fps");
                     for (int i = 0; i < Math.min(14, l.size()); i++)
                         out.append(String.format("%n  %4.1f%%  %s", 100.0 * l.get(i).getValue() / n, l.get(i).getKey()));
                     BotClient.LOGGER.info(out.toString());
