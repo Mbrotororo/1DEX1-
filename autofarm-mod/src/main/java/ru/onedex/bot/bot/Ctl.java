@@ -518,20 +518,30 @@ public final class Ctl {
      * player does: only a face the eye can see, aimed at, with the click going where the crosshair really is.
      * With `verify`, waits a moment so a block the server takes back is not walked on.
      */
+    /** Why the last place() did not put anything (for the log). */
+    public static volatile String lastFail = "";
+
     public static boolean place(BlockPos target, String item, BlockPos ref, boolean verify) {
         lastObstacle = null;
+        lastFail = "";
         Direction face = Direction.fromVector(target.getX() - ref.getX(), target.getY() - ref.getY(), target.getZ() - ref.getZ(), null);
-        if (face == null || !solid(ref) || !canSeeFace(ref, face)) return false;
+        if (face == null) { lastFail = "не сосед"; return false; }
+        if (!solid(ref)) { lastFail = "не к чему"; return false; }
+        if (!canSeeFace(ref, face)) { lastFail = "грань не видна"; return false; }
         Bot.INSTANCE.act("ставлю " + item);
-        if (!hold(item)) return false;
+        if (!hold(item)) { lastFail = "не взял " + item; return false; }
         String before = name(target);   // direct read
         Vec3d aim = call(() -> aimAt(ref, face));
-        if (aim == null) return false;   // no point of that face is in sight from here (lastObstacle says what is in the way)
+        if (aim == null) { lastFail = "луч закрыт"; return false; }   // lastObstacle says what is in the way
         lookAt(aim);
         BlockHitResult hit = call(() -> {
             HitResult h = player().raycast(4.5, 1.0f, false);
-            if (!(h instanceof BlockHitResult b) || b.getType() != HitResult.Type.BLOCK) return null;
-            if (!b.getBlockPos().equals(ref) || b.getSide() != face) { lastObstacle = b.getBlockPos(); return null; }
+            if (!(h instanceof BlockHitResult b) || b.getType() != HitResult.Type.BLOCK) { lastFail = "прицел мимо"; return null; }
+            if (!b.getBlockPos().equals(ref) || b.getSide() != face) {
+                lastObstacle = b.getBlockPos();
+                lastFail = "прицел на " + b.getBlockPos().toShortString() + " " + b.getSide();
+                return null;
+            }
             return b;
         });
         if (hit == null) return false;
@@ -544,9 +554,11 @@ public final class Ctl {
             if (!name(target).equals(before)) {
                 if (!verify) return true;
                 ticks(3);
-                return !name(target).equals(before);
+                if (name(target).equals(before)) { lastFail = "сервер убрал"; return false; }
+                return true;
             }
         }
+        lastFail = "не появился";
         return false;
     }
 

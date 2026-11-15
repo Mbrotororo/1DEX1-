@@ -333,8 +333,9 @@ public final class Floors {
                 boolean ok = placeFloor(x, z, ref, null);
                 if (!ok && mode == Mode.BUILD && noMaterial && s.isRow(x, z)) { stop(false, true); return; }
                 if (!ok && mode == Mode.BUILD && !noMaterial)
-                    BotClient.LOGGER.info("[bot] этаж {}: не поставил сбоку {},{} ({}, мешает {})", k + 1, x, z,
-                            Ctl.name(floor(x, z)), Ctl.lastObstacle == null ? "-" : Ctl.name(Ctl.lastObstacle));
+                    BotClient.LOGGER.info("[bot] этаж {}: не поставил сбоку {},{} ({}, {}, мешает {}, я на {})", k + 1, x, z,
+                            Ctl.name(floor(x, z)), Ctl.lastFail, Ctl.lastObstacle == null ? "-" : Ctl.name(Ctl.lastObstacle),
+                            Ctl.pos().subtract(s.farmX(f), L + 1, s.z).toString());
             }
             for (int d = -2; d <= 2; d++) {
                 int x = c + d;
