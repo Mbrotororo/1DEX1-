@@ -252,14 +252,17 @@ public final class Floors {
             }
             if (Ctl.placeAny(p, mat)) return true;
             if (ob == null) ob = Ctl.lastObstacle;
-            // leaves or a plant between the eye and the face: clear it and try once more (a bush or bamboo of the
-            // farm is planted again on the next farming pass; a hole in the floor would stop the farm)
-            String obn = ob == null ? "" : Ctl.name(ob);
-            // (it may be gone by now on its own: the rest of a cut bamboo stalk falls a moment later)
-            if (ob != null && !ob.equals(ref) && (air(obn) || foreign(obn)) && (air(obn) || Ctl.mine(ob) || air(Ctl.name(ob)))) {
-                Ctl.ticks(2);
+            // leaves or a plant between the eye and the face (tall bamboo on the row next to it, mostly): cut it and
+            // try again, a few times (a bush or bamboo of the farm is planted again on this pass or the next)
+            for (int tries = 0; tries < 3 && ob != null && !ob.equals(ref); tries++) {
+                String obn = Ctl.name(ob);
+                if (container(obn) || (!air(obn) && !foreign(obn))) break;
+                if (!air(obn)) Ctl.mine(ob);
+                Ctl.ticks(2);   // the rest of a cut stalk falls a moment later
                 if (ref != null && Ctl.solid(ref) && Ctl.place(p, mat, ref, bridge != null)) return true;
-                return Ctl.placeAny(p, mat);
+                ob = Ctl.lastObstacle;
+                if (Ctl.placeAny(p, mat)) return true;
+                if (ob == null) ob = Ctl.lastObstacle;
             }
             return false;
         }
