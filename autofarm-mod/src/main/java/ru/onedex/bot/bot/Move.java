@@ -36,6 +36,8 @@ public final class Move {
     // where the head turns to (set every tick, turned to every frame); fast = in a fight
     private static volatile Float headYaw, headPitch;
     private static volatile boolean fast;
+    /** Working (building, harvesting, digging): the head turns like a quick builder's, still smooth. */
+    public static volatile boolean quick;
     private static long lastFrame;
     private static double restYaw, restPitch;
     private static int restoringTicks;
@@ -236,8 +238,8 @@ public final class Move {
         double s = mc.options.getMouseSensitivity().getValue() * 0.6 + 0.2;
         double perCount = s * s * s * 8.0;           // what one mouse count gives to changeLookDirection
         double degPerCount = perCount * 0.15;        // and that many degrees
-        double gain = fast ? 16.0 : 10.0;            // how quickly it closes in (per second): eases out
-        double maxSpeed = fast ? 900.0 : 420.0;      // degrees per second at most
+        double gain = fast ? 16.0 : quick ? 14.0 : 10.0;            // how quickly it closes in (per second): eases out
+        double maxSpeed = fast ? 900.0 : quick ? 720.0 : 420.0;      // degrees per second at most
         double minSpeed = 35.0;                      // the last bit is not crawled
 
         double stepYaw = 0, stepPitch = 0;

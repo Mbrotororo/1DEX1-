@@ -4,10 +4,12 @@ import net.minecraft.block.BlockState;
 import net.minecraft.state.property.Properties;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import ru.onedex.bot.BotClient;
 import ru.onedex.bot.bot.Bot;
 import ru.onedex.bot.bot.Ctl;
+import ru.onedex.bot.bot.Move;
 import ru.onedex.bot.config.BotConfig;
 
 import java.util.ArrayList;
@@ -406,53 +408,77 @@ public final class Floors {
                     }
                 }
             }
-            for (int d : new int[]{-1, 1, -2, 2}) {
-                int x = c + d;
-                if (x < 0 || x >= s.W) continue;
-                noMaterial = false;
-                BlockPos ref = dirZ != 0 ? floor(x, z - dirZ) : null;
-                boolean ok = placeFloor(x, z, ref, null);
-                if (!ok && mode == Mode.BUILD && noMaterial && s.isRow(x, z)) { stop(false, true); return; }
-                if (!ok && mode == Mode.BUILD && !noMaterial)
-                    BotClient.LOGGER.info("[bot] этаж {}: не поставил сбоку {},{} ({}, {}, мешает {}, я на {})", k + 1, x, z,
-                            Ctl.name(floor(x, z)), Ctl.lastFail, Ctl.lastObstacle == null ? "-" : Ctl.name(Ctl.lastObstacle),
-                            Ctl.pos().subtract(s.farmX(f), L + 1, s.z).toString());
+            // one side whole (its blocks, then its plants), then the other: the head turns across only once.
+            // The side the head is nearer to first.
+            int first = firstSide();
+            for (int sgn : new int[]{first, -first}) {
+                for (int d : new int[]{sgn, 2 * sgn}) {
+                    int x = c + d;
+                    if (x < 0 || x >= s.W) continue;
+                    if (!side(x, z, dirZ)) return;
+                }
+                for (int d : new int[]{sgn, 2 * sgn}) {
+                    int x = c + d;
+                    if (x >= 0 && x < s.W) plantAt(x, z);
+                }
             }
-            for (int d = -2; d <= 2; d++) {
-                int x = c + d;
-                if (x < 0 || x >= s.W) continue;
-                BlockPos top = floor(x, z).up();
-                if (!Ctl.solid(top.down())) continue;
-                String here = Ctl.name(top);
-                if (s.isRow(x, z) && !air(here) && !crop(here) && !here.contains("torch") && !container(here) && foreign(here)) {
-                    // grass or a flower grew on the row: away with it, the plant goes there
-                    if (Ctl.mine(top)) here = Ctl.name(top);
-                }
-                if (s.isRow(x, z)) {
-                    // planting goes on while building (the plants grow while the next floors go up)
-                    if (plant.equals("bamboo")) {
-                        String up = Ctl.name(top.up());
-                        if (mode == Mode.TEND && here.equals("bamboo") && up.equals("bamboo")) {
-                            // cut above the first piece: the plant grows back by itself
-                            if (Ctl.count("bamboo") < harvestCap && Ctl.mine(top.up())) r.harvested++;
-                        } else if (air(here) && Ctl.count("bamboo") > 0) {
-                            if (Ctl.place(top, "bamboo", top.down())) planted();
-                        }
-                    } else {
-                        if (mode == Mode.TEND && here.equals("sweet_berry_bush")) {
-                            if (Ctl.count("sweet_berries") >= harvestCap) continue;
-                            int age = Ctl.direct(() -> {
-                                BlockState st = Ctl.world().getBlockState(top);
-                                return st.contains(Properties.AGE_3) ? st.get(Properties.AGE_3) : 0;
-                            });
-                            if (age >= 2) { Ctl.use(top); Ctl.ticks(2); r.harvested++; }
-                        } else if (air(here) && !here.equals("sweet_berry_bush") && Ctl.count("sweet_berries") > 0) {
-                            if (Ctl.place(top, "sweet_berries", top.down())) planted();
-                        }
+            plantAt(c, z);
+        }
+
+        /** The side of the head that is nearer: -1 (west, lower x) or 1 (east). */
+        int firstSide() {
+            float yaw = Ctl.direct(() -> Ctl.player().getYaw());
+            // west is yaw 90, east is yaw -90
+            return Math.abs(MathHelper.wrapDegrees(yaw - 90f)) <= Math.abs(MathHelper.wrapDegrees(yaw + 90f)) ? -1 : 1;
+        }
+
+        /** A floor cell beside the lane (from the block behind it). False: no blocks left for the rows, stop. */
+        boolean side(int x, int z, int dirZ) {
+            noMaterial = false;
+            BlockPos ref = dirZ != 0 ? floor(x, z - dirZ) : null;
+            boolean ok = placeFloor(x, z, ref, null);
+            if (!ok && mode == Mode.BUILD && noMaterial && s.isRow(x, z)) { stop(false, true); return false; }
+            if (!ok && mode == Mode.BUILD && !noMaterial)
+                BotClient.LOGGER.info("[bot] этаж {}: не поставил сбоку {},{} ({}, {}, мешает {}, я на {})", k + 1, x, z,
+                        Ctl.name(floor(x, z)), Ctl.lastFail, Ctl.lastObstacle == null ? "-" : Ctl.name(Ctl.lastObstacle),
+                        Ctl.pos().subtract(s.farmX(f), L + 1, s.z).toString());
+            return true;
+        }
+
+        /** On a row: picks what is ripe (berries with a right click, bamboo above its first piece) or plants. A torch where one goes. */
+        void plantAt(int x, int z) {
+            BlockPos top = floor(x, z).up();
+            if (!Ctl.solid(top.down())) return;
+            String here = Ctl.name(top);
+            if (s.isRow(x, z) && !air(here) && !crop(here) && !here.contains("torch") && !container(here) && foreign(here)) {
+                // grass or a flower grew on the row: away with it, the plant goes there
+                if (Ctl.mine(top)) here = Ctl.name(top);
+            }
+            if (s.isRow(x, z)) {
+                // planting goes on while building (the plants grow while the next floors go up)
+                if (plant.equals("bamboo")) {
+                    String up = Ctl.name(top.up());
+                    if (mode == Mode.TEND && here.equals("bamboo") && up.equals("bamboo")) {
+                        // cut above the first piece: the plant grows back by itself
+                        if (Ctl.count("bamboo") < harvestCap && Ctl.mine(top.up())) r.harvested++;
+                    } else if (air(here) && Ctl.count("bamboo") > 0) {
+                        if (Ctl.place(top, "bamboo", top.down())) planted();
                     }
-                } else if (s.isTorch(x, z) && air(here) && Ctl.count("torch") > 0) {
-                    Ctl.place(top, "torch", top.down());
+                } else {
+                    if (mode == Mode.TEND && here.equals("sweet_berry_bush")) {
+                        // berries are picked with a right click: the bush stays and grows them again
+                        if (Ctl.count("sweet_berries") >= harvestCap) return;
+                        int age = Ctl.direct(() -> {
+                            BlockState st = Ctl.world().getBlockState(top);
+                            return st.contains(Properties.AGE_3) ? st.get(Properties.AGE_3) : 0;
+                        });
+                        if (age >= 2) { Ctl.use(top); Ctl.ticks(1); r.harvested++; }
+                    } else if (air(here) && Ctl.count("sweet_berries") > 0) {
+                        if (Ctl.place(top, "sweet_berries", top.down())) planted();
+                    }
                 }
+            } else if (s.isTorch(x, z) && air(here) && Ctl.count("torch") > 0) {
+                Ctl.place(top, "torch", top.down());
             }
         }
 
@@ -592,6 +618,15 @@ public final class Floors {
 
     /** One trip up the column: the given floors from the bottom up, then down again. */
     public static Result trip(Site s, int f, List<Integer> floors, Mode mode) {
+        Move.quick = true;
+        try {
+            return tripQuick(s, f, floors, mode);
+        } finally {
+            Move.quick = false;
+        }
+    }
+
+    static Result tripQuick(Site s, int f, List<Integer> floors, Mode mode) {
         Result total = new Result();
         List<Integer> order = new ArrayList<>(floors);
         order.sort(Integer::compare);

@@ -281,6 +281,15 @@ public final class Plan {
      * a little column. When nothing is left in sight it goes round the farms to the next side.
      */
     static void digDirt(int target) {
+        Move.quick = true;
+        try {
+            digDirtQuick(target);
+        } finally {
+            Move.quick = false;
+        }
+    }
+
+    static void digDirtQuick(int target) {
         Site s = site();
         Bot.INSTANCE.stage("Копаю землю");
         tidyBag(6);
