@@ -345,16 +345,16 @@ public final class Ctl {
                 // a tie goes to the one in the hand, then to the hotbar (no swap for nothing)
                 if (sp > bestSpeed || (sp == bestSpeed && b >= 0 && (i == inv.getSelectedSlot() || (i < 9 && b >= 9)))) { bestSpeed = sp; b = i; }
             }
-            // a tool already in the hotbar: just select it
-            if (b >= 0 && b < 9 && b != inv.getSelectedSlot()) return 100 + b;
-            if (b >= 0 && b < 9) used(b);
-            return b < 9 ? -1 : b;
+            // a tool already in the hotbar: 100+ = another slot, 200+ = the one that reads as selected now
+            if (b >= 0 && b < 9) return (b != inv.getSelectedSlot() ? 100 : 200) + b;
+            return b;   // in the bag, or -1
         });
         if (best >= 100) {
-            int slot = best - 100;
+            int slot = best % 100;
             used(slot);
+            // always handed over: a selection still on its way (take()) would not show as selected yet
             post(() -> player().getInventory().setSelectedSlot(slot));
-            return true;
+            return best < 200;   // a real change (mine() then waits a tick for it to reach the server)
         }
         if (best < 0) return false;
         boolean sneak = Move.sneaking();
