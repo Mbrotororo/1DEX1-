@@ -441,9 +441,13 @@ public final class Ctl {
     }
 
     /** Breaks a block (with the best tool). True if it is gone. */
+    /** Why the last mine() did not break its block (for the log). */
+    public static volatile String lastMineFail = "";
+
     public static boolean mine(BlockPos p) {
-        if (world().getBlockState(p).isAir()) return false;
-        if (reach(p) > 5.0) return false;
+        lastMineFail = "";
+        if (world().getBlockState(p).isAir()) { lastMineFail = "уже воздух"; return false; }
+        if (reach(p) > 5.0) { lastMineFail = "далеко " + String.format("%.1f", reach(p)); return false; }
         Bot.INSTANCE.act("копаю " + p.toShortString());
         if (holdBestFor(p)) ticks(1);   // the server has to know the tool before the first hit
         lookAt(Vec3d.ofCenter(p));
@@ -454,7 +458,11 @@ public final class Ctl {
             player().swingHand(Hand.MAIN_HAND);
             return world().getBlockState(p).isAir();
         });
-        if (instant) { ticks(2); return world().getBlockState(p).isAir(); }
+        if (instant) {
+            ticks(2);
+            if (!world().getBlockState(p).isAir()) { lastMineFail = "вернулся"; return false; }
+            return true;
+        }
         for (int t = 0; t < 400; t++) {
             ticks(1);
             boolean gone = call(() -> {
@@ -465,10 +473,12 @@ public final class Ctl {
             });
             if (gone) {
                 ticks(2);
-                return world().getBlockState(p).isAir();   // a protected block comes back
+                if (!world().getBlockState(p).isAir()) { lastMineFail = "вернулся"; return false; }   // a protected block comes back
+                return true;
             }
         }
         run(() -> mc().interactionManager.cancelBlockBreaking());
+        lastMineFail = "не ломается";
         return false;
     }
 

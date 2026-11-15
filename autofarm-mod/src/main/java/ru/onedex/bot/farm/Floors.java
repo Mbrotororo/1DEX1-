@@ -230,7 +230,7 @@ public final class Floors {
             // anything that does not belong here goes: a plant, leaves, or stone / cobblestone in a row of soil
             if (!air(n) && !n.equals("water") && (foreign(n) || s.isRow(dx, dz))) {
                 boolean stalk = n.startsWith("bamboo");
-                Ctl.mine(p);
+                if (!Ctl.mine(p)) BotClient.LOGGER.info("[bot] этаж {}: не сломал {} на {},{}: {}", k + 1, n, dx, dz, Ctl.lastMineFail);
                 // a bamboo stalk from the floor below: the server drops the rest of it a moment later
                 if (stalk) Ctl.ticks(3);
                 n = Ctl.name(p);
