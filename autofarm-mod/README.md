@@ -18,7 +18,7 @@
 ## Установка
 
 1. Поставь **Fabric Loader** для Minecraft **1.21.11** (https://fabricmc.net/use/installer/).
-2. Положи `1DEX1-Bot-1.1.1.jar` в папку `.minecraft/mods` (старый `1DEX1-Bot-1.0.0.jar` удали).
+2. Положи `1DEX1-Bot-1.1.2.jar` в папку `.minecraft/mods` (старый `1DEX1-Bot-1.0.0.jar` удали).
    Fabric API отдельно ставить не нужно: всё, что нужно, уже внутри jar.
 3. Запусти игру с профилем Fabric и зайди на сервер.
 
