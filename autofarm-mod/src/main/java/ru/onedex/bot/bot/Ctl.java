@@ -285,7 +285,8 @@ public final class Ctl {
         int best = found[0];
         if (best < 0) return 0;
         if (best < 9) {
-            if (found[1] != best) post(() -> player().getInventory().setSelectedSlot(best));
+            // always handed over: an earlier selection still on its way would not show in found[1] yet
+            post(() -> player().getInventory().setSelectedSlot(best));
             used(best);
             return 1;
         }
@@ -364,6 +365,7 @@ public final class Ctl {
             var inv = p.getInventory();
             int hb = swapTarget(inv);
             inv.setSelectedSlot(hb);
+            used(hb);
             mc().interactionManager.clickSlot(p.playerScreenHandler.syncId, handlerSlot(best), hb, SlotActionType.SWAP, p);
             bagClosed(p);
             return null;
@@ -546,13 +548,18 @@ public final class Ctl {
         if (world().getBlockState(p).isAir()) { lastMineFail = "уже воздух"; return false; }
         if (reach(p) > 5.0) { lastMineFail = "далеко " + String.format("%.1f", reach(p)); return false; }
         Bot.INSTANCE.act("копаю " + p.toShortString());
-        if (holdBestFor(p) && lastToolFromBag) ticks(1);   // a swap from the bag reaches the server before the first hit
+        if (holdBestFor(p)) ticks(1);   // the new tool reaches the server before the first hit (a hit does not send it)
         lookAt(Vec3d.ofCenter(p), () -> onFace(p, null));
         // holding the button, the game starts the next block 6 ticks after one that took time to break
         long wait = lastHardBreak + 6 - Bot.INSTANCE.tickCount();
         if (wait > 0) ticks((int) wait);
         Vec3d eye = player().getEyePos();
-        Direction face = Direction.getFacing(eye.x - (p.getX() + 0.5), eye.y - (p.getY() + 0.5), eye.z - (p.getZ() + 0.5));
+        Direction faceGeo = Direction.getFacing(eye.x - (p.getX() + 0.5), eye.y - (p.getY() + 0.5), eye.z - (p.getZ() + 0.5));
+        // the side the crosshair is on (as a player's click gives it), else the side facing the eye
+        Direction face = direct(() -> {
+            HitResult h = player().raycast(4.5, 1.0f, false);
+            return h instanceof BlockHitResult b && b.getType() == HitResult.Type.BLOCK && b.getBlockPos().equals(p) ? b.getSide() : faceGeo;
+        });
         boolean instant = call(() -> {
             mc().interactionManager.attackBlock(p, face);
             player().swingHand(Hand.MAIN_HAND);
@@ -679,11 +686,14 @@ public final class Ctl {
     public static boolean place(BlockPos target, String item, BlockPos ref) { return place(target, item, ref, false); }
 
     /** Puts a block against any neighbour of `target` whose face we can see from here. */
-    public static boolean placeAny(BlockPos target, String item) {
+    public static boolean placeAny(BlockPos target, String item) { return placeAny(target, item, false); }
+
+    /** With `verify`: waits for the server to keep the block (it is walked on next). */
+    public static boolean placeAny(BlockPos target, String item, boolean verify) {
         if (solid(target)) return true;
         for (Direction d : new Direction[]{Direction.DOWN, Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST, Direction.UP}) {
             BlockPos ref = target.offset(d);
-            if (solid(ref) && canSeeFace(ref, d.getOpposite()) && place(target, item, ref)) return true;
+            if (solid(ref) && canSeeFace(ref, d.getOpposite()) && place(target, item, ref, verify)) return true;
         }
         return false;
     }

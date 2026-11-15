@@ -156,6 +156,13 @@ public final class Move {
         if (!active) return;
         ClientPlayerEntity p = mc.player;
         if (p == null) return;
+        Vec3d ef = edgeFace;
+        if (ef != null) {
+            // where the body is now along the walk, past the edge (> 0.3 it would fall): one more tick at
+            // walking speed moves it about 0.22, so from 0.25 before the edge the sneak is on (also in a fight)
+            double over = (p.getX() - ef.x) * edgeDx + (p.getZ() - ef.z) * edgeDz;
+            if (over > -0.25) sneak = true;
+        }
         // no head turning while a chest or menu is open: with a window open the mouse moves the cursor
         // (and the bot thread, which opened it, must not wait for a turn that cannot happen now)
         if (mc.currentScreen instanceof net.minecraft.client.gui.screen.ingame.HandledScreen<?>) {
@@ -194,14 +201,6 @@ public final class Move {
             return;
         }
         fast = false;
-
-        Vec3d ef = edgeFace;
-        if (ef != null) {
-            // where the body is now along the walk, past the edge (> 0.3 it would fall): one more tick at
-            // walking speed moves it about 0.22, so from 0.25 before the edge the sneak is on
-            double over = (p.getX() - ef.x) * edgeDx + (p.getZ() - ef.z) * edgeDz;
-            if (over > -0.25) sneak = true;
-        }
 
         Vec3d t = walkTarget;
         boolean turnedAway = false;

@@ -320,7 +320,7 @@ public final class Floors {
                 if (Ctl.place(p, mat, ref, bridge != null)) return true;
                 ob = Ctl.lastObstacle;   // what was in the way of the best face (before other tries overwrite it)
             }
-            if (Ctl.placeAny(p, mat)) return true;
+            if (Ctl.placeAny(p, mat, bridge != null)) return true;
             if (ob == null) ob = Ctl.lastObstacle;
             // leaves or a plant between the eye and the face (tall bamboo on the row next to it, mostly): cut it and
             // try again, a few times (a bush or bamboo of the farm is planted again on this pass or the next)
@@ -332,7 +332,7 @@ public final class Floors {
                 Ctl.ticks(2);   // the rest of a cut stalk falls a moment later
                 boolean ok = ref != null && Ctl.solid(ref) && Ctl.place(p, mat, ref, bridge != null);
                 ob = Ctl.lastObstacle;
-                if (!ok) ok = Ctl.placeAny(p, mat);
+                if (!ok) ok = Ctl.placeAny(p, mat, bridge != null);
                 if (ok) {
                     // a plant of the farm that had to go is planted again right away
                     if (crop(obn)) replant(cut);
@@ -393,9 +393,12 @@ public final class Floors {
         boolean line(int fx, int fz, int tx, int tz, boolean work) {
             int x = fx, z = fz;
             int sx = Integer.signum(tx - fx), sz = Integer.signum(tz - fz);
+            boolean glideFailed = false;
             while ((x != tx || z != tz) && !blocked) {
                 // cells ahead with nothing to do (built, nothing to pick or plant) are walked in one go
-                int run = idleRun(x, z, sx, sz, tx, tz, work);
+                // (after a walk that got nowhere: the next cell the usual way)
+                int run = glideFailed ? 0 : idleRun(x, z, sx, sz, tx, tz, work);
+                glideFailed = false;
                 if (run >= 2) {
                     int gx = x + sx * run, gz = z + sz * run;
                     boolean ok = Ctl.stepTo(cell(gx, gz), alongEdge(x, z, sx, sz));
@@ -405,7 +408,11 @@ public final class Floors {
                     int got = sx != 0 ? (mx - x) * sx : (mz - z) * sz;
                     boolean onLine = sx != 0 ? mz == z : mx == x;
                     if (!ok && (!onLine || got < 0 || got > run || Math.abs(me.getY() - (L + 1)) > 0)) return stop(false, false);
-                    if (!ok) { run = got; if (!Ctl.stepTo(cell(x + sx * run, z + sz * run), true)) return stop(false, false); }
+                    if (!ok) {
+                        run = got;
+                        if (!Ctl.stepTo(cell(x + sx * run, z + sz * run), true)) return stop(false, false);
+                        if (run == 0) { glideFailed = true; continue; }
+                    }
                     for (int i = 1; i <= run; i++) path.add(new int[]{x + sx * i, z + sz * i});
                     x += sx * run; z += sz * run;
                     continue;
@@ -458,14 +465,17 @@ public final class Floors {
                 if (d != 0 && !floorOkNow(x, cz)) return false;
                 String here = at(x, cz, 1);
                 if (mode == Mode.BUILD) {
-                    // the room between this floor and the next is cleared while building
+                    // the room between this floor and the next is cleared while building (a torch stays only
+                    // where one belongs)
                     for (int up = 1; up < s.gap; up++) {
                         String n = at(x, cz, up);
-                        if (!(air(n) || n.equals("water") || container(n) || crop(n) || n.contains("torch"))) return false;
+                        if (n.contains("torch")) { if (up == 1 && s.isTorch(x, cz)) continue; return false; }
+                        if (!(air(n) || n.equals("water") || container(n) || crop(n))) return false;
                     }
                 }
                 if (s.isRow(x, cz)) {
                     if (air(here)) { if (plants > 0) return false; continue; }
+                    if (here.contains("torch")) return false;   // a torch on a row: it goes, a plant comes
                     if (!crop(here) && !here.contains("torch") && !container(here) && foreign(here)) return false;
                     if (mode == Mode.TEND && plants < harvestCap) {
                         if (here.equals("sweet_berry_bush")) {
@@ -809,7 +819,7 @@ public final class Floors {
             if (p.r.noBlocks) { total.noBlocks = true; break; }
             if (p.r.full) break;
             // a floor is done: back down for a harvest round (its rows get plants before the next one goes up)
-            if (justBuilt && stopAfterFloor) break;
+            if (justBuilt && stopAfterFloor && emptyRows(s, f, List.of(k))[0] > 0) break;
             if (p.r.stuck) {
                 total.stuck = true;
                 if (k > 0 && !onColumn(s.shaft(f))) break;   // could not get back to the column: no higher floors now

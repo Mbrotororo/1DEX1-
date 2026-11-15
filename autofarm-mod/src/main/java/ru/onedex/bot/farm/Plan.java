@@ -51,6 +51,7 @@ public final class Plan {
 
     public static void run() {
         State s = st();
+        if (!cfg().bambooFarm && s.farm != 0) { s.farm = 0; State.save(); }
         eat();
         switch (s.phase) {
             case "stash" -> stash();
@@ -329,6 +330,7 @@ public final class Plan {
                 walkFails = 0;
                 moves++;
                 Ctl.collectDrops(6, 10);
+                last[0] = null;   // a new side: the first block there is not pulled back toward the old one
                 int turn = st().digTurn++;
                 double ang = turn * Math.PI / 4;
                 double r = Math.max(s.farmX(1) + s.W - s.x, s.L) / 2.0 + 12 + 10 * ((turn / 8) % 4);

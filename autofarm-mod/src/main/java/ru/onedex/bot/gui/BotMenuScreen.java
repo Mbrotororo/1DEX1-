@@ -52,7 +52,7 @@ public class BotMenuScreen extends Screen {
             case "storage" -> 3;
             case "farm", "both" -> 4;
             case "sell" -> 5;
-            case "bamboo" -> 6;
+            case "bamboo" -> BotConfig.get().bambooFarm ? 6 : 4;   // off: it goes back to farming at once
             default -> 0;
         };
     }
