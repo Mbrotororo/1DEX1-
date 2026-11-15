@@ -396,6 +396,8 @@ public final class Plan {
                 needStash("лопаты", "build");
                 return;
             }
+            // a harvest round first when it is time (the bag is emptiest now, before more dirt is dug)
+            if (tendWhileBuilding(s, f)) return;
             // a bag of dirt first (the rows can only be dirt). The first floor is the ground itself: it is dug
             // level right away (holes take only a little dirt, and what is dug off the bumps comes in).
             // Dirt is dug from where we are; the home command only brings us back to build.
@@ -433,6 +435,7 @@ public final class Plan {
         }
         Floors.toGround(s);
         if (todo.isEmpty()) {
+            st().tendAt = 0;   // the next farm's building starts its own clock
             if (f == 0 && !storageReady()) { st().next = takeNext("farm"); phase("storage"); }
             else phase(takeNext("farm"));
             return;
@@ -451,35 +454,59 @@ public final class Plan {
             }
         }
         // the chests right after the ground floor: what grows while the rest is built has somewhere to go
-        if (f == 0 && st().isBuilt(0, 0) && !storageReady()) {
-            if (st().next != null && !st().next.equals("build")) st().after = st().next;
-            st().next = "build";
+        // (when they cannot be put now, building goes on and they are tried again a while later)
+        if (f == 0 && st().isBuilt(0, 0) && !storageReady() && System.currentTimeMillis() - storageGaveUp > 15 * 60_000L) {
+            // a return already set (farm, both) comes back to building by itself while a floor is unbuilt
+            if (st().next == null) st().next = "build";
             phase("storage");
-            return;
-        }
-        // every ten minutes a harvest round over the floors already built: what is ripe is picked and planted on
-        // the empty rows, so the farm fills up floor by floor while the rest goes up
-        List<Integer> done = new ArrayList<>();
-        for (int k = 0; k < s.F; k++) if (st().isBuilt(f, k)) done.add(k);
-        long now = System.currentTimeMillis();
-        // the first time: right away when several floors already stand (plants on them may be ripe), else the
-        // clock starts now (the ground floor was just planted)
-        if (st().tendAt == 0 && !done.isEmpty()) { st().tendAt = done.size() > 1 ? 1 : now; State.save(); }
-        if (!done.isEmpty() && now - st().tendAt > cfg().harvestEveryMinutes * 60_000L && Ctl.freeSlots() > 3) {
-            st().tendAt = now;   // a round cut short (a fight, a restart) is not begun again at once
-            State.save();
-            Bot.INSTANCE.stage("Собираю урожай и сажаю");
-            Floors.Result r = Floors.trip(s, f, done, Floors.Mode.TEND);
-            st().harvested += r.harvested;
-            BotClient.LOGGER.info("[bot] обход: собрал {}, посадил {}", r.harvested, r.planted);
-            if (storageReady()) store();   // more than is needed for planting goes into the chests
-            // the clock starts when the round is over: a long round on many floors is followed by building
-            st().tendAt = System.currentTimeMillis();
-            State.save();
             return;
         }
         Bot.INSTANCE.stage("Строю ферму " + (f == 0 ? "ягод" : "бамбука"));
         Floors.trip(s, f, todo, Floors.Mode.BUILD);
+    }
+
+    /**
+     * While a farm is being built: every harvestEveryMinutes a round over the floors already built. What is ripe
+     * is picked (only as much as the empty rows still need) and planted on the empty rows, lowest floor first, so
+     * the farm fills up floor by floor while the rest goes up. Bamboo is cut above its first piece and grows back.
+     * True if a round was made.
+     */
+    static boolean tendWhileBuilding(Site s, int f) {
+        int every = cfg().harvestEveryMinutes;
+        if (every <= 0) return false;
+        List<Integer> done = new ArrayList<>();
+        for (int k = 0; k < s.F; k++) if (st().isBuilt(f, k)) done.add(k);
+        if (done.isEmpty()) return false;
+        long now = System.currentTimeMillis();
+        // the first time: right away when several floors already stand (plants on them may be ripe); else the
+        // clock starts now (the ground floor was just planted)
+        if (st().tendAt == 0) { st().tendAt = done.size() > 1 ? 1 : now; State.save(); }
+        if (now - st().tendAt < every * 60_000L || Ctl.freeSlots() < 6) return false;
+        st().tendAt = now;   // a round cut short (a fight, a restart) is not begun again at once
+        State.save();
+        // the floors with empty rows, and how many plants they need: none, no round (until a new floor stands)
+        int[] empty = Floors.emptyRows(s, f, done);
+        int need = 0, top = -1;
+        for (int i = 0; i < done.size(); i++) if (empty[i] > 0) { need += empty[i]; top = done.get(i); }
+        if (need == 0) return false;
+        if (!goFarm()) return false;
+        Floors.toGround(s);
+        List<Integer> floors = new ArrayList<>();
+        for (int k : done) if (k <= top) floors.add(k);   // the floors above the last empty row are not walked
+        Bot.INSTANCE.stage("Собираю урожай и сажаю");
+        Floors.Result r;
+        Floors.harvestCap = need + 32;
+        try {
+            r = Floors.trip(s, f, floors, Floors.Mode.TEND);
+        } finally {
+            Floors.harvestCap = Integer.MAX_VALUE;
+        }
+        st().harvested += r.harvested;
+        BotClient.LOGGER.info("[bot] обход: собрал {}, посадил {} (пустых грядок было {})", r.harvested, r.planted, need);
+        if (storageReady()) store();   // what is more than is kept for planting goes into the chests
+        st().tendAt = System.currentTimeMillis();   // the next round counts from the end of this one
+        State.save();
+        return true;
     }
 
     // ------------------------------------------------------------------ 4. storage
@@ -501,6 +528,8 @@ public final class Plan {
     }
 
     static final Map<Integer, Integer> storageFails = new HashMap<>();
+    /** When the storage could not be finished while the farm was being built (building went on). */
+    static long storageGaveUp;
 
     /** Puts an item, clearing once whatever (not a container) is between the eye and the face. */
     static boolean placeClearing(BlockPos target, String item, BlockPos ref) {
@@ -550,6 +579,14 @@ public final class Plan {
         if (storageReady()) {
             lightStorage(s);
             phase(takeNext("farm"));
+            return;
+        }
+        if ("build".equals(st().next)) {
+            // the farm is still being built: building does not need the chests, it goes on (tried again later)
+            storageGaveUp = System.currentTimeMillis();
+            st().noMoreChests = false;   // the next try looks in the stash again
+            BotClient.LOGGER.info("[bot] хранилище пока не поставить — строю дальше");
+            phase(takeNext("build"));
             return;
         }
         // not a single chest could be put: tell it and wait (the owner brings chests or frees the place)

@@ -126,6 +126,7 @@ public final class State {
         ever = new HashMap<>();
         digTurn = 0;
         digRing = 0;
+        tendAt = 0;
     }
 
     public void unmarkBuilt(int f, int k) {

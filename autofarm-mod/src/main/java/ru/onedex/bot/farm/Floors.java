@@ -341,7 +341,11 @@ public final class Floors {
             blocked = true;
             if (full) r.full = true;
             if (noBlocks) r.noBlocks = true;
-            if (!full && !noBlocks) r.stuck = true;
+            if (!full && !noBlocks) {
+                r.stuck = true;
+                BotClient.LOGGER.info("[bot] этаж {}: не прошёл дальше (я на {}, {})", k + 1, Ctl.pos().subtract(s.farmX(f), L + 1, s.z),
+                        new Throwable().getStackTrace()[1]);
+            }
             return false;
         }
 
@@ -376,6 +380,11 @@ public final class Floors {
                 if (mode == Mode.TEND && Ctl.freeSlots() < 2) return stop(true, false);
             }
             return !blocked;
+        }
+
+        void planted() {
+            r.planted++;
+            if (harvestCap != Integer.MAX_VALUE) harvestCap--;
         }
 
         static boolean crop(String n) { return n.equals("sweet_berry_bush") || n.startsWith("bamboo"); }
@@ -425,19 +434,20 @@ public final class Floors {
                         String up = Ctl.name(top.up());
                         if (mode == Mode.TEND && here.equals("bamboo") && up.equals("bamboo")) {
                             // cut above the first piece: the plant grows back by itself
-                            if (Ctl.mine(top.up())) r.harvested++;
+                            if (Ctl.count("bamboo") < harvestCap && Ctl.mine(top.up())) r.harvested++;
                         } else if (air(here) && Ctl.count("bamboo") > 0) {
-                            if (Ctl.place(top, "bamboo", top.down())) r.planted++;
+                            if (Ctl.place(top, "bamboo", top.down())) planted();
                         }
                     } else {
                         if (mode == Mode.TEND && here.equals("sweet_berry_bush")) {
+                            if (Ctl.count("sweet_berries") >= harvestCap) continue;
                             int age = Ctl.direct(() -> {
                                 BlockState st = Ctl.world().getBlockState(top);
                                 return st.contains(Properties.AGE_3) ? st.get(Properties.AGE_3) : 0;
                             });
                             if (age >= 2) { Ctl.use(top); Ctl.ticks(2); r.harvested++; }
                         } else if (air(here) && !here.equals("sweet_berry_bush") && Ctl.count("sweet_berries") > 0) {
-                            if (Ctl.place(top, "sweet_berries", top.down())) r.planted++;
+                            if (Ctl.place(top, "sweet_berries", top.down())) planted();
                         }
                     }
                 } else if (s.isTorch(x, z) && air(here) && Ctl.count("torch") > 0) {
@@ -543,15 +553,43 @@ public final class Floors {
         });
     }
 
-    /** Where the last trip stopped because of a full bag / no blocks: the next one goes on from there. */
-    static int[] resume;   // {farm, k, lane, mode}
+    /**
+     * Where the last trip stopped because of a full bag / no blocks: the next one of the same kind goes on from
+     * there. One per mode: building and harvest rounds take turns and must not lose each other's place.
+     */
+    static final int[][] resume = new int[Mode.values().length][];   // {farm, k, lane}
+
+    /**
+     * A harvest round while the farm is built picks only what the empty rows still need (plus a little): the
+     * plants in the bag are kept below this. Each plant put on a row lowers it. No limit otherwise.
+     */
+    static int harvestCap = Integer.MAX_VALUE;
+
+    /** For each of these floors: the row cells with soil under them and nothing planted (grass counts as empty). */
+    public static int[] emptyRows(Site s, int f, List<Integer> floors) {
+        return Ctl.direct(() -> {
+            int[] out = new int[floors.size()];
+            for (int i = 0; i < floors.size(); i++) {
+                int L = s.floorY(f, floors.get(i));
+                for (int dx = 0; dx < s.W; dx++) for (int dz = 0; dz < s.L; dz++) {
+                    if (!s.isRow(dx, dz)) continue;
+                    BlockPos p = new BlockPos(s.farmX(f) + dx, L, s.z + dz);
+                    if (!SOIL.matcher(Ctl.blockName(Ctl.world().getBlockState(p))).matches()) continue;
+                    String n = Ctl.blockName(Ctl.world().getBlockState(p.up()));
+                    if (air(n) || (foreign(n) && !Pass.crop(n))) out[i]++;
+                }
+            }
+            return out;
+        });
+    }
 
     /** One trip up the column: the given floors from the bottom up, then down again. */
     public static Result trip(Site s, int f, List<Integer> floors, Mode mode) {
         Result total = new Result();
         List<Integer> order = new ArrayList<>(floors);
         order.sort(Integer::compare);
-        int[] r = resume != null && resume[0] == f && resume[3] == mode.ordinal() && order.contains(resume[1]) ? resume : null;
+        int m = mode.ordinal();
+        int[] r = resume[m] != null && resume[m][0] == f && order.contains(resume[m][1]) ? resume[m] : null;
         if (r != null) {
             // from the floor where we stopped up; the floors below come on the next trip (we only climb up)
             List<Integer> o2 = new ArrayList<>();
@@ -580,8 +618,8 @@ public final class Floors {
             if (mode == Mode.BUILD && (k > 0 || p.r.finished) && floorDone(s, f, k)) State.get().markBuilt(f, k);
             // a hole that could not be mended while farming: the floor is built again (with a bag of blocks)
             if (mode == Mode.TEND && p.r.hole) State.get().unmarkBuilt(f, k);
-            if (p.r.finished) { if (resume != null && resume[1] == k) resume = null; }
-            else if (p.r.full || p.r.noBlocks) resume = new int[]{f, k, p.r.lane, mode.ordinal()};
+            if (p.r.finished) { if (resume[m] != null && resume[m][1] == k) resume[m] = null; }
+            else if (p.r.full || p.r.noBlocks) resume[m] = new int[]{f, k, p.r.lane};
             if (p.r.full) total.full = true;
             if (p.r.noBlocks) { total.noBlocks = true; break; }
             if (p.r.full) break;
