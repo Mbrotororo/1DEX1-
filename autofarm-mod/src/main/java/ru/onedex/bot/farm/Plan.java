@@ -483,7 +483,11 @@ public final class Plan {
         // the first time: right away when several floors already stand (plants on them may be ripe); else the
         // clock starts now (the ground floor was just planted)
         if (st().tendAt == 0) { st().tendAt = done.size() > 1 ? 1 : now; State.save(); }
-        if (now - st().tendAt < every * 60_000L || Ctl.freeSlots() < 6) return false;
+        if (now - st().tendAt < every * 60_000L) return false;
+        // what the round can put on the rows: the plants in the bag, and what fits in it with room left for the
+        // dirt that comes next. Too little: later, when the blocks in the bag are used up
+        int fits = Ctl.count(s.plant(f)) + Math.max(0, Ctl.freeSlots() - 8) * 64;
+        if (fits < 32) return false;
         // the rows are read at the farm: from the stash its chunks are not loaded (a failed teleport: next call)
         if (!goFarm()) return false;
         st().tendAt = now;   // a round cut short (a fight, a restart) is not begun again at once
@@ -498,9 +502,7 @@ public final class Plan {
         for (int k : done) if (k <= top) floors.add(k);   // the floors above the last empty row are not walked
         Bot.INSTANCE.stage("Собираю урожай и сажаю");
         Floors.Result r;
-        // only what the empty rows need, and never more than fits with room left for the dirt that comes next
-        int fits = Ctl.count(s.plant(f)) + Math.max(0, Ctl.freeSlots() - 8) * 64;
-        Floors.harvestCap = Math.min(need + 32, fits);
+        Floors.harvestCap = Math.min(need + 32, fits);   // only what the empty rows need, and what fits
         try {
             r = Floors.trip(s, f, floors, Floors.Mode.TEND);
         } finally {
