@@ -283,6 +283,7 @@ public final class Bot {
                 }
             }
             if (shooter != null) {
+                BotClient.LOGGER.info("[bot] в меня стреляют — бегу к {} ({} блоков)", shooter.getType().getName().getString(), (int) best);
                 chaseSince = now;
                 chaseSeen = now;
                 mc.interactionManager.cancelBlockBreaking();
