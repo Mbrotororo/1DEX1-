@@ -597,6 +597,10 @@ public final class Floors {
             order = o2;
         }
         for (int k : order) {
+            // a harvest round while building: once the bag holds what the empty rows need, a floor with nothing
+            // to plant on is not walked
+            if (mode == Mode.TEND && harvestCap != Integer.MAX_VALUE && Ctl.count(s.plant(f)) >= harvestCap
+                    && emptyRows(s, f, List.of(k))[0] == 0) continue;
             Bot.INSTANCE.stage((mode == Mode.BUILD ? "Строю этаж " : "Фармлю этаж ") + (k + 1));
             Pass p = new Pass(s, f, k, mode);
             if (r != null && r[1] == k) p.startLane = r[2];
