@@ -10,6 +10,7 @@ import net.minecraft.registry.Registries;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction;
@@ -40,7 +41,7 @@ public final class Ctl {
 
     // ------------------------------------------------------------------ thread bridge
     public static void check() {
-        if (!Bot.INSTANCE.running()) throw new Stopped();
+        if (!Bot.INSTANCE.running() || Thread.currentThread() != Bot.INSTANCE.thread()) throw new Stopped();
     }
 
     /** Runs on the game thread and waits for the result. */
@@ -73,12 +74,18 @@ public final class Ctl {
         }
     }
 
-    /** Waits n game ticks (20 per second). */
+    /** Waits n game ticks (20 per second). Ticks spent fighting a monster do not count: the plan just pauses. */
     public static void ticks(int n) {
-        long target = Bot.INSTANCE.tickCount() + Math.max(1, n);
-        while (Bot.INSTANCE.tickCount() < target) {
+        int left = Math.max(1, n);
+        long last = Bot.INSTANCE.tickCount();
+        while (left > 0 || Move.busy()) {
             check();
             try { Thread.sleep(10); } catch (InterruptedException e) { throw new Stopped(); }
+            long now = Bot.INSTANCE.tickCount();
+            if (now != last) {
+                if (!Move.busy()) left -= (int) (now - last);
+                last = now;
+            }
         }
     }
 
@@ -115,8 +122,6 @@ public final class Ctl {
             int n = 0;
             var inv = player().getInventory();
             for (int i = 0; i < 36; i++) { ItemStack s = inv.getStack(i); if (itemName(s).equals(item)) n += s.getCount(); }
-            ItemStack off = inv.getStack(40);
-            if (itemName(off).equals(item)) n += off.getCount();
             return n;
         });
     }
@@ -144,8 +149,25 @@ public final class Ctl {
     /** Screen-handler slot id of an inventory slot (player's own inventory screen). */
     private static int handlerSlot(int invSlot) { return invSlot < 9 ? 36 + invSlot : invSlot; }
 
-    /** Puts an item matching `test` into the hand (moves it to the hotbar if needed). The best one first. */
-    public static boolean hold(Predicate<String> test, Comparator<ItemStack> prefer) {
+    /** Closes a chest or menu that is still open (inventory clicks of our own bag need it closed). */
+    public static void closeScreen() {
+        boolean open = call(() -> player().currentScreenHandler != player().playerScreenHandler
+                || mc().currentScreen instanceof net.minecraft.client.gui.screen.ingame.HandledScreen<?>);
+        if (!open) return;
+        run(() -> {
+            ClientPlayerEntity p = player();
+            if (p.currentScreenHandler != p.playerScreenHandler) p.closeHandledScreen();
+            if (mc().currentScreen instanceof net.minecraft.client.gui.screen.ingame.HandledScreen<?>) mc().setScreen(null);
+        });
+        ticks(2);
+    }
+
+    /**
+     * Puts an item matching `test` into the hand (moves it to the hotbar if needed). The best one first.
+     * 0 = not there, 1 = it was already in the hotbar, 2 = it was moved there from the bag.
+     */
+    private static int take(Predicate<String> test, Comparator<ItemStack> prefer) {
+        closeScreen();
         return call(() -> {
             ClientPlayerEntity p = player();
             var inv = p.getInventory();
@@ -155,19 +177,26 @@ public final class Ctl {
                 if (s.isEmpty() || !test.test(itemName(s))) continue;
                 if (best < 0 || (prefer != null && prefer.compare(s, inv.getStack(best)) > 0)) best = i;
             }
-            if (best < 0) return false;
-            if (best < 9) { inv.setSelectedSlot(best); return true; }
+            if (best < 0) return 0;
+            if (best < 9) { inv.setSelectedSlot(best); return 1; }
             int hb = inv.getSelectedSlot();
             mc().interactionManager.clickSlot(p.playerScreenHandler.syncId, handlerSlot(best), hb, SlotActionType.SWAP, p);
-            return true;
+            return 2;
         });
+    }
+
+    public static boolean hold(Predicate<String> test, Comparator<ItemStack> prefer) {
+        int r = take(test, prefer);
+        if (r == 2) ticks(1);   // the swap reaches the server before the item is used
+        return r > 0;
     }
 
     public static boolean hold(String item) { return hold(n -> n.equals(item), null); }
 
-    /** The best tool for a block in the hand (by mining speed), or nothing special. */
-    public static void holdBestFor(BlockPos pos) {
-        run(() -> {
+    /** The best tool for a block in the hand (by mining speed), or nothing special. True if the hand changed. */
+    public static boolean holdBestFor(BlockPos pos) {
+        closeScreen();
+        return call(() -> {
             ClientPlayerEntity p = player();
             BlockState st = world().getBlockState(pos);
             var inv = p.getInventory();
@@ -179,24 +208,49 @@ public final class Ctl {
                 float sp = s.getMiningSpeedMultiplier(st);
                 if (sp > bestSpeed) { bestSpeed = sp; best = i; }
             }
-            if (best < 0) return;
+            if (best < 0 || best == inv.getSelectedSlot()) return false;
             if (best < 9) inv.setSelectedSlot(best);
             else mc().interactionManager.clickSlot(p.playerScreenHandler.syncId, handlerSlot(best), inv.getSelectedSlot(), SlotActionType.SWAP, p);
+            return true;
         });
     }
 
-    /** Throws away all items with these names. */
-    public static void toss(Predicate<String> test) {
-        run(() -> {
-            ClientPlayerEntity p = player();
-            var inv = p.getInventory();
-            for (int i = 0; i < 36; i++) {
-                ItemStack s = inv.getStack(i);
-                if (!s.isEmpty() && test.test(itemName(s))) {
-                    mc().interactionManager.clickSlot(p.playerScreenHandler.syncId, handlerSlot(i), 1, SlotActionType.THROW, p);
-                }
-            }
-        });
+    /** Throws away whole stacks of items with these names, one by one like a player. Returns how many stacks. */
+    public static int toss(Predicate<String> test) {
+        closeScreen();
+        int n = 0;
+        for (int i = 0; i < 36; i++) {
+            final int slot = i;
+            boolean thrown = call(() -> {
+                ClientPlayerEntity p = player();
+                ItemStack s = p.getInventory().getStack(slot);
+                if (s.isEmpty() || !test.test(itemName(s))) return false;
+                mc().interactionManager.clickSlot(p.playerScreenHandler.syncId, handlerSlot(slot), 1, SlotActionType.THROW, p);
+                return true;
+            });
+            if (thrown) { n++; ticks(2 + (i % 3)); }
+        }
+        return n;
+    }
+
+    /** Throws away stacks of one item until no more than `keep` (plus part of a stack) are left. */
+    public static void tossExcess(String item, int keep) {
+        closeScreen();
+        for (int i = 0; i < 36; i++) {
+            final int slot = i;
+            boolean thrown = call(() -> {
+                ClientPlayerEntity p = player();
+                var inv = p.getInventory();
+                ItemStack s = inv.getStack(slot);
+                if (!itemName(s).equals(item)) return false;
+                int total = 0;
+                for (int j = 0; j < 36; j++) if (itemName(inv.getStack(j)).equals(item)) total += inv.getStack(j).getCount();
+                if (total - s.getCount() < keep) return false;
+                mc().interactionManager.clickSlot(p.playerScreenHandler.syncId, handlerSlot(slot), 1, SlotActionType.THROW, p);
+                return true;
+            });
+            if (thrown) ticks(2 + (i % 3));
+        }
     }
 
     // ------------------------------------------------------------------ looking and walking
@@ -216,11 +270,14 @@ public final class Ctl {
     /** Walks straight to the middle of a cell (on the same level). Sneaking keeps it from falling off edges. */
     public static boolean stepTo(BlockPos cell, boolean sneak) {
         Bot.INSTANCE.act("шаг " + cell.toShortString());
+        boolean wasSneaking = Move.sneaking();
         Move.sneak(sneak);
         Move.walkTo(Vec3d.ofBottomCenter(cell), 0.2);
         int t = 0;
         while (Move.walking() && t++ < 100) ticks(1);
         Move.stopWalking();
+        // let the speed die down before the ledge guard goes, or the last bit of it carries us over the edge
+        if (sneak || wasSneaking) ticks(2);
         Move.sneak(false);
         ticks(1);
         Vec3d p = pos();
@@ -273,7 +330,7 @@ public final class Ctl {
         if (world().getBlockState(p).isAir()) return false;
         if (reach(p) > 5.0) return false;
         Bot.INSTANCE.act("копаю " + p.toShortString());
-        holdBestFor(p);
+        if (holdBestFor(p)) ticks(1);   // the server has to know the tool before the first hit
         lookAt(Vec3d.ofCenter(p));
         Vec3d eye = player().getEyePos();
         Direction face = Direction.getFacing(eye.x - (p.getX() + 0.5), eye.y - (p.getY() + 0.5), eye.z - (p.getZ() + 0.5));
@@ -300,45 +357,106 @@ public final class Ctl {
         return false;
     }
 
-    /** Puts an item (block, torch, seed) at `target`, clicking on the side of `ref`. */
-    public static boolean place(BlockPos target, String item, BlockPos ref) {
+    /** The middle of `face` of block `ref`. */
+    static Vec3d faceCenter(BlockPos ref, Direction face) {
+        return Vec3d.ofCenter(ref).add(face.getOffsetX() * 0.5, face.getOffsetY() * 0.5, face.getOffsetZ() * 0.5);
+    }
+
+    /** A player could click this face from here: the eye is in front of it and close enough. */
+    public static boolean canSeeFace(BlockPos ref, Direction face) {
+        Vec3d eye = player().getEyePos();
+        Vec3d c = faceCenter(ref, face);
+        double ahead = (eye.x - c.x) * face.getOffsetX() + (eye.y - c.y) * face.getOffsetY() + (eye.z - c.z) * face.getOffsetZ();
+        return ahead > 0.05 && eye.distanceTo(c) <= 4.4;
+    }
+
+    /** The block the crosshair was on after the last failed place() (something in the way), or null. */
+    public static volatile BlockPos lastObstacle;
+
+    /**
+     * Puts an item (block, torch, seed) at `target` by clicking the face of `ref` that touches it, the way a
+     * player does: only a face the eye can see, aimed at, with the click going where the crosshair really is.
+     * With `verify`, waits a moment so a block the server takes back is not walked on.
+     */
+    public static boolean place(BlockPos target, String item, BlockPos ref, boolean verify) {
+        lastObstacle = null;
+        Direction face = Direction.fromVector(target.getX() - ref.getX(), target.getY() - ref.getY(), target.getZ() - ref.getZ(), null);
+        if (face == null || !solid(ref) || !canSeeFace(ref, face)) return false;
         Bot.INSTANCE.act("ставлю " + item);
         if (!hold(item)) return false;
         String before = name(target);   // direct read
-        Direction face = Direction.fromVector(target.getX() - ref.getX(), target.getY() - ref.getY(), target.getZ() - ref.getZ(), null);
-        if (face == null) return false;
-        Vec3d hit = Vec3d.ofCenter(ref).add(face.getOffsetX() * 0.5, face.getOffsetY() * 0.5, face.getOffsetZ() * 0.5);
-        lookAt(hit);
+        Vec3d aim = faceCenter(ref, face);
+        lookAt(aim);
+        BlockHitResult hit = call(() -> {
+            HitResult h = player().raycast(4.5, 1.0f, false);
+            if (!(h instanceof BlockHitResult b) || b.getType() != HitResult.Type.BLOCK) return null;
+            if (!b.getBlockPos().equals(ref) || b.getSide() != face) { lastObstacle = b.getBlockPos(); return null; }
+            return b;
+        });
+        if (hit == null) return false;
         run(() -> {
-            mc().interactionManager.interactBlock(player(), Hand.MAIN_HAND, new BlockHitResult(hit, face, ref, false));
+            mc().interactionManager.interactBlock(player(), Hand.MAIN_HAND, hit);
             player().swingHand(Hand.MAIN_HAND);
         });
         for (int t = 0; t < 6; t++) {
             ticks(1);
-            if (!name(target).equals(before)) return true;
+            if (!name(target).equals(before)) {
+                if (!verify) return true;
+                ticks(3);
+                return !name(target).equals(before);
+            }
         }
         return false;
     }
 
-    /** Puts a block on any solid neighbour of `target`. */
+    public static boolean place(BlockPos target, String item, BlockPos ref) { return place(target, item, ref, false); }
+
+    /** Puts a block against any neighbour of `target` whose face we can see from here. */
     public static boolean placeAny(BlockPos target, String item) {
         if (solid(target)) return true;
         for (Direction d : new Direction[]{Direction.DOWN, Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST, Direction.UP}) {
             BlockPos ref = target.offset(d);
-            if (solid(ref) && place(target, item, ref)) return true;
+            if (solid(ref) && canSeeFace(ref, d.getOpposite()) && place(target, item, ref)) return true;
         }
         return false;
     }
 
-    /** Uses (right-clicks) a block: picks berries, opens chests. */
+    /**
+     * Sneaks to the edge of the block we stand on, toward `dir`, until the eye is past that side of it:
+     * from there its side face can be clicked like a player bridging. Stays sneaking.
+     */
+    public static boolean edgeToward(BlockPos below, Direction dir) {
+        Vec3d face = faceCenter(below, dir);
+        Vec3d goal = Vec3d.ofBottomCenter(below.up()).add(dir.getOffsetX() * 1.2, 0, dir.getOffsetZ() * 1.2);
+        Move.sneak(true);
+        Move.walkTo(goal, 0.05);
+        double over = 0;
+        for (int t = 0; t < 40; t++) {
+            ticks(1);
+            Vec3d p = pos();
+            over = (p.x - face.x) * dir.getOffsetX() + (p.z - face.z) * dir.getOffsetZ();
+            if (over > 0.15) break;
+        }
+        Move.stopWalking();
+        ticks(2);
+        Vec3d p = pos();
+        over = (p.x - face.x) * dir.getOffsetX() + (p.z - face.z) * dir.getOffsetZ();
+        return over > 0.06;
+    }
+
+    /** Uses (right-clicks) a block: picks berries, opens chests. Clicks where the crosshair really is on it. */
     public static void use(BlockPos p) {
         lookAt(Vec3d.ofCenter(p));
-        Direction face = call(() -> {
+        BlockHitResult hit = call(() -> {
+            HitResult h = player().raycast(4.5, 1.0f, false);
+            if (h instanceof BlockHitResult b && b.getType() == HitResult.Type.BLOCK && b.getBlockPos().equals(p)) return b;
+            // something small in the way: the side of the block that faces us, like the crosshair would give
             Vec3d eye = player().getEyePos();
-            return Direction.getFacing(eye.x - (p.getX() + 0.5), eye.y - (p.getY() + 0.5), eye.z - (p.getZ() + 0.5));
+            Direction face = Direction.getFacing(eye.x - (p.getX() + 0.5), eye.y - (p.getY() + 0.5), eye.z - (p.getZ() + 0.5));
+            return new BlockHitResult(faceCenter(p, face), face, p, false);
         });
         run(() -> {
-            mc().interactionManager.interactBlock(player(), Hand.MAIN_HAND, new BlockHitResult(Vec3d.ofCenter(p), face, p, false));
+            mc().interactionManager.interactBlock(player(), Hand.MAIN_HAND, hit);
             player().swingHand(Hand.MAIN_HAND);
         });
     }

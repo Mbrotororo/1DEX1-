@@ -3,10 +3,12 @@ package ru.onedex.bot.farm;
 import net.minecraft.block.BlockState;
 import net.minecraft.state.property.Properties;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 import ru.onedex.bot.BotClient;
 import ru.onedex.bot.bot.Bot;
 import ru.onedex.bot.bot.Ctl;
+import ru.onedex.bot.config.BotConfig;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -14,16 +16,23 @@ import java.util.regex.Pattern;
 
 /**
  * Up a column, walking the floors, down again.
- * The bot walks the walkways in straight lines one cell at a time (sneaking at the edges, so it never falls),
- * builds the floor under each cell (builder) or plants and harvests the rows on both sides (farmer).
+ * The bot walks the walkways in straight lines one cell at a time (sneaking at the edges, so it never falls).
+ * A missing block ahead is put the way a player bridges: sneak to the edge until the side of the block under
+ * us is in sight, click it, then step on. The cells on both sides are put against the cell built one step
+ * back, whose face is in sight from where we stand.
  */
 public final class Floors {
     private Floors() {}
 
     static final Pattern SOIL = Pattern.compile("^(dirt|grass_block|coarse_dirt|podzol|rooted_dirt|moss_block)$");
     static final Pattern WALK = Pattern.compile("^(dirt|grass_block|coarse_dirt|podzol|rooted_dirt|moss_block|cobblestone|cobbled_deepslate|stone|deepslate)$");
+    /** Somebody's things: never broken by the bot. */
+    static final Pattern CONTAINER = Pattern.compile(".*(chest|barrel|shulker_box|furnace|smoker|hopper|dispenser|dropper|brewing_stand|crafter|lectern|jukebox|decorated_pot|beacon|spawner).*");
 
     public static int blocks() { return Ctl.count("dirt") + Ctl.count("cobblestone"); }
+
+    static boolean air(String n) { return n.equals("air") || n.equals("cave_air") || n.equals("void_air"); }
+    static boolean container(String n) { return CONTAINER.matcher(n).matches(); }
 
     static boolean floorOk(Site s, int f, int dx, int dz, int y) {
         String n = Ctl.name(new BlockPos(s.farmX(f) + dx, y, s.z + dz));
@@ -32,11 +41,13 @@ public final class Floors {
 
     /** Solid but not ours (a bamboo stalk, leaves, a log) or a plant in the way. */
     static boolean foreign(String n) {
-        if (n.equals("air") || n.equals("cave_air") || n.contains("torch") || n.equals("water")) return false;
+        if (air(n) || n.contains("torch") || n.equals("water") || container(n)) return false;
         return !WALK.matcher(n).matches();
     }
 
     // ------------------------------------------------------------------ the column
+    static int shaftFails;
+
     static boolean onColumn(BlockPos s) {
         BlockPos f = Ctl.feet();
         return f.getX() == s.getX() && f.getZ() == s.getZ();
@@ -59,7 +70,7 @@ public final class Floors {
                 for (int y = g + 4; y >= g + 1; y--) {
                     BlockPos p = new BlockPos(c.getX() + dx, y, c.getZ());
                     String n = Ctl.name(p);
-                    if (!n.equals("air") && !n.equals("cave_air") && !n.contains("chest") && !n.contains("torch")) Ctl.mine(p);
+                    if (!air(n) && !container(n) && !n.contains("torch")) Ctl.mine(p);
                 }
             }
             Ctl.stepTo(new BlockPos(c.getX() - 1, g + 1, c.getZ()), false);
@@ -78,20 +89,23 @@ public final class Floors {
         while (Ctl.feet().getY() < target && guard++ < 120) {
             BlockPos head = Ctl.feet().up(2);
             if (Ctl.solid(head) && !Ctl.mine(head)) return false;
-            String mat = Ctl.count("dirt") > 0 ? "dirt" : (Ctl.count("cobblestone") > 0 ? "cobblestone" : null);
+            // cobblestone first: the dirt is for the rows
+            String mat = Ctl.count("cobblestone") > 0 ? "cobblestone" : (Ctl.count("dirt") > 0 ? "dirt" : null);
             if (mat == null) return false;
             boolean up = false;
             for (int t = 0; t < 8 && !up; t++) { up = Ctl.pillarUp(mat); if (!up) Ctl.ticks(5 + t * 2); }
             if (!up) return false;
         }
-        return Ctl.feet().getY() >= target;
+        return Ctl.feet().getY() == target;
     }
 
+    /** Along the walkways (the x = 0 line and the two end lines) back to the column on this floor. */
     static boolean walkHome(Site s, int f) {
         BlockPos c = s.shaft(f);
         BlockPos p = Ctl.feet();
         int y = p.getY();
         int[] d = {p.getX() - s.farmX(f), p.getZ() - s.z};
+        if (d[0] < 0 || d[0] >= s.W || d[1] < 0 || d[1] >= s.L) return onColumn(c);
         java.util.function.BiPredicate<Integer, Integer> walk = (tx, tz) -> {
             while (d[0] != tx || d[1] != tz) {
                 int nx = d[0] + Integer.signum(tx - d[0]), nz = d[1] + Integer.signum(tz - d[1]);
@@ -104,23 +118,33 @@ public final class Floors {
         if (d[0] != 0 && d[1] != 0 && d[1] != s.L - 1 && !walk.test(d[0], d[1] < s.L / 2 ? 0 : s.L - 1)) return false;
         if (!walk.test(0, d[1])) return false;
         if (!walk.test(0, c.getZ() - s.z)) return false;
-        Ctl.stepTo(new BlockPos(c.getX(), y, c.getZ()), true);
+        // after a fall to a lower floor the column itself stands here: open it and step in
+        BlockPos in = new BlockPos(c.getX(), y, c.getZ());
+        for (BlockPos q : new BlockPos[]{in.up(), in}) {
+            String n = Ctl.name(q);
+            if (!air(n) && !n.contains("torch") && !container(n)) Ctl.mine(q);
+        }
+        Ctl.stepTo(in, true);
         return onColumn(c);
     }
 
+    /** Down the column to the ground. Never digs through the farm: without the column, /home brings us down. */
     static void descend(Site s, int f) {
         BlockPos c = s.shaft(f);
-        if (!onColumn(c)) walkHome(s, f);
-        boolean onCol = onColumn(c);
-        if (!onCol) BotClient.LOGGER.info("[bot] не дошёл до столба, спускаюсь прямо вниз");
-        BlockPos p0 = Ctl.feet();
-        int stopY = onCol ? colBase(s, f) + 1 : s.ground(p0.getX(), p0.getZ()) + 1;
-        int guard = 0;
-        while (Ctl.feet().getY() > stopY && guard++ < 120) {
-            BlockPos p = Ctl.feet();
-            if (!onColumn(c) && s.isRow(p.getX() - s.farmX(f), p.getZ() - s.z)) Ctl.stepTo(p.add(-1, 0, 0), true);
-            if (!Ctl.digDown()) break;
+        int base = colBase(s, f) + 1;
+        if (Ctl.feet().getY() <= base) return;
+        for (int tries = 0; tries < 3 && !onColumn(c); tries++) {
+            if (walkHome(s, f)) break;
+            Ctl.ticks(10);
         }
+        if (!onColumn(c)) {
+            if (Ctl.feet().getY() <= s.y + 2) return;   // on the ground anyway
+            BotClient.LOGGER.info("[bot] не дошёл до столба, спускаюсь командой");
+            Ctl.teleport(BotConfig.get().farmCommand, 200);
+            return;
+        }
+        int guard = 0;
+        while (Ctl.feet().getY() > base && guard++ < 120) if (!Ctl.digDown()) break;
     }
 
     /** If we are up on a farm (after a restart), get down by the column. */
@@ -130,6 +154,30 @@ public final class Floors {
         int f = p.getX() >= s.farmX(1) - 2 ? 1 : 0;
         Bot.INSTANCE.stage("Спускаюсь");
         descend(s, f);
+    }
+
+    // ------------------------------------------------------------------ light under the farm
+    /**
+     * Torches on the ground under a farm, about 10 blocks apart: with no light there monsters would spawn
+     * under floor 0, right where /home g puts us. False if there are not enough torches for it.
+     */
+    static boolean lightGround(Site s, int f) {
+        List<BlockPos> spots = new ArrayList<>();
+        for (int dx = 4; dx < s.W; dx += 10)
+            for (int dz = 5; dz < s.L; dz += 12) {
+                int x = s.farmX(f) + dx, z = s.z + dz;
+                spots.add(new BlockPos(x, s.ground(x, z) + 1, z));
+            }
+        if (Ctl.count("torch") < spots.size()) return false;
+        Bot.INSTANCE.stage("Свечу под фермой");
+        for (BlockPos spot : spots) {
+            if (Ctl.name(spot).contains("torch")) continue;
+            if (!Ctl.goTo(spot, 2.5, 400)) continue;
+            String n = Ctl.name(spot);
+            if (!air(n) && !container(n) && !Ctl.solid(spot)) Ctl.mine(spot);   // grass or a flower on the spot
+            Ctl.place(spot, "torch", spot.down());
+        }
+        return true;
     }
 
     // ------------------------------------------------------------------ one pass over a floor
@@ -146,7 +194,7 @@ public final class Floors {
 
     public static final class Result {
         public int harvested, planted;
-        public boolean finished, full, noBlocks, stuck;
+        public boolean finished, full, noBlocks, stuck, hole;
         public int lane;
     }
 
@@ -154,7 +202,7 @@ public final class Floors {
         final Site s; final int f, k, L; final Mode mode; final String plant;
         final List<int[]> path = new ArrayList<>();
         final Result r = new Result();
-        boolean blocked;
+        boolean blocked, noMaterial;
         int startLane;
 
         Pass(Site s, int f, int k, Mode mode) {
@@ -173,21 +221,44 @@ public final class Floors {
             return Ctl.count("dirt") > 0 ? "dirt" : null;
         }
 
-        boolean placeFloor(int dx, int dz, int refDx, int refDz) {
+        /** While farming, blocks are spent on repairs only above what the climb to the top floor needs. */
+        boolean canSpare() {
+            return mode == Mode.BUILD || blocks() > 4 * (s.F - 1 - k) + 8;
+        }
+
+        /**
+         * Makes floor cell (dx, dz) right. `ref` is the neighbour whose face is clicked; with `bridge`, we
+         * first sneak to the edge of `ref` (the block under us) toward the cell, so that face is in sight.
+         */
+        boolean placeFloor(int dx, int dz, BlockPos ref, Direction bridge) {
             if (floorOk(s, f, dx, dz, L)) return true;
             BlockPos p = floor(dx, dz);
             String n = Ctl.name(p);
-            if (foreign(n)) Ctl.mine(p);
-            if (mode != Mode.BUILD && Ctl.count("dirt") < 24) return Ctl.solid(p);
+            if (container(n)) return false;
+            // anything that does not belong here goes: a plant, leaves, or stone / cobblestone in a row of soil
+            if (!air(n) && !n.equals("water") && (foreign(n) || s.isRow(dx, dz))) { Ctl.mine(p); n = Ctl.name(p); }
+            if (!air(n) && !n.equals("water")) return false;
             String mat = material(dx, dz);
-            if (mat == null) return false;
-            return Ctl.place(p, mat, floor(refDx, refDz)) || Ctl.placeAny(p, mat);
+            if (mat == null) { noMaterial = true; return false; }
+            if (!canSpare()) return false;
+            if (bridge != null) Ctl.edgeToward(ref, bridge);
+            if (ref != null && Ctl.solid(ref) && Ctl.place(p, mat, ref, bridge != null)) return true;
+            if (Ctl.placeAny(p, mat)) return true;
+            // a plant between the eye and the face: clear it and try once more
+            BlockPos ob = Ctl.lastObstacle;
+            if (ob != null && !ob.equals(ref) && foreign(Ctl.name(ob)) && Ctl.mine(ob)) {
+                if (ref != null && Ctl.solid(ref) && Ctl.place(p, mat, ref, bridge != null)) return true;
+                return Ctl.placeAny(p, mat);
+            }
+            return false;
         }
 
+        /** The two cells above a walkway cell must be free to walk there. */
         void clearWay(int dx, int dz) {
             for (int up = 1; up <= 2; up++) {
                 BlockPos p = floor(dx, dz).up(up);
-                if (foreign(Ctl.name(p))) Ctl.mine(p);
+                String n = Ctl.name(p);
+                if (!air(n) && !n.contains("torch") && !n.equals("water") && !container(n)) Ctl.mine(p);
             }
         }
 
@@ -200,7 +271,12 @@ public final class Floors {
         }
 
         boolean step(int dx, int dz, int fx, int fz) {
-            if (!placeFloor(dx, dz, fx, fz)) return stop(false, mode == Mode.BUILD);
+            Direction dir = Direction.fromVector(dx - fx, 0, dz - fz, null);
+            noMaterial = false;
+            if (!placeFloor(dx, dz, floor(fx, fz), dir)) {
+                if (mode == Mode.TEND) r.hole = true;
+                return stop(false, noMaterial);
+            }
             clearWay(dx, dz);
             if (!Ctl.stepTo(cell(dx, dz), edge(dx, dz))) return stop(false, false);
             path.add(new int[]{dx, dz});
@@ -214,17 +290,22 @@ public final class Floors {
                 int nx = x + sx, nz = z + sz;
                 if (!step(nx, nz, x, z)) return false;
                 x = nx; z = nz;
-                if (work) work(x, z);
-                if (Ctl.freeSlots() < 2) return stop(true, false);
+                if (work) work(x, z, sz);
+                // a full bag matters only while farming (building empties the bag)
+                if (mode == Mode.TEND && Ctl.freeSlots() < 2) return stop(true, false);
             }
             return !blocked;
         }
 
-        void work(int c, int z) {
+        /** The cells on both sides of the lane at row z (we came from z - dirZ), then plants and torches. */
+        void work(int c, int z, int dirZ) {
             for (int d : new int[]{-1, 1, -2, 2}) {
                 int x = c + d;
                 if (x < 0 || x >= s.W) continue;
-                placeFloor(x, z, c + Integer.signum(d) * (Math.abs(d) - 1), z);
+                noMaterial = false;
+                BlockPos ref = dirZ != 0 ? floor(x, z - dirZ) : null;
+                boolean ok = placeFloor(x, z, ref, null);
+                if (!ok && mode == Mode.BUILD && noMaterial && s.isRow(x, z)) { stop(false, true); return; }
             }
             for (int d = -2; d <= 2; d++) {
                 int x = c + d;
@@ -239,7 +320,7 @@ public final class Floors {
                         if (here.equals("bamboo") && up.equals("bamboo")) {
                             // cut above the first piece: the plant grows back by itself
                             if (Ctl.mine(top.up())) r.harvested++;
-                        } else if ((here.equals("air")) && Ctl.count("bamboo") > 0) {
+                        } else if (air(here) && Ctl.count("bamboo") > 0) {
                             if (Ctl.place(top, "bamboo", top.down())) r.planted++;
                         }
                     } else {
@@ -249,11 +330,11 @@ public final class Floors {
                                 return st.contains(Properties.AGE_3) ? st.get(Properties.AGE_3) : 0;
                             });
                             if (age >= 2) { Ctl.use(top); Ctl.ticks(2); r.harvested++; }
-                        } else if (here.equals("air") && Ctl.count("sweet_berries") > 0) {
+                        } else if (air(here) && Ctl.count("sweet_berries") > 0) {
                             if (Ctl.place(top, "sweet_berries", top.down())) r.planted++;
                         }
                     }
-                } else if (s.isTorch(x, z) && here.equals("air") && Ctl.count("torch") > 0) {
+                } else if (s.isTorch(x, z) && air(here) && Ctl.count("torch") > 0) {
                     Ctl.place(top, "torch", top.down());
                 }
             }
@@ -262,11 +343,13 @@ public final class Floors {
         void run() {
             BlockPos col = s.shaft(f);
             int entryDz = col.getZ() - s.z;
-            BlockPos entry = floor(0, entryDz);
-            if (!Ctl.solid(entry)) {
-                if (mode != Mode.BUILD) { stop(false, false); return; }
-                String mat = material(0, entryDz);
-                if (mat == null || !Ctl.place(entry, mat, new BlockPos(col.getX(), L, col.getZ()))) { stop(false, true); return; }
+            BlockPos colTop = new BlockPos(col.getX(), L, col.getZ());
+            noMaterial = false;
+            if (!placeFloor(0, entryDz, colTop, Direction.EAST)) {
+                if (mode == Mode.TEND) r.hole = true;
+                stop(false, noMaterial);
+                Ctl.stepTo(new BlockPos(col.getX(), L + 1, col.getZ()), true);   // back to the middle of the column
+                return;
             }
             if (!Ctl.stepTo(cell(0, entryDz), true)) { stop(false, false); return; }
             path.add(new int[]{0, entryDz});
@@ -275,25 +358,34 @@ public final class Floors {
             int x = 0, z = entryDz;
             int zStart = from % 2 == 0 ? 0 : s.L - 1;
             if (line(x, z, 0, zStart, false)) z = zStart;
-            for (int li = from; li < lanes.size(); li++) {
+            for (int li = from; li < lanes.size() && !blocked; li++) {
                 int c = lanes.get(li);
                 r.lane = li;
-                if (blocked) break;
+                // along the end line two cells past the lane and back: the end-line cells beside the lane are
+                // then built by walking (they have no built neighbour behind them to click)
+                int ext = Math.min(c + 2, s.W - 1);
+                if (!line(x, z, ext, z, false)) break;
+                x = ext;
                 if (!line(x, z, c, z, false)) break;
                 x = c;
-                work(c, z);
+                work(c, z, 0);
+                if (blocked) break;
                 int zEnd = z == 0 ? s.L - 1 : 0;
                 if (!line(c, z, c, zEnd, true)) break;
                 z = zEnd;
                 if (li == lanes.size() - 1) r.finished = true;
             }
-            // back along our own steps to the column
-            for (int i = path.size() - 2; i >= 0; i--) {
-                int[] p = path.get(i);
-                if (!Ctl.stepTo(cell(p[0], p[1]), true)) break;
+            // back to the column: the short way along the walkways when the floor is whole,
+            // otherwise along our own steps (we know they hold)
+            boolean home = r.finished && walkHome(s, f);
+            if (!home) {
+                for (int i = path.size() - 2; i >= 0; i--) {
+                    int[] p = path.get(i);
+                    if (!Ctl.stepTo(cell(p[0], p[1]), true)) break;
+                }
+                Ctl.stepTo(new BlockPos(col.getX(), L + 1, col.getZ()), true);
+                if (!onColumn(col)) walkHome(s, f);
             }
-            Ctl.stepTo(new BlockPos(col.getX(), L + 1, col.getZ()), true);
-            if (!onColumn(col)) walkHome(s, f);
         }
     }
 
@@ -314,14 +406,15 @@ public final class Floors {
     /** One trip up the column: the given floors from the bottom up, then down again. */
     public static Result trip(Site s, int f, List<Integer> floors, Mode mode) {
         Result total = new Result();
-        if (!toShaftBottom(s, f)) { total.stuck = true; return total; }
+        if (!toShaftBottom(s, f)) { total.stuck = true; shaftFails++; return total; }
+        shaftFails = 0;
         List<Integer> order = new ArrayList<>(floors);
         order.sort(Integer::compare);
         int[] r = resume != null && resume[0] == f && resume[3] == mode.ordinal() && order.contains(resume[1]) ? resume : null;
         if (r != null) {
+            // from the floor where we stopped up; the floors below come on the next trip (we only climb up)
             List<Integer> o2 = new ArrayList<>();
             for (int k : order) if (k >= r[1]) o2.add(k);
-            for (int k : order) if (k < r[1]) o2.add(k);
             order = o2;
         }
         for (int k : order) {
@@ -333,11 +426,17 @@ public final class Floors {
             total.harvested += p.r.harvested;
             total.planted += p.r.planted;
             if (mode == Mode.BUILD && floorDone(s, f, k)) State.get().markBuilt(f, k);
+            // a hole that could not be mended while farming: the floor is built again (with a bag of blocks)
+            if (mode == Mode.TEND && p.r.hole) State.get().unmarkBuilt(f, k);
             if (p.r.finished) { if (resume != null && resume[1] == k) resume = null; }
             else if (p.r.full || p.r.noBlocks) resume = new int[]{f, k, p.r.lane, mode.ordinal()};
             if (p.r.full) total.full = true;
             if (p.r.noBlocks) { total.noBlocks = true; break; }
-            if (p.r.full || p.r.stuck) break;
+            if (p.r.full) break;
+            if (p.r.stuck) {
+                total.stuck = true;
+                if (!onColumn(s.shaft(f))) break;   // could not get back to the column: no higher floors now
+            }
         }
         descend(s, f);
         return total;

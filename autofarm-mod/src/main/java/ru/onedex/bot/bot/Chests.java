@@ -62,33 +62,46 @@ public final class Chests {
         });
     }
 
+    private static int clicks;
+
+    /** A pause between two clicks, about as quick as a player shift-clicking (not every click the same). */
+    private static void pause() { Ctl.ticks(2 + (clicks++ * 7 % 3)); }
+
+    /** This window is still the one open (a click into a closed or replaced window goes nowhere). */
+    private static boolean stillOpen(ScreenHandler h) {
+        return Ctl.call(() -> Ctl.player().currentScreenHandler == h);
+    }
+
     /** Puts matching items from the bag into the chest, leaving `keep` of each in the bag. Returns how many went in. */
     public static int deposit(GenericContainerScreenHandler h, Predicate<String> test, Map<String, Integer> keep) {
         int moved = 0;
         for (int pass = 0; pass < 2; pass++) {
-            int[] r = Ctl.call(() -> {
-                ClientPlayerEntity p = Ctl.player();
-                int n = h.getRows() * 9;
-                Map<String, Integer> have = new HashMap<>();
-                for (int i = n; i < n + 36; i++) {
+            boolean any = false;
+            for (int k = 0; k < 36; k++) {
+                if (!stillOpen(h)) return moved;
+                final int slotInBag = k;
+                int done = Ctl.call(() -> {
+                    ClientPlayerEntity p = Ctl.player();
+                    int n = h.getRows() * 9;
+                    int i = n + slotInBag;
                     ItemStack s = h.getSlot(i).getStack();
-                    if (!s.isEmpty()) have.merge(Ctl.itemName(s), s.getCount(), Integer::sum);
-                }
-                int done = 0;
-                for (int i = n; i < n + 36; i++) {
-                    ItemStack s = h.getSlot(i).getStack();
-                    if (s.isEmpty()) continue;
+                    if (s.isEmpty()) return 0;
                     String name = Ctl.itemName(s);
-                    if (!test.test(name)) continue;
-                    int k = keep == null ? 0 : keep.getOrDefault(name, 0);
-                    if (have.get(name) - s.getCount() < k) continue;   // this stack is part of what we keep
-                    have.merge(name, -s.getCount(), Integer::sum);
-                    done += s.getCount();
+                    if (!test.test(name)) return 0;
+                    int have = 0;
+                    for (int j = n; j < n + 36; j++) {
+                        ItemStack o = h.getSlot(j).getStack();
+                        if (!o.isEmpty() && Ctl.itemName(o).equals(name)) have += o.getCount();
+                    }
+                    int keepN = keep == null ? 0 : keep.getOrDefault(name, 0);
+                    if (have - s.getCount() < keepN) return 0;   // this stack is part of what we keep
+                    int c = s.getCount();
                     Ctl.mc().interactionManager.clickSlot(h.syncId, i, 0, SlotActionType.QUICK_MOVE, p);
-                }
-                return new int[]{done};
-            });
-            moved += r[0];
+                    return c;
+                });
+                if (done > 0) { moved += done; any = true; pause(); }
+            }
+            if (!any) break;
             Ctl.ticks(3);
         }
         return moved;
@@ -96,16 +109,23 @@ public final class Chests {
 
     /** Takes matching items out of the chest, up to `want` in total (whole stacks). Returns how many came out. */
     public static int withdraw(GenericContainerScreenHandler h, Predicate<String> test, int want) {
-        return Ctl.call(() -> {
-            ClientPlayerEntity p = Ctl.player();
-            int n = h.getRows() * 9, got = 0;
-            for (int i = 0; i < n && got < want; i++) {
-                ItemStack s = h.getSlot(i).getStack();
-                if (s.isEmpty() || !test.test(Ctl.itemName(s))) continue;
-                got += s.getCount();
-                Ctl.mc().interactionManager.clickSlot(h.syncId, i, 0, SlotActionType.QUICK_MOVE, p);
-            }
-            return got;
-        });
+        int got = 0;
+        int n = Ctl.call(() -> h.getRows() * 9);
+        for (int i = 0; i < n && got < want; i++) {
+            if (!stillOpen(h)) break;
+            final int slot = i;
+            int c = Ctl.call(() -> {
+                ItemStack s = h.getSlot(slot).getStack();
+                if (s.isEmpty() || !test.test(Ctl.itemName(s))) return 0;
+                // the bag must have room for it, or the click just does nothing
+                if (Ctl.player().getInventory().getEmptySlot() < 0) return -1;
+                int k = s.getCount();
+                Ctl.mc().interactionManager.clickSlot(h.syncId, slot, 0, SlotActionType.QUICK_MOVE, Ctl.player());
+                return k;
+            });
+            if (c < 0) break;
+            if (c > 0) { got += c; pause(); }
+        }
+        return got;
     }
 }

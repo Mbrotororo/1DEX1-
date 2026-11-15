@@ -38,7 +38,10 @@ public final class Path {
         if (bad(Ctl.blockName(s))) return false;
         if (!s.getFluidState().isEmpty()) return false;
         var shape = s.getCollisionShape(w, p);
-        return !shape.isEmpty() && shape.getMax(Direction.Axis.Y) >= 0.5;
+        if (shape.isEmpty()) return false;
+        double top = shape.getMax(Direction.Axis.Y);
+        // fences, walls and closed gates are 1.5 high: nobody can jump onto them
+        return top >= 0.5 && top <= 1.0;
     }
 
     static boolean standable(ClientWorld w, BlockPos p) {

@@ -2,6 +2,7 @@ package ru.onedex.bot.farm;
 
 import net.minecraft.block.BlockState;
 import net.minecraft.client.option.KeyBinding;
+import net.minecraft.item.ItemStack;
 import net.minecraft.screen.GenericContainerScreenHandler;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
@@ -9,14 +10,17 @@ import ru.onedex.bot.BotClient;
 import ru.onedex.bot.bot.Bot;
 import ru.onedex.bot.bot.Chests;
 import ru.onedex.bot.bot.Ctl;
+import ru.onedex.bot.bot.Move;
 import ru.onedex.bot.bot.Sell;
 import ru.onedex.bot.config.BotConfig;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
@@ -33,8 +37,12 @@ public final class Plan {
     private Plan() {}
 
     static final Pattern FOOD = Pattern.compile("^(bread|cooked_.*|baked_potato|golden_carrot|carrot|apple|sweet_berries|pumpkin_pie|cookie|steak)$");
-    static final Pattern TOOL = Pattern.compile(".*_(shovel|sword|pickaxe|axe)$");
-    static final Pattern MANMADE = Pattern.compile(".*(fence|_wall|glass|slab|stairs|planks|lantern|sign|carpet|wool|bricks|trapdoor|door|button|pressure|rail|hopper|composter|barrel|water_cauldron|cauldron|campfire|hay_block|scaffolding).*");
+    /** The food eaten first: things that cannot be planted by mistake come before carrots and berries. */
+    static final List<String> FOOD_ORDER = List.of("cooked_beef", "cooked_porkchop", "golden_carrot", "cooked_mutton", "cooked_salmon",
+            "cooked_chicken", "baked_potato", "bread", "cooked_cod", "cooked_rabbit", "pumpkin_pie", "apple", "cookie", "carrot", "sweet_berries");
+    /** What the bot's own work leaves in the bag and nobody needs (thrown away when the bag gets full). */
+    static final Pattern JUNK = Pattern.compile("^(wheat_seeds|beetroot_seeds|pumpkin_seeds|melon_seeds|.*_sapling|stick|dandelion|poppy|blue_orchid|allium|azure_bluet|.*_tulip|oxeye_daisy|cornflower|lily_of_the_valley|sunflower|lilac|rose_bush|peony|pink_petals|gravel|flint|sand|red_sand|andesite|diorite|granite|tuff|calcite|clay_ball|rotten_flesh|bone|arrow|string|spider_eye|poisonous_potato|kelp|seagrass|dead_bush|vine|glow_lichen|moss_carpet|.*_leaves|short_grass|tall_grass|fern|large_fern|coarse_dirt|rooted_dirt|hanging_roots|mangrove_roots|pointed_dripstone)$");
+    static final Pattern MANMADE = Pattern.compile(".*(fence|_wall|glass|slab|stairs|planks|lantern|sign|carpet|wool|bricks|trapdoor|door|button|pressure|rail|composter|water_cauldron|cauldron|campfire|hay_block|scaffolding).*");
 
     static State st() { return State.get(); }
     static long lastShovelTrip;
@@ -62,24 +70,65 @@ public final class Plan {
         BotClient.LOGGER.info("[bot] этап: {}", p);
     }
 
-    /** Goes to the stash first, then comes back to this phase. */
+    /** The phase to go on with after a side trip (stash, storage, selling): what was set, or `def`. */
+    static String takeNext(String def) {
+        String n = st().next != null ? st().next : def;
+        st().next = st().after;
+        st().after = null;
+        return n;
+    }
+
+    /** Goes to the stash first, then comes back to this phase (and after it, to where we were going). */
     static void needStash(String why, String back) {
         Bot.INSTANCE.stage("Нужно взять из стеша: " + why);
+        if (st().next != null && !st().next.equals(back)) st().after = st().next;
         st().next = back;
         phase("stash");
     }
 
     // ------------------------------------------------------------------ food
+    static int foodRank(String n) {
+        int i = FOOD_ORDER.indexOf(n);
+        return i >= 0 ? i : (FOOD.matcher(n).matches() ? 50 : 99);
+    }
+
+    /**
+     * Eats when hungry. Sneaking and looking up: a click on a chest does not open it while sneaking, and
+     * food that can be planted (berries, carrots) finds no soil to go on up there, so it is eaten.
+     */
     static void eat() {
         int food = Ctl.call(() -> Ctl.player().getHungerManager().getFoodLevel());
         if (food >= 14) return;
-        for (int i = 0; i < 6 && Ctl.call(() -> Ctl.player().getHungerManager().getFoodLevel()) < 19; i++) {
-            if (!Ctl.hold(n -> FOOD.matcher(n).matches(), null)) return;
-            KeyBinding use = Ctl.mc().options.useKey;
-            Ctl.run(() -> use.setPressed(true));
-            Ctl.ticks(40);
-            Ctl.run(() -> use.setPressed(false));
-            Ctl.ticks(4);
+        Ctl.closeScreen();
+        Comparator<ItemStack> best = Comparator.comparingInt(s -> -foodRank(Ctl.itemName(s)));
+        Move.sneak(true);
+        Move.look(Ctl.call(() -> Ctl.player().getYaw()), -90f);
+        Ctl.ticks(6);
+        try {
+            for (int i = 0; i < 6 && Ctl.call(() -> Ctl.player().getHungerManager().getFoodLevel()) < 19; i++) {
+                if (!Ctl.hold(n -> FOOD.matcher(n).matches(), best)) return;
+                KeyBinding use = Ctl.mc().options.useKey;
+                Ctl.run(() -> use.setPressed(true));
+                Ctl.ticks(40);
+                Ctl.run(() -> use.setPressed(false));
+                Ctl.ticks(4);
+            }
+        } finally {
+            Ctl.run(() -> Ctl.mc().options.useKey.setPressed(false));
+            Move.sneak(false);
+        }
+    }
+
+    // ------------------------------------------------------------------ the bag
+    /** Throws away junk when the bag is getting full (never anything that is not on the junk list). */
+    static void tidyBag(int wantFree) {
+        if (Ctl.freeSlots() >= wantFree) return;
+        Bot.INSTANCE.stage("Выкидываю мусор");
+        Ctl.toss(n -> JUNK.matcher(n).matches());
+        // more building blocks than repairs and the column need (not while building: that is what it is for)
+        if (Ctl.freeSlots() < wantFree && !"build".equals(st().phase)) {
+            Ctl.tossExcess("dirt", 64 * 3);
+            Ctl.tossExcess("cobblestone", 64 * 2);
         }
     }
 
@@ -98,17 +147,18 @@ public final class Plan {
     }
 
     static void stash() {
+        tidyBag(8);
         Bot.INSTANCE.stage("Иду в стеш (" + cfg().stashCommand + ")");
         if (!Ctl.teleport(cfg().stashCommand, 200)) { Ctl.sleep(5000); return; }
         Bot.INSTANCE.stage("Беру ресурсы из стеша");
-        Map<String, Integer> want = new HashMap<>();
         for (BlockPos chest : chestsAround(10)) {
             GenericContainerScreenHandler h = Chests.open(chest);
             if (h == null) continue;
-            take(h, n -> n.equals("torch"), 64 * 20 - Ctl.count("torch"));
+            // torches for a few floors at a time: the bag also has to carry the dirt (more on the next visit)
+            take(h, n -> n.equals("torch"), 64 * 6 - Ctl.count("torch"));
             take(h, n -> n.equals("chest"), cfg().storagePairs * 2 - Ctl.count("chest"));
             take(h, n -> n.endsWith("_shovel"), Math.max(0, 3 - Ctl.countMatch(n -> n.endsWith("_shovel"))));
-            take(h, n -> n.endsWith("_sword"), Math.max(0, 2 - Ctl.countMatch(n -> n.endsWith("_sword"))));
+            take(h, n -> n.endsWith("_sword"), Math.max(0, 1 - Ctl.countMatch(n -> n.endsWith("_sword"))));
             take(h, n -> n.endsWith("_pickaxe"), Math.max(0, 1 - Ctl.countMatch(n -> n.endsWith("_pickaxe"))));
             take(h, n -> FOOD.matcher(n).matches() && !n.equals("sweet_berries"), 64 - Ctl.countMatch(n -> FOOD.matcher(n).matches()));
             take(h, n -> n.equals("sweet_berries") || n.equals("bamboo"), 256);
@@ -116,10 +166,9 @@ public final class Plan {
             Chests.close();
         }
         st().stashDone = true;
-        st().noMoreTorches = Ctl.count("torch") == 0;   // nothing to take: build without torches
-        String next = st().next != null ? st().next : (st().site == null ? "clear" : "build");
-        st().next = null;
-        phase(next);
+        // no torches at all although there was room for them: the stash is out of torches
+        st().noMoreTorches = Ctl.count("torch") == 0 && Ctl.freeSlots() > 2;
+        phase(takeNext(st().site == null ? "clear" : "build"));
     }
 
     static void take(GenericContainerScreenHandler h, Predicate<String> test, int want) {
@@ -131,14 +180,15 @@ public final class Plan {
     // ------------------------------------------------------------------ 2. the place
     static Site site() { return st().site; }
 
-    static void goFarm() {
+    /** At the farm (or brought there with the home command). False if the teleport did not work. */
+    static boolean goFarm() {
         Site s = site();
-        if (s != null) {
-            Vec3d p = Ctl.pos();
-            if (Math.abs(p.x - (s.x + s.W / 2.0)) < s.W + 40 && Math.abs(p.z - (s.z + s.L / 2.0)) < s.L) return;
-        }
+        if (s != null && s.inZone(Ctl.feet(), 8) && Floors.shaftFails < 2) return true;
         Bot.INSTANCE.stage("Иду на ферму (" + cfg().farmCommand + ")");
-        Ctl.teleport(cfg().farmCommand, 200);
+        boolean ok = Ctl.teleport(cfg().farmCommand, 200);
+        if (ok) Floors.shaftFails = 0;
+        else Ctl.sleep(5000);   // a cooldown on the command: next time
+        return ok;
     }
 
     static void clear() {
@@ -146,13 +196,22 @@ public final class Plan {
         if (!Ctl.teleport(cfg().farmCommand, 200)) { Ctl.sleep(5000); return; }
         BlockPos home = Ctl.feet();
         BotConfig c = cfg();
-        // the highest ground under the berries farm and its storage
+        Site old = site();
+        if (old != null && old.inZone(home, 4) && st().builtCount(0) + st().builtCount(1) > 0) {
+            // the farm already stands here (the progress was reset): go on with it
+            BotClient.LOGGER.info("[bot] ферма уже стоит: {} {} {}", old.x, old.y, old.z);
+            phase(takeNext("build"));
+            return;
+        }
+        st().forgetSite();
+        // the highest ground under both farms, the gap between them, the columns and the storage
         int top = Ctl.direct(() -> {
             int best = -999;
             int x0 = home.getX() - c.farmWidth / 2 - 7, z0 = home.getZ() - c.farmLength / 2 - 2;
-            for (int x = x0; x <= x0 + c.farmWidth + 8; x += 2)
+            int x1 = home.getX() - c.farmWidth / 2 + 2 * c.farmWidth + 9;
+            for (int x = x0; x <= x1; x += 2)
                 for (int z = z0; z <= z0 + c.farmLength + 3; z += 2)
-                    best = Math.max(best, Site.groundNow(Ctl.world(), x, z, home.getY() + 6));
+                    best = Math.max(best, Site.groundNow(Ctl.world(), x, z, home.getY() + 24));
             return best;
         });
         Site s = Site.around(home, top);
@@ -167,7 +226,7 @@ public final class Plan {
                 for (BlockPos p : BlockPos.iterate(new BlockPos(s.x - 7, s.y - 1, s.z - 2), new BlockPos(s.x + s.W + 1, s.y + 6, s.z + s.L + 1))) {
                     BlockState st = Ctl.world().getBlockState(p);
                     String n = Ctl.blockName(st);
-                    if (n.equals("sweet_berry_bush") || (MANMADE.matcher(n).matches() && !n.contains("chest"))) out.add(p.toImmutable());
+                    if (n.equals("sweet_berry_bush") || (MANMADE.matcher(n).matches() && !Floors.container(n))) out.add(p.toImmutable());
                 }
                 BlockPos me = Ctl.player().getBlockPos();
                 out.sort(Comparator.comparingDouble(p -> p.getSquaredDistance(me)));
@@ -177,6 +236,7 @@ public final class Plan {
             for (BlockPos p : todo) {
                 if (Ctl.reach(p) > 4.5 && !Ctl.goTo(p, 3.5, 300)) continue;
                 Ctl.mine(p);
+                if (Ctl.freeSlots() < 3) tidyBag(4);
                 if (Ctl.freeSlots() < 3) break;
             }
             Ctl.collectDrops(6, 10);
@@ -190,6 +250,7 @@ public final class Plan {
         Site s = site();
         int turn = st().digTurn, ring = st().digRing;
         Bot.INSTANCE.stage("Копаю землю");
+        tidyBag(6);
         int fails = 0;
         while (Ctl.count("dirt") < target && fails < 6 && Ctl.freeSlots() > 3) {
             double ang = turn * Math.PI / 4;
@@ -203,12 +264,19 @@ public final class Plan {
             List<BlockPos> found = Ctl.direct(() -> {
                 List<BlockPos> out = new ArrayList<>();
                 BlockPos c = Ctl.player().getBlockPos();
-                for (BlockPos p : BlockPos.iterate(c.add(-6, -4, -6), c.add(6, 3, 6))) {
+                int base = c.getY() - 1;   // the ground we stand on
+                for (BlockPos p : BlockPos.iterate(c.add(-5, -1, -5), c.add(5, 2, 5))) {
                     String n = Ctl.blockName(Ctl.world().getBlockState(p));
                     if (!(n.equals("grass_block") || n.equals("dirt") || n.equals("podzol"))) continue;
-                    if (s.inZone(p, 1) || p.getY() < s.y - 3 || p.getY() > s.y + 4) continue;
+                    if (s.inZone(p, 1)) continue;
+                    // one layer at a time and never the block we stand on: no pit to get stuck in
+                    if (p.getY() < base || (p.getX() == c.getX() && p.getZ() == c.getZ())) continue;
                     var above = Ctl.world().getBlockState(p.up());
                     if (!above.getCollisionShape(Ctl.world(), p.up()).isEmpty() || !above.getFluidState().isEmpty()) continue;
+                    boolean wet = false;
+                    for (var d : net.minecraft.util.math.Direction.values())
+                        if (!Ctl.world().getFluidState(p.offset(d)).isEmpty()) wet = true;
+                    if (wet) continue;   // water would run into the hole
                     out.add(p.toImmutable());
                 }
                 out.sort(Comparator.comparingDouble(p -> p.getSquaredDistance(c)));
@@ -230,6 +298,7 @@ public final class Plan {
             }
             if (dug == 0) { Ctl.goTo(found.get(0), 2.5, 200); fails++; continue; }
             Ctl.collectDrops(7, 14);   // everything that fell around, not only at our feet
+            if (Ctl.freeSlots() <= 4) tidyBag(6);
             if (Ctl.count("dirt") > before) fails = 0; else fails++;
         }
         State.save();
@@ -245,21 +314,42 @@ public final class Plan {
     static void build(int f) {
         Site s = site();
         if (s == null) { phase("clear"); return; }
-        goFarm();
+        if (!goFarm()) return;
+        if (!s.inZone(Ctl.feet(), 40)) {
+            // the home command leads somewhere else now: a new place for the farm
+            BotClient.LOGGER.info("[bot] /home g теперь в другом месте — новая ферма");
+            st().forgetSite();
+            phase("clear");
+            return;
+        }
         Floors.toGround(s);
         List<Integer> todo = unbuilt(f);
-        if (todo.isEmpty()) { phase(f == 0 && !storageReady() ? "storage" : "farm"); return; }
-        if (Ctl.count("torch") == 0 && !st().noMoreTorches) { needStash("факелы", "build"); return; }
+        if (todo.isEmpty()) {
+            if (f == 0 && !storageReady()) { st().next = takeNext("farm"); phase("storage"); }
+            else phase(takeNext("farm"));
+            return;
+        }
+        if (Ctl.count("torch") == 0) {
+            if (!st().noMoreTorches) { needStash("факелы", "build"); return; }
+            // the stash had none: wait for them; a dark farm grows nothing and monsters spawn on it
+            Bot.INSTANCE.stage("Положи факелы в стеш (" + cfg().stashCommand + ")");
+            Ctl.sleep(60_000);
+            st().noMoreTorches = false;
+            State.save();
+            return;
+        }
         if (!Ctl.has(n -> n.endsWith("_shovel")) && System.currentTimeMillis() - lastShovelTrip > 15 * 60_000L) {
             lastShovelTrip = System.currentTimeMillis();
             needStash("лопаты", "build");
             return;
         }
-        // a bag of dirt: as much as fits, leaving room for tools and the column
-        if (Floors.blocks() < 300) {
+        // light under the farm first (when it is not there yet and we have the torches for it)
+        if (!st().lit.contains(f) && Floors.lightGround(s, f)) { st().lit.add(f); State.save(); }
+        // a bag of dirt: the rows can only be dirt (cobblestone is for the walkways and the column)
+        if (Ctl.count("dirt") < 200) {
             int room = Math.max(0, Ctl.freeSlots() - 4) * 64;
             digDirt(Ctl.count("dirt") + room);
-            if (Floors.blocks() < 100) { Ctl.sleep(2000); return; }
+            if (Ctl.count("dirt") < 64) { Ctl.sleep(2000); return; }
         }
         Bot.INSTANCE.stage("Строю ферму " + (f == 0 ? "ягод" : "бамбука"));
         Floors.trip(s, f, todo, Floors.Mode.BUILD);
@@ -269,27 +359,57 @@ public final class Plan {
     static List<BlockPos> storage() {
         Site s = site();
         List<BlockPos> out = new ArrayList<>();
-        for (BlockPos p : s.storageSpots(cfg().storagePairs)) out.add(s.onGround(p));
+        List<BlockPos> spots = s.storageSpots(cfg().storagePairs);
+        for (int i = 0; i < spots.size(); i++) if (!st().badStorage.contains(i)) out.add(s.onGround(spots.get(i)));
         return out;
     }
 
     static boolean storageReady() {
-        for (BlockPos p : storage()) if (!Ctl.name(p).contains("chest")) return false;
+        List<BlockPos> l = storage();
+        if (l.isEmpty()) return false;
+        for (BlockPos p : l) if (!Ctl.name(p).contains("chest")) return false;
         return true;
     }
 
+    static final Map<Integer, Integer> storageFails = new HashMap<>();
+
+    /** Puts an item, clearing once whatever (not a container) is between the eye and the face. */
+    static boolean placeClearing(BlockPos target, String item, BlockPos ref) {
+        if (Ctl.place(target, item, ref)) return true;
+        BlockPos ob = Ctl.lastObstacle;
+        if (ob == null || ob.equals(ref) || Floors.container(Ctl.name(ob)) || !Ctl.mine(ob)) return false;
+        return Ctl.place(target, item, ref);
+    }
+
     static void placeStorage() {
-        goFarm();
-        Floors.toGround(site());
+        Site s = site();
+        if (!goFarm()) return;
+        Floors.toGround(s);
         Bot.INSTANCE.stage("Ставлю хранилище");
-        for (BlockPos p : storage()) {
+        List<BlockPos> spots = s.storageSpots(cfg().storagePairs);
+        for (int i = 0; i < spots.size(); i++) {
+            if (st().badStorage.contains(i)) continue;
+            BlockPos p = s.onGround(spots.get(i));
             if (Ctl.name(p).contains("chest")) continue;
-            if (Ctl.count("chest") == 0) { needStash("сундуки", "storage"); return; }
+            if (Ctl.count("chest") == 0) { st().next = takeNext("farm"); needStash("сундуки", "storage"); return; }
             // stand west of the row: both halves of a pair face the same way and join into a double chest
-            Ctl.goTo(p.add(-2, 0, 0), 0.6, 400);
-            Ctl.place(p, "chest", p.down());
+            BlockPos stand = p.add(-2, 0, 0);
+            boolean ok = Ctl.goTo(stand, 0.8, 400);
+            if (ok) {
+                // a flower or a sapling on the spot, grass in the way of the click, a block above (a chest
+                // under a block does not open): all of it goes first
+                for (BlockPos q : new BlockPos[]{p.up(), p, p.add(-1, 0, 0), p.add(-1, 1, 0)}) {
+                    String n = Ctl.name(q);
+                    if (!Floors.air(n) && !Floors.container(n)) Ctl.mine(q);
+                }
+                ok = placeClearing(p, "chest", p.down()) || Ctl.name(p).contains("chest");
+            }
+            if (!ok) {
+                int n = storageFails.merge(i, 1, Integer::sum);
+                if (n >= 3) { st().badStorage.add(i); State.save(); BotClient.LOGGER.info("[bot] место для сундука {} пропущено", i); }
+            }
         }
-        phase("farm");
+        if (storageReady()) phase(takeNext("farm"));
     }
 
     /** Harvest into the storage, keeping some seeds. False when the storage is full. */
@@ -297,6 +417,7 @@ public final class Plan {
         Map<String, Integer> keep = new HashMap<>();
         keep.put("sweet_berries", cfg().keepSeeds);
         keep.put("bamboo", cfg().keepSeeds);
+        tidyBag(6);
         if (Ctl.count("sweet_berries") <= cfg().keepSeeds && Ctl.count("bamboo") <= cfg().keepSeeds) return true;
         Bot.INSTANCE.stage("Складываю в хранилище");
         for (BlockPos p : storage()) {
@@ -313,13 +434,16 @@ public final class Plan {
     // ------------------------------------------------------------------ 5. farming
     static void farm(int f) {
         Site s = site();
-        goFarm();
+        if (!goFarm()) return;
         Floors.toGround(s);
-        if (!storageReady()) { phase("storage"); return; }
+        String here = st().phase;
+        if (!storageReady()) { st().next = here; phase("storage"); return; }
+        // a floor with a hole that farming could not mend is built again first
+        if (!unbuilt(f).isEmpty()) { st().farm = f; st().next = here; phase("build"); return; }
         long need = cfg().farmMinutes * 60_000L;
         if (st().farmedMs >= need) {
             st().farmedMs = 0;
-            st().next = f == 0 ? "bamboo" : "both";
+            st().next = f == 0 && !"both".equals(here) ? "bamboo" : "both";
             phase("sell");
             return;
         }
@@ -340,15 +464,13 @@ public final class Plan {
     }
 
     static void farmBoth() {
-        Site s = site();
         long need = cfg().farmMinutes * 60_000L;
         if (st().farmedMs >= need) { st().farmedMs = 0; st().next = "both"; phase("sell"); return; }
         st().farm = st().farm == 0 ? 1 : 0;
-        if (unbuilt(st().farm).size() > 0) { phase("build"); return; }
+        if (!unbuilt(st().farm).isEmpty()) { st().next = "both"; phase("build"); return; }
         farm(st().farm);
-        if ("sell".equals(st().phase)) st().next = "both";
+        // farm() may have sent us somewhere (storage, build, sell): it set "both" to come back to
         State.save();
-        if (!"sell".equals(st().phase)) phase("both");
     }
 
     static void takeFromStorage(String item, int want) {
@@ -366,6 +488,7 @@ public final class Plan {
     static void sellEverything() {
         List<String> goods = List.of("sweet_berries", "bamboo");
         for (int round = 0; round < 40; round++) {
+            tidyBag(10);
             // fill the bag from the chests, one after another
             boolean any = false;
             for (BlockPos p : storage()) {
@@ -392,28 +515,27 @@ public final class Plan {
     }
 
     static void sellAll() {
-        goFarm();
+        if (!goFarm()) return;
         Floors.toGround(site());
         Bot.INSTANCE.stage("Сдаю всё скупщику");
         store();
         sellEverything();
-        String next = st().next != null ? st().next : "farm";
-        st().next = null;
-        phase(next);
+        phase(takeNext("farm"));
     }
 
     // ------------------------------------------------------------------ 7. bamboo
     static void findBamboo() {
         Bot.INSTANCE.stage("Ищу бамбук (" + cfg().rtpCommand + ")");
         if (Ctl.count("bamboo") >= 128) {
-            goFarm();
+            if (!goFarm()) return;
             st().farm = 1;
             phase("build");
             return;
         }
+        tidyBag(8);
         if (!Ctl.teleport(cfg().rtpCommand, 300)) { Ctl.sleep(8000); return; }
         Ctl.ticks(40);
-        java.util.Set<BlockPos> skip = new java.util.HashSet<>();
+        Set<BlockPos> skip = new HashSet<>();
         for (int pick = 0; pick < 30 && Ctl.count("bamboo") < 256 && Ctl.freeSlots() > 3; pick++) {
             BlockPos base = Ctl.direct(() -> {
                 BlockPos me = Ctl.player().getBlockPos();
@@ -436,7 +558,7 @@ public final class Plan {
         }
         if (Ctl.count("bamboo") >= 64) {
             Bot.INSTANCE.stage("Бамбук есть — домой (" + cfg().farmCommand + ")");
-            Ctl.teleport(cfg().farmCommand, 200);
+            for (int i = 0; i < 6 && !Ctl.teleport(cfg().farmCommand, 200); i++) Ctl.sleep(10_000);
             st().farm = 1;
             phase("build");
         }
