@@ -106,7 +106,7 @@ public final class Plan {
         if (!Ctl.hold(n -> FOOD.matcher(n).matches(), best)) return;
         Move.sneak(true);
         Move.look(Ctl.call(() -> Ctl.player().getYaw()), -90f);
-        Ctl.ticks(6);
+        Ctl.ticks(14);   // the head goes up smoothly
         try {
             for (int i = 0; i < 6 && Ctl.call(() -> Ctl.player().getHungerManager().getFoodLevel()) < 19; i++) {
                 // the next piece: from the hotbar it is a slot change only; from the bag hold() stands up for it
@@ -219,17 +219,9 @@ public final class Plan {
             return;
         }
         st().forgetSite();
-        // the highest ground under both farms, the gap between them, the columns and the storage
-        int top = Ctl.direct(() -> {
-            int best = -999;
-            int x0 = home.getX() - c.farmWidth / 2 - 7, z0 = home.getZ() - c.farmLength / 2 - 2;
-            int x1 = home.getX() - c.farmWidth / 2 + 2 * c.farmWidth + 9;
-            for (int x = x0; x <= x1; x += 2)
-                for (int z = z0; z <= z0 + c.farmLength + 3; z += 2)
-                    best = Math.max(best, Site.groundNow(Ctl.world(), x, z, home.getY() + 24));
-            return best;
-        });
-        Site s = Site.around(home, top);
+        // the first floor is the ground we stand on at /home g: the whole place is dug level with it
+        int ground = Ctl.direct(() -> Site.groundNow(Ctl.world(), home.getX(), home.getZ(), home.getY()));
+        Site s = Site.around(home, ground);
         st().site = s;
         State.save();
         BotClient.LOGGER.info("[bot] ферма: {} {} {}", s.x, s.y, s.z);
@@ -261,81 +253,67 @@ public final class Plan {
     }
 
     // ------------------------------------------------------------------ dirt
-    static void digDirt(int target) {
-        Site s = site();
-        int turn = st().digTurn, ring = st().digRing;
-        Bot.INSTANCE.stage("Копаю землю");
-        tidyBag(6);
-        int fails = 0;
-        while (Ctl.count("dirt") < target && fails < 6 && Ctl.freeSlots() > 3) {
-            double ang = turn * Math.PI / 4;
-            double cx = s.x + s.W + 4, cz = s.z + s.L / 2.0;   // between the two farms
-            double R = Math.max(s.W * 2 + 8, s.L) / 2.0 + 14 + ring;
-            BlockPos spot = new BlockPos((int) Math.round(cx + Math.cos(ang) * R), s.y, (int) Math.round(cz + Math.sin(ang) * R));
-            Vec3d me = Ctl.pos();
-            if (Math.hypot(me.x - spot.getX(), me.z - spot.getZ()) > 16) {
-                Ctl.goTo(new BlockPos(spot.getX(), s.ground(spot.getX(), spot.getZ()) + 1, spot.getZ()), 6, 1200);
-            }
-            // the top layer here: nothing below it is dug, so a hole is never more than 1 deep
-            // (the highest ground around us, looked for from well above us: hills count too)
-            int layer = Ctl.direct(() -> {
-                BlockPos c = Ctl.player().getBlockPos();
-                int top = -999;
-                for (int ox = -4; ox <= 4; ox += 2) for (int oz = -4; oz <= 4; oz += 2) {
-                    int g = Site.groundNow(Ctl.world(), c.getX() + ox, c.getZ() + oz, c.getY() + 12);
-                    if (g <= c.getY() + 1) top = Math.max(top, g);   // a cliff or a wall next to us is not our ground
-                }
-                return top == -999 ? c.getY() - 1 : top;
-            });
-            climbOut(layer + 1);
-            List<BlockPos> found = Ctl.direct(() -> {
-                List<BlockPos> out = new ArrayList<>();
-                BlockPos c = Ctl.player().getBlockPos();
-                for (BlockPos p : BlockPos.iterate(c.add(-5, -2, -5), c.add(5, 2, 5))) {
-                    String n = Ctl.blockName(Ctl.world().getBlockState(p));
-                    if (!(n.equals("grass_block") || n.equals("dirt") || n.equals("podzol"))) continue;
-                    if (s.inZone(p, 1)) continue;
-                    // the top layer only and never the block we stand on: no pit to get stuck in
-                    if (p.getY() < layer || (p.getX() == c.getX() && p.getZ() == c.getZ())) continue;
-                    var above = Ctl.world().getBlockState(p.up());
-                    if (!above.getCollisionShape(Ctl.world(), p.up()).isEmpty() || !above.getFluidState().isEmpty()) continue;
-                    boolean wet = false;
-                    for (var d : net.minecraft.util.math.Direction.values())
-                        if (!Ctl.world().getFluidState(p.offset(d)).isEmpty()) wet = true;
-                    if (wet) continue;   // water would run into the hole
-                    out.add(p.toImmutable());
-                }
-                out.sort(Comparator.comparingDouble(p -> p.getSquaredDistance(c)));
-                return out;
-            });
-            if (found.isEmpty()) {
-                ring += 8;
-                if (ring > 64) { ring = 0; turn++; }
-                st().digTurn = turn; st().digRing = ring;
-                fails++;
-                continue;
-            }
-            int before = Ctl.count("dirt");
-            int dug = 0;
-            for (BlockPos p : found) {
-                if (Ctl.reach(p) > 4.4) continue;
-                if (Ctl.mine(p)) dug++;
-                if (Ctl.count("dirt") >= target || Ctl.freeSlots() <= 3) break;
-            }
-            if (dug == 0) { Ctl.goTo(found.get(0), 2.5, 200); fails++; continue; }
-            Ctl.collectDrops(7, 14);   // everything that fell around, not only at our feet
-            if (Ctl.freeSlots() <= 4) tidyBag(6);
-            if (Ctl.count("dirt") > before) fails = 0; else fails++;
-        }
-        State.save();
+    /** The middle of both farms (dirt is dug away from it). */
+    static Vec3d farmsCenter(Site s) {
+        return new Vec3d((s.x + s.farmX(1) + s.W) / 2.0, s.y, s.z + s.L / 2.0);
     }
 
-    /** Down in a hole deeper than a step: build a little column under us and walk out from its top. */
-    static void climbOut(int groundY) {
-        for (int i = 0; i < 3 && Ctl.feet().getY() < groundY - 1; i++) {
-            String mat = Ctl.count("dirt") > 0 ? "dirt" : (Ctl.count("cobblestone") > 0 ? "cobblestone" : null);
-            if (mat == null || !Ctl.pillarUp(mat)) break;
+    /**
+     * Digs the dirt the bot sees around it, nearest first, never in the farm area or right next to it.
+     * A block is dug only when nothing next to it stands higher: the ground goes down one even layer at a
+     * time and there is never a pit to fall into. When nothing is left around, it walks further out.
+     */
+    static void digDirt(int target) {
+        Site s = site();
+        Bot.INSTANCE.stage("Копаю землю");
+        tidyBag(6);
+        Set<BlockPos> skip = new HashSet<>();
+        int moves = 0, dug = 0;
+        while (Ctl.count("dirt") < target && Ctl.freeSlots() > 3 && moves < 12) {
+            BlockPos next = Ctl.direct(() -> {
+                var w = Ctl.world();
+                BlockPos me = Ctl.player().getBlockPos();
+                BlockPos best = null;
+                double bd = 1e9;
+                for (BlockPos p : BlockPos.iterate(me.add(-14, -3, -14), me.add(14, 3, 14))) {
+                    if (nearFarm(s, p, 4) || skip.contains(p)) continue;
+                    String n = Ctl.blockName(w.getBlockState(p));
+                    if (!(n.equals("grass_block") || n.equals("dirt") || n.equals("podzol"))) continue;
+                    if (p.getX() == me.getX() && p.getZ() == me.getZ()) continue;   // what we stand on
+                    BlockPos up = p.up();
+                    if (!w.getBlockState(up).getCollisionShape(w, up).isEmpty() || !w.getFluidState(up).isEmpty()) continue;
+                    boolean dip = false, wet = false;
+                    for (net.minecraft.util.math.Direction d : net.minecraft.util.math.Direction.Type.HORIZONTAL) {
+                        if (Ctl.solidNow(up.offset(d))) dip = true;            // a neighbour stands higher
+                        if (!w.getFluidState(p.offset(d)).isEmpty()) wet = true;   // water would run in
+                    }
+                    if (dip || wet || !Ctl.solidNow(p.down())) continue;        // (and no hole into a cave)
+                    double dd = p.getSquaredDistance(me);
+                    if (dd < bd) { bd = dd; best = p.toImmutable(); }
+                }
+                return best;
+            });
+            if (next == null) {
+                // nothing left around here: further out, away from the farms (a bit to the side each time)
+                moves++;
+                Ctl.collectDrops(6, 10);
+                Vec3d me = Ctl.pos();
+                Vec3d c = farmsCenter(s);
+                double ang = Math.atan2(me.z - c.z, me.x - c.x) + (moves % 2 == 0 ? 1 : -1) * 0.35 * moves;
+                int tx = (int) Math.round(me.x + Math.cos(ang) * 16), tz = (int) Math.round(me.z + Math.sin(ang) * 16);
+                int ty = Ctl.direct(() -> Site.groundNow(Ctl.world(), tx, tz, (int) me.y + 12)) + 1;
+                Ctl.goTo(new BlockPos(tx, ty, tz), 4, 600);
+                continue;
+            }
+            if (Ctl.reach(next) > 4.3 && !Ctl.goTo(next.up(), 3.0, 300)) { skip.add(next); continue; }
+            if (Ctl.mine(next)) {
+                dug++;
+                if (dug % 12 == 0) Ctl.collectDrops(6, 10);   // what fell out of reach
+                if (Ctl.freeSlots() <= 4) tidyBag(6);
+            } else skip.add(next);
         }
+        Ctl.collectDrops(6, 12);
+        State.save();
     }
 
     // ------------------------------------------------------------------ 3. building
@@ -355,6 +333,19 @@ public final class Plan {
             st().forgetSite();
             phase("clear");
             return;
+        }
+        if (f == 1 && s.y1 == null) {
+            // the bamboo farm's own ground: the usual height of the ground where it goes
+            s.y1 = Ctl.direct(() -> {
+                List<Integer> hs = new ArrayList<>();
+                for (int dx = 0; dx < s.W; dx += 3)
+                    for (int dz = 0; dz < s.L; dz += 3)
+                        hs.add(Site.groundNow(Ctl.world(), s.farmX(1) + dx, s.z + dz, s.top() + 16));
+                hs.sort(Integer::compare);
+                return hs.get(hs.size() / 2);
+            });
+            State.save();
+            BotClient.LOGGER.info("[bot] ферма бамбука: земля {}", s.y1);
         }
         Floors.toGround(s);
         List<Integer> todo = unbuilt(f);
@@ -380,8 +371,6 @@ public final class Plan {
             needStash("лопаты", "build");
             return;
         }
-        // light under the farm first (when it is not there yet and we have the torches for it)
-        if (!st().lit.contains(f) && Floors.lightGround(s, f)) { st().lit.add(f); State.save(); }
         // a bag of dirt: the rows can only be dirt (cobblestone is for the walkways and the column)
         if (Ctl.count("dirt") < 200) {
             int room = Math.max(0, Ctl.freeSlots() - 4) * 64;

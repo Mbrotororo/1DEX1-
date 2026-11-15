@@ -34,6 +34,9 @@ public final class State {
     public List<Integer> badStorage = new ArrayList<>();  // storage spots where no chest could be put
     public boolean noMoreChests;   // the stash had no chests left: the storage stays as it is
     public Map<Integer, List<Integer>> ever = new HashMap<>();   // floors built at least once (they have their torches)
+    /** Saved by an older version (another farm layout): its place and floors are not used. */
+    public int stateVersion = 0;
+    static final int VERSION = 2;
 
     private static State INSTANCE;
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -61,8 +64,17 @@ public final class State {
                 BotClient.LOGGER.warn("state backup: {}", e.toString());
             }
         }
-        if (INSTANCE == null) INSTANCE = new State();
+        if (INSTANCE == null) { INSTANCE = new State(); INSTANCE.stateVersion = VERSION; }
         if (INSTANCE.built == null) INSTANCE.built = new HashMap<>();
+        if (INSTANCE.stateVersion < VERSION) {
+            // the farm is laid out differently now: start the place over (the bag keeps what the stash gave)
+            boolean stashed = INSTANCE.stashDone;
+            INSTANCE = new State();
+            INSTANCE.stateVersion = VERSION;
+            INSTANCE.stashDone = stashed;
+            INSTANCE.phase = stashed ? "clear" : "stash";
+            save();
+        }
         if (INSTANCE.lit == null) INSTANCE.lit = new ArrayList<>();
         if (INSTANCE.badStorage == null) INSTANCE.badStorage = new ArrayList<>();
         if (INSTANCE.ever == null) INSTANCE.ever = new HashMap<>();
@@ -96,6 +108,7 @@ public final class State {
     public static void reset() {
         State old = get();
         INSTANCE = new State();
+        INSTANCE.stateVersion = VERSION;
         INSTANCE.site = old.site;
         INSTANCE.built = old.built;
         INSTANCE.lit = old.lit;

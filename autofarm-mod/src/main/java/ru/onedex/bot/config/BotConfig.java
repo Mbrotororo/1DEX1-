@@ -21,13 +21,21 @@ public final class BotConfig {
     public int farmWidth = 30;
     public int farmLength = 70;
     public int floors = 10;
-    public int floorGap = 4;
-    public int firstFloorHeight = 3;
+    /** From one floor to the next: 3 = two blocks of air between them. */
+    public int floorGap = 3;
+    /** 0 = the first floor is the ground itself (dug level). */
+    public int firstFloorHeight = 0;
+    /** Free blocks between the berries farm and the bamboo farm. */
+    public int farmSpacing = 30;
     public int farmMinutes = 120;
     public int storagePairs = 10;
     public int keepSeeds = 192;
 
     public boolean hud = true;
+
+    /** Settings written by an older version get the new farm layout (the commands stay as they were). */
+    public int configVersion = 0;
+    static final int VERSION = 2;
 
     private static BotConfig INSTANCE;
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -47,6 +55,12 @@ public final class BotConfig {
             BotClient.LOGGER.warn("config: {}", e.toString());
         }
         if (INSTANCE == null) INSTANCE = new BotConfig();
+        if (INSTANCE.configVersion < VERSION) {
+            INSTANCE.floorGap = 3;
+            INSTANCE.firstFloorHeight = 0;
+            if (INSTANCE.farmSpacing <= 8) INSTANCE.farmSpacing = 30;
+            INSTANCE.configVersion = VERSION;
+        }
         save();
     }
 

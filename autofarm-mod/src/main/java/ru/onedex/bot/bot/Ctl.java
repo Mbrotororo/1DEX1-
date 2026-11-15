@@ -373,9 +373,10 @@ public final class Ctl {
         float yaw = (float) (MathHelper.atan2(dz, dx) * 180 / Math.PI) - 90f;
         float pitch = (float) -(MathHelper.atan2(dy, Math.sqrt(dx * dx + dz * dz)) * 180 / Math.PI);
         Move.look(yaw, pitch);
-        for (int i = 0; i < 8; i++) {
+        // the head turns smoothly frame by frame: wait until it is there (a bit more for a long turn)
+        for (int i = 0; i < 30; i++) {
             float cy = player().getYaw(), cp = player().getPitch();
-            if (Math.abs(MathHelper.wrapDegrees(yaw - cy)) < 3 && Math.abs(pitch - cp) < 3) break;
+            if (Math.abs(MathHelper.wrapDegrees(yaw - cy)) < 1.5f && Math.abs(pitch - cp) < 1.5f) break;
             ticks(1);
         }
     }
@@ -610,8 +611,7 @@ public final class Ctl {
         stepTo(cell, true);
         int startY = feet().getY();
         BlockPos below = cell.down();
-        Move.look(call(() -> player().getYaw()), 90f);
-        ticks(3);
+        lookAt(Vec3d.ofCenter(below).add(0, 0.5, 0));   // straight down at the block we stand on
         Move.jump(true);
         for (int t = 0; t < 20; t++) {
             ticks(1);

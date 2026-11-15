@@ -3,7 +3,11 @@ package ru.onedex.bot.bot;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.mob.AbstractSkeletonEntity;
 import net.minecraft.entity.mob.CreeperEntity;
+import net.minecraft.entity.mob.MobEntity;
+import net.minecraft.entity.mob.PillagerEntity;
+import net.minecraft.entity.mob.WitchEntity;
 import net.minecraft.entity.mob.EndermanEntity;
 import net.minecraft.entity.mob.Monster;
 import net.minecraft.entity.mob.PiglinEntity;
@@ -116,6 +120,7 @@ public final class Bot {
     private int fightId = -1;
     private long lastOnCrosshair;
     private long fleeSince;
+    private long chaseSince, chaseSeen, critSince;
     private Vec3d fleeTo;
 
     /** A monster that may be fought: not one that only gets angry when hit (and calls its friends). */
@@ -163,6 +168,7 @@ public final class Bot {
             if (hissing(e) && e.distanceTo(p) < 8.5) return true;
             if (fightable(p, e, range + 0.6)) return true;
             if (p.hurtTime > 0 && reachTo(p, e) < 4.5) return true;
+            if (p.hurtTime > 0 && shooter(e) && e.distanceTo(p) < 24 && !onFloor(mc, p)) return true;   // shot at: go get it
         }
         return false;
     }
@@ -213,6 +219,7 @@ public final class Bot {
         if (mc.currentScreen instanceof net.minecraft.client.gui.screen.ingame.HandledScreen<?> || p.isUsingItem()) {
             Move.fight(null);
             Move.flee(null);
+            Move.chase(null);
             return;
         }
         long now = ticks;
@@ -246,6 +253,45 @@ public final class Bot {
         }
         if (Move.fleeing() && (hiss == null || now - fleeSince >= 100)) { Move.flee(null); fleeTo = null; }
 
+        // a skeleton shoots at us from afar: run to it and kill it, then back to work (on the ground only,
+        // over safe ground; up on a floor there is no running about)
+        Entity chased = Move.chasing();
+        if (chased != null) {
+            double d = chased.distanceTo(p);
+            boolean lost = !chased.isAlive() || chased.isRemoved() || d > 28 || now - chaseSince > 400 || floor;
+            if (!lost && !p.canSee(chased) && now - chaseSeen > 40) lost = true;
+            if (p.canSee(chased)) chaseSeen = now;
+            int sx = Integer.signum((int) Math.round(chased.getX() - p.getX())), sz = Integer.signum((int) Math.round(chased.getZ() - p.getZ()));
+            if (!lost && reachTo(p, chased) > range - 0.2 && (sx != 0 || sz != 0) && !safeAhead(mc, p.getBlockPos(), sx, sz)) {
+                ignoreUntil.put(chased.getId(), now + 300);   // no safe way to it
+                lost = true;
+            }
+            if (lost || reachTo(p, chased) <= range - 0.2) { Move.chase(null); chased = null; }   // in reach: a normal fight
+            else return;
+        }
+        if (!floor && Move.fighting() == null) {
+            Entity shooter = null;
+            double best = 24;
+            boolean melee = false;
+            for (Entity e : mc.world.getEntities()) if (enemy(e) && !shooter(e) && reachTo(p, e) < 4.5) melee = true;
+            for (Entity e : mc.world.getEntities()) {
+                if (!shooter(e) || !e.isAlive() || ignoreUntil.containsKey(e.getId())) continue;
+                double d = e.distanceTo(p);
+                boolean aiming = e instanceof MobEntity m && m.isAttacking() && d < 14;
+                if ((p.hurtTime > 0 && !melee) || aiming) {
+                    if (d < best && Math.abs(e.getY() - p.getY()) <= 4 && p.canSee(e) && reachTo(p, e) > range - 0.2) { best = d; shooter = e; }
+                }
+            }
+            if (shooter != null) {
+                chaseSince = now;
+                chaseSeen = now;
+                mc.interactionManager.cancelBlockBreaking();
+                holdSword(p);
+                Move.chase(shooter);
+                return;
+            }
+        }
+
         Entity cur = Move.fighting();
         if (cur != null) {
             boolean alive = enemy(cur) && !cur.isRemoved() && p.canSee(cur);
@@ -266,20 +312,54 @@ public final class Bot {
             }
             if (cur != null) lastOnCrosshair = now;
         }
-        if (cur == null) { fightId = -1; Move.fight(null); return; }
+        if (cur == null) { fightId = -1; critSince = 0; Move.fight(null); return; }
         if (cur.getId() != fightId) {
             fightId = cur.getId();
             holdSword(p);
         }
         Move.fight(cur);
-        // hit only what the crosshair is on (vanilla reach and sight), with a charged swing
-        if (mc.crosshairTarget instanceof EntityHitResult hit && hit.getEntity() == cur) {
+        // hit only what the crosshair is on (vanilla reach and sight), with a charged swing: jump first and
+        // strike on the way down (a critical hit, half as strong again: most monsters fall in two)
+        boolean onIt = mc.crosshairTarget instanceof EntityHitResult hit && hit.getEntity() == cur;
+        if (!p.isOnGround()) Move.critJump(false);
+        if (onIt) {
             lastOnCrosshair = now;
             if (p.getAttackCooldownProgress(0.5f) >= 0.92f) {
-                mc.interactionManager.attackEntity(p, cur);
-                p.swingHand(Hand.MAIN_HAND);
+                boolean falling = !p.isOnGround() && p.getVelocity().y < -0.05 && p.fallDistance > 0;
+                boolean canJump = !p.isTouchingWater() && !p.isClimbing() && !Move.sneaking();
+                if (falling || !canJump || (critSince > 0 && now - critSince > 14)) {
+                    mc.interactionManager.attackEntity(p, cur);
+                    p.swingHand(Hand.MAIN_HAND);
+                    critSince = 0;
+                    Move.critJump(false);
+                } else if (p.isOnGround() && critSince == 0) {
+                    critSince = now;
+                    Move.critJump(true);
+                }
             }
         }
+    }
+
+    /** Monsters that shoot from afar. */
+    private static boolean shooter(Entity e) {
+        return e instanceof AbstractSkeletonEntity || e instanceof PillagerEntity || e instanceof WitchEntity;
+    }
+
+    /** The next two blocks toward (sx, sz) can be run over: ground to stand on, no big drop, no lava. */
+    private static boolean safeAhead(MinecraftClient mc, BlockPos from, int sx, int sz) {
+        BlockPos at = from;
+        for (int i = 1; i <= 2; i++) {
+            BlockPos n = from.add(sx * i, 0, sz * i);
+            BlockPos ok = null;
+            for (int dy : new int[]{0, 1, -1, -2}) {
+                if (Path.standable(mc.world, n.up(dy))) { ok = n.up(dy); break; }
+            }
+            if (ok == null || ok.getY() - at.getY() > 1) return false;
+            String bn = Ctl.blockName(mc.world.getBlockState(ok.down()));
+            if (bn.contains("lava") || bn.contains("fire") || bn.equals("cactus") || bn.equals("magma_block")) return false;
+            at = ok;
+        }
+        return true;
     }
 
     /** The sword, if it is in the hotbar (no inventory clicks in a fight). */

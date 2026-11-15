@@ -98,9 +98,11 @@ public final class Floors {
     }
 
     static boolean climb(Site s, int f, int k) {
-        int target = s.floorY(k) + 1;
+        int target = s.floorY(f, k) + 1;
         if (!onColumn(s.shaft(f))) return false;
         int guard = 0;
+        // the column stands on higher ground than the floor (a hill there): down to the floor first
+        while (Ctl.feet().getY() > target && guard++ < 40) if (!Ctl.digDown()) return false;
         while (Ctl.feet().getY() < target && guard++ < 120) {
             BlockPos head = Ctl.feet().up(2);
             if (Ctl.solid(head) && !Ctl.mine(head)) return false;
@@ -164,54 +166,10 @@ public final class Floors {
     /** If we are up on a farm (after a restart), get down by the column. */
     public static void toGround(Site s) {
         BlockPos p = Ctl.feet();
-        if (p.getY() <= s.y + 2 || !s.inZone(p, 0)) return;
-        int f = p.getX() >= s.farmX(1) - 2 ? 1 : 0;
+        int f = s.farmAt(p.getX());
+        if (p.getY() <= s.base(f) + 2 || !s.inZone(p, 0)) return;
         Bot.INSTANCE.stage("Спускаюсь");
         descend(s, f);
-    }
-
-    // ------------------------------------------------------------------ light under the farm
-    /**
-     * Torches on the ground under a farm, about 10 blocks apart: with no light there monsters would spawn
-     * under floor 0, right where /home g puts us. False if there are not enough torches for it.
-     */
-    static final java.util.Map<BlockPos, Integer> lightTries = new java.util.HashMap<>();
-
-    static boolean lightGround(Site s, int f) {
-        List<BlockPos> spots = new ArrayList<>();
-        for (int dx = 4; dx < s.W; dx += 10)
-            for (int dz = 5; dz < s.L; dz += 12) {
-                int x = s.farmX(f) + dx, z = s.z + dz;
-                spots.add(new BlockPos(x, s.ground(x, z) + 1, z));
-            }
-        // and the strip west of the farm (the column, the storage, the way between the farms)
-        for (int dz = 5; dz < s.L; dz += 12) {
-            int x = s.farmX(f) - 3, z = s.z + dz;
-            spots.add(new BlockPos(x, s.ground(x, z) + 1, z));
-        }
-        // water, a log or anything solid there: that spot is left out (nothing is ever clicked on water)
-        spots.removeIf(sp -> !Ctl.direct(() -> Ctl.world().getFluidState(sp).isEmpty() && Ctl.world().getFluidState(sp.down()).isEmpty())
-                || Ctl.solid(sp) || Floors.container(Ctl.name(sp)));
-        spots.removeIf(sp -> lightTries.getOrDefault(sp, 0) >= 3);   // could not get a torch there three times
-        int missing = 0;
-        for (BlockPos spot : spots) if (!Ctl.name(spot).contains("torch")) missing++;
-        if (missing == 0) return true;
-        if (Ctl.count("torch") < missing) return false;
-        Bot.INSTANCE.stage("Свечу под фермой");
-        for (BlockPos spot : spots) {
-            if (Ctl.name(spot).contains("torch")) continue;
-            lightTries.merge(spot, 1, Integer::sum);
-            if (!Ctl.goTo(spot, 1.5, 400)) continue;
-            String n = Ctl.name(spot);
-            if (!air(n) && !container(n) && !Ctl.solid(spot)) Ctl.mine(spot);   // grass or a flower on the spot
-            if (Ctl.place(spot, "torch", spot.down())) continue;
-            // grass next to it in the way of the look: clear it and try again
-            BlockPos ob = Ctl.lastObstacle;
-            if (ob != null && !ob.equals(spot.down()) && !container(Ctl.name(ob)) && !Ctl.solid(ob) && Ctl.mine(ob))
-                Ctl.place(spot, "torch", spot.down());
-        }
-        for (BlockPos spot : spots) if (!Ctl.name(spot).contains("torch") && lightTries.getOrDefault(spot, 0) < 3) return false;
-        return true;
     }
 
     // ------------------------------------------------------------------ one pass over a floor
@@ -241,7 +199,7 @@ public final class Floors {
 
         Pass(Site s, int f, int k, Mode mode) {
             this.s = s; this.f = f; this.k = k; this.mode = mode;
-            this.L = s.floorY(k);
+            this.L = s.floorY(f, k);
             this.plant = s.plant(f);
         }
 
@@ -353,15 +311,17 @@ public final class Floors {
         /** The cells on both sides of the lane at row z (we came from z - dirZ), then plants and torches. */
         void work(int c, int z, int dirZ) {
             if (mode == Mode.BUILD) {
-                // a tree in the farm: its leaves and trunk between this floor and the next go (the plants need
-                // the room, and they are in the way of the clicks)
+                // the room between this floor and the next is cleared: grass, flowers, the old small farm,
+                // a tree, a hill, a torch in the wrong place (the plants need it, and it is in the way of clicks)
                 for (int d = -2; d <= 2; d++) {
                     int x = c + d;
                     if (x < 0 || x >= s.W) continue;
                     for (int up = 1; up < s.gap; up++) {
                         BlockPos q = floor(x, z).up(up);
                         String n = Ctl.name(q);
-                        if (foreign(n) && !crop(n) && Ctl.reach(q) < 4.4) Ctl.mine(q);
+                        if (air(n) || n.equals("water") || container(n) || crop(n)) continue;
+                        if (n.contains("torch") && up == 1 && s.isTorch(x, z)) continue;
+                        if (Ctl.reach(q) < 4.4) Ctl.mine(q);
                     }
                 }
             }
@@ -380,23 +340,23 @@ public final class Floors {
                 if (!Ctl.solid(top.down())) continue;
                 String here = Ctl.name(top);
                 if (s.isRow(x, z)) {
-                    if (mode != Mode.TEND) continue;
+                    // planting goes on while building (the plants grow while the next floors go up)
                     if (plant.equals("bamboo")) {
                         String up = Ctl.name(top.up());
-                        if (here.equals("bamboo") && up.equals("bamboo")) {
+                        if (mode == Mode.TEND && here.equals("bamboo") && up.equals("bamboo")) {
                             // cut above the first piece: the plant grows back by itself
                             if (Ctl.mine(top.up())) r.harvested++;
                         } else if (air(here) && Ctl.count("bamboo") > 0) {
                             if (Ctl.place(top, "bamboo", top.down())) r.planted++;
                         }
                     } else {
-                        if (here.equals("sweet_berry_bush")) {
+                        if (mode == Mode.TEND && here.equals("sweet_berry_bush")) {
                             int age = Ctl.direct(() -> {
                                 BlockState st = Ctl.world().getBlockState(top);
                                 return st.contains(Properties.AGE_3) ? st.get(Properties.AGE_3) : 0;
                             });
                             if (age >= 2) { Ctl.use(top); Ctl.ticks(2); r.harvested++; }
-                        } else if (air(here) && Ctl.count("sweet_berries") > 0) {
+                        } else if (air(here) && !here.equals("sweet_berry_bush") && Ctl.count("sweet_berries") > 0) {
                             if (Ctl.place(top, "sweet_berries", top.down())) r.planted++;
                         }
                     }
@@ -457,7 +417,7 @@ public final class Floors {
     }
 
     public static boolean floorDone(Site s, int f, int k) {
-        int L = s.floorY(k);
+        int L = s.floorY(f, k);
         return Ctl.direct(() -> {
             for (int dx = 0; dx < s.W; dx++) for (int dz = 0; dz < s.L; dz++) {
                 String n = Ctl.blockName(Ctl.world().getBlockState(new BlockPos(s.farmX(f) + dx, L, s.z + dz)));
@@ -509,5 +469,4 @@ public final class Floors {
         return total;
     }
 
-    static Vec3d center(Site s) { return new Vec3d(s.x + s.W / 2.0, s.y + 1, s.z + s.L / 2.0); }
 }

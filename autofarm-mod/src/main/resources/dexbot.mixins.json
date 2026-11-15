@@ -2,6 +2,6 @@
   "required": true,
   "package": "ru.onedex.bot.mixin",
   "compatibilityLevel": "JAVA_21",
-  "client": ["KeyboardInputMixin", "TeleportMixin"],
+  "client": ["KeyboardInputMixin", "TeleportMixin", "MouseMixin"],
   "injectors": { "defaultRequire": 1 }
 }

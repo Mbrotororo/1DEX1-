@@ -9,9 +9,10 @@ import net.minecraft.util.math.Vec3d;
 
 /**
  * Movement driven every client tick (on the game thread). The bot thread sets what it wants (go to this
- * point, sneak, jump, look there), this class turns it into the player's buttons and rotation.
- * A fight (a monster next to us) takes over the rotation and stops walking until it is over; then the
- * look the bot thread asked for comes back before the bot thread goes on.
+ * point, sneak, jump, look there), this class turns it into the player's buttons; the head is turned every
+ * frame like a hand on a mouse does it (smooth, slowing down near where it looks, in mouse steps).
+ * A fight, a chase or running from a creeper takes over until it is over; then the look the bot thread
+ * asked for comes back before the bot thread goes on.
  */
 public final class Move {
     private Move() {}
@@ -25,11 +26,17 @@ public final class Move {
     private static volatile boolean hasLast;
 
     private static volatile Entity fight;          // set by Bot on the game thread
-    private static volatile Vec3d fleeTo;          // running away from a creeper (set by Bot)
+    private static volatile Entity chase;          // running to a monster that shoots at us
+    private static volatile Vec3d fleeTo;          // running away from a creeper
     private static volatile boolean restoring;     // turning back to the bot thread's look after a fight
-    private static volatile boolean fleeForward;
+    private static volatile boolean runForward, critJump;
     private static float aimDx, aimDy, aimDz;      // where on the monster we aim (not always the exact middle)
     private static int aimFor = -1;
+
+    // where the head turns to (set every tick, turned to every frame); fast = in a fight
+    private static volatile Float headYaw, headPitch;
+    private static volatile boolean fast;
+    private static long lastFrame;
 
     public static void activate(boolean on) {
         active = on;
@@ -45,8 +52,12 @@ public final class Move {
         wantPitch = null;
         hasLast = false;
         fight = null;
+        chase = null;
         fleeTo = null;
         restoring = false;
+        critJump = false;
+        headYaw = null;
+        headPitch = null;
     }
 
     public static void set(boolean fwd, boolean jmp, boolean snk) { forward = fwd; jump = jmp; sneak = snk; }
@@ -77,17 +88,30 @@ public final class Move {
             aimDy = (float) r.nextDouble(-0.2, 0.25);
             aimDz = (float) r.nextDouble(-0.15, 0.15);
         }
-        if (was != null && e == null) backToWork();
+        if (e == null) critJump = false;
+        if (was != null && e == null && chase == null && fleeTo == null) backToWork();
+    }
+
+    /** Runs to this monster (it shoots at us), or stops running with null. */
+    static void chase(Entity e) {
+        Entity was = chase;
+        chase = e;
+        if (was != null && e == null && fight == null && fleeTo == null) backToWork();
     }
 
     /** Runs away to this point (a creeper close by), or stops running with null. */
     static void flee(Vec3d to) {
         Vec3d was = fleeTo;
         fleeTo = to;
-        if (was != null && to == null) backToWork();
+        if (was != null && to == null && fight == null && chase == null) backToWork();
     }
 
+    /** One jump now (a critical hit is struck on the way down). */
+    static void critJump(boolean on) { critJump = on; }
+
     public static boolean fleeing() { return fleeTo != null; }
+    public static Entity chasing() { return chase; }
+    public static Entity fighting() { return fight; }
 
     /** Back to what the bot was doing: its walk sets the yaw itself, otherwise its last look comes back. */
     private static void backToWork() {
@@ -95,65 +119,52 @@ public final class Move {
         if (walkTarget == null && hasLast) { wantYaw = lastYaw; wantPitch = lastPitch; }
     }
 
-    public static Entity fighting() { return fight; }
-
-    /** The bot thread waits while this is true (a fight, running from a creeper, or turning back after it). */
-    public static boolean busy() { return fight != null || fleeTo != null || restoring; }
+    /** The bot thread waits while this is true (a fight, a chase, running from a creeper, or turning back after it). */
+    public static boolean busy() { return fight != null || chase != null || fleeTo != null || restoring; }
 
     /** Buttons for the keyboard mixin; null = the player's own keys. */
     public static PlayerInput override() {
         if (!active) return null;
-        if (fleeTo != null) {
+        if (fleeTo != null || chase != null) {
             ClientPlayerEntity p = MinecraftClient.getInstance().player;
             boolean blocked = p != null && p.horizontalCollision;
-            return new PlayerInput(fleeForward, false, false, false, fleeForward && blocked, false, fleeForward);
+            return new PlayerInput(runForward, false, false, false, runForward && blocked, false, runForward);
         }
-        if (busy()) return new PlayerInput(false, false, false, false, false, sneak, false);
+        if (busy()) return new PlayerInput(false, false, false, false, critJump, sneak, false);
         return new PlayerInput(forward, back, false, false, jump, sneak, sprint);
-    }
-
-    /**
-     * Turns the head like a mouse does: at most `maxYaw`/`maxPitch` this tick, in whole steps of what one
-     * mouse count turns at the player's sensitivity (a hand on a mouse never turns by any other amount).
-     */
-    private static void rotate(MinecraftClient mc, ClientPlayerEntity p, Float yaw, Float pitch, float maxYaw, float maxPitch) {
-        double sens = mc.options.getMouseSensitivity().getValue();
-        double f = sens * 0.6 + 0.2;
-        float step = (float) (f * f * f * 8.0 * 0.15);
-        if (yaw != null) {
-            float d = MathHelper.wrapDegrees(yaw - p.getYaw());
-            d = Math.max(-maxYaw, Math.min(maxYaw, d));
-            d = Math.round(d / step) * step;
-            p.setYaw(p.getYaw() + d);
-            p.setHeadYaw(p.getYaw());
-        }
-        if (pitch != null) {
-            float d = pitch - p.getPitch();
-            d = Math.max(-maxPitch, Math.min(maxPitch, d));
-            d = Math.round(d / step) * step;
-            p.setPitch(MathHelper.clamp(p.getPitch() + d, -90f, 90f));
-        }
     }
 
     private static float yawTo(ClientPlayerEntity p, Vec3d at) {
         return (float) (MathHelper.atan2(at.z - p.getZ(), at.x - p.getX()) * (180 / Math.PI)) - 90f;
     }
 
-    /** Called every client tick. */
+    /** Called every client tick: buttons, and where the head should turn to. */
     public static void tick(MinecraftClient mc) {
         if (!active) return;
         ClientPlayerEntity p = mc.player;
         if (p == null) return;
-
         // no head turning while a chest or menu is open: with a window open the mouse moves the cursor
         // (and the bot thread, which opened it, must not wait for a turn that cannot happen now)
-        if (mc.currentScreen instanceof net.minecraft.client.gui.screen.ingame.HandledScreen<?>) { restoring = false; return; }
+        if (mc.currentScreen instanceof net.minecraft.client.gui.screen.ingame.HandledScreen<?>) {
+            restoring = false;
+            headYaw = null; headPitch = null;
+            return;
+        }
 
         Vec3d run = fleeTo;
-        if (run != null) {
-            float yaw = yawTo(p, run);
-            fleeForward = Math.abs(MathHelper.wrapDegrees(yaw - p.getYaw())) < 50f;
-            rotate(mc, p, yaw, 5f, 45f, 20f);
+        Entity ch = chase;
+        if (run != null || ch != null) {
+            Vec3d to = run != null ? run : ch.getEntityPos();
+            float yaw = yawTo(p, to);
+            runForward = Math.abs(MathHelper.wrapDegrees(yaw - p.getYaw())) < 45f;
+            fast = true;
+            if (ch != null) {
+                // look at the one we run to (aim on the way)
+                Vec3d eye = p.getEyePos(), at = ch.getBoundingBox().getCenter();
+                double dx = at.x - eye.x, dy = at.y - eye.y, dz = at.z - eye.z;
+                headPitch = (float) -(MathHelper.atan2(dy, Math.sqrt(dx * dx + dz * dz)) * (180 / Math.PI));
+            } else headPitch = 5f;
+            headYaw = yaw;
             return;
         }
 
@@ -164,11 +175,12 @@ public final class Move {
             var b = f.getBoundingBox();
             Vec3d at = b.getCenter().add(aimDx * b.getLengthX(), aimDy * b.getLengthY(), aimDz * b.getLengthZ());
             double dx = at.x - eye.x, dy = at.y - eye.y, dz = at.z - eye.z;
-            float yaw = (float) (MathHelper.atan2(dz, dx) * (180 / Math.PI)) - 90f;
-            float pitch = (float) -(MathHelper.atan2(dy, Math.sqrt(dx * dx + dz * dz)) * (180 / Math.PI));
-            rotate(mc, p, yaw, pitch, 40f, 30f);
+            headYaw = (float) (MathHelper.atan2(dz, dx) * (180 / Math.PI)) - 90f;
+            headPitch = (float) -(MathHelper.atan2(dy, Math.sqrt(dx * dx + dz * dz)) * (180 / Math.PI));
+            fast = true;
             return;
         }
+        fast = false;
 
         Vec3d t = walkTarget;
         boolean turnedAway = false;
@@ -186,10 +198,10 @@ public final class Move {
                 forward = !turnedAway || d < 0.35;
             }
         }
-        boolean yawDone = true, pitchDone = true;
-        // turn smoothly (looks natural on video) but fast enough to work
         Float wy = wantYaw, wp = wantPitch;
-        rotate(mc, p, wy, wp, 35f, 25f);
+        headYaw = wy;
+        headPitch = wp;
+        boolean yawDone = true, pitchDone = true;
         if (wy != null) {
             yawDone = Math.abs(MathHelper.wrapDegrees(wy - p.getYaw())) < 0.5f;
             if (yawDone && walkTarget == null) wantYaw = null;
@@ -199,5 +211,41 @@ public final class Move {
             if (pitchDone && walkTarget == null) wantPitch = null;
         }
         if (restoring && ((yawDone && pitchDone) || walkTarget != null && !turnedAway)) restoring = false;
+    }
+
+    /**
+     * Called every frame (from the mouse update): turns the head toward where it should look, the way a
+     * hand on a mouse does it. Smooth (every frame, not once a tick), quick at first and slowing down near
+     * the end, and always by whole mouse counts at the player's sensitivity.
+     */
+    public static void frame(MinecraftClient mc) {
+        long now = System.nanoTime();
+        double dt = lastFrame == 0 ? 0 : Math.min(0.1, (now - lastFrame) / 1e9);
+        lastFrame = now;
+        if (!active || dt <= 0) return;
+        ClientPlayerEntity p = mc.player;
+        if (p == null || mc.currentScreen instanceof net.minecraft.client.gui.screen.ingame.HandledScreen<?>) return;
+        Float ty = headYaw, tp = headPitch;
+        if (ty == null && tp == null) return;
+
+        double s = mc.options.getMouseSensitivity().getValue() * 0.6 + 0.2;
+        double perCount = s * s * s * 8.0;           // what one mouse count gives to changeLookDirection
+        double degPerCount = perCount * 0.15;        // and that many degrees
+        double gain = fast ? 16.0 : 10.0;            // how quickly it closes in (per second): eases out
+        double maxSpeed = fast ? 900.0 : 420.0;      // degrees per second at most
+        double minSpeed = 35.0;                      // the last bit is not crawled
+
+        double stepYaw = 0, stepPitch = 0;
+        if (ty != null) stepYaw = step(MathHelper.wrapDegrees(ty - p.getYaw()), gain, maxSpeed, minSpeed, dt, degPerCount);
+        if (tp != null) stepPitch = step(tp - p.getPitch(), gain, maxSpeed * 0.7, minSpeed, dt, degPerCount);
+        long cx = Math.round(stepYaw / degPerCount), cy = Math.round(stepPitch / degPerCount);
+        if (cx != 0 || cy != 0) p.changeLookDirection(cx * perCount, cy * perCount);
+    }
+
+    private static double step(double err, double gain, double maxSpeed, double minSpeed, double dt, double quantum) {
+        double a = Math.abs(err);
+        if (a < quantum * 0.5) return 0;
+        double speed = Math.max(minSpeed, Math.min(maxSpeed, a * gain));
+        return Math.signum(err) * Math.min(a, speed * dt);
     }
 }
