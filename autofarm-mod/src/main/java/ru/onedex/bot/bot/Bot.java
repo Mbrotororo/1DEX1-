@@ -120,7 +120,9 @@ public final class Bot {
     private int fightId = -1;
     private long lastOnCrosshair;
     private long fleeSince;
-    private long chaseSince, chaseSeen, critSince;
+    private long chaseSince, chaseSeen, critSince, chaseBestAt;
+    private double chaseBest;
+    private final Map<Integer, Long> chaseIgnore = new HashMap<>();   // not cleared by being hit
     private Vec3d fleeTo;
 
     /** A monster that may be fought: not one that only gets angry when hit (and calls its friends). */
@@ -224,6 +226,7 @@ public final class Bot {
         }
         long now = ticks;
         ignoreUntil.values().removeIf(t -> t < now);
+        chaseIgnore.values().removeIf(t -> t < now);
         double range = p.getEntityInteractionRange();
         // being hit: nothing next to us is left alone any more
         if (p.hurtTime > 0) ignoreUntil.clear();
@@ -262,11 +265,15 @@ public final class Bot {
             if (!lost && !p.canSee(chased) && now - chaseSeen > 40) lost = true;
             if (p.canSee(chased)) chaseSeen = now;
             int sx = Integer.signum((int) Math.round(chased.getX() - p.getX())), sz = Integer.signum((int) Math.round(chased.getZ() - p.getZ()));
-            if (!lost && reachTo(p, chased) > range - 0.2 && (sx != 0 || sz != 0) && !safeAhead(mc, p.getBlockPos(), sx, sz)) {
-                ignoreUntil.put(chased.getId(), now + 300);   // no safe way to it
-                lost = true;
-            }
-            if (lost || reachTo(p, chased) <= range - 0.2) { Move.chase(null); chased = null; }   // in reach: a normal fight
+            if (!lost && reachTo(p, chased) > range - 0.2 && (sx != 0 || sz != 0) && !safeAhead(mc, p.getBlockPos(), sx, sz)) lost = true;
+            // getting no nearer for a second and a half: something is in the way
+            if (!lost && now - chaseSince > 30 && d > chaseBest - 0.5 && now - chaseBestAt > 30) lost = true;
+            if (d < chaseBest - 0.5) { chaseBest = d; chaseBestAt = now; }
+            if (lost) {
+                if (chased.isAlive()) chaseIgnore.put(chased.getId(), now + 600);   // not this one again for half a minute
+                Move.chase(null);
+                chased = null;
+            } else if (reachTo(p, chased) <= range - 0.2) { Move.chase(null); chased = null; }   // in reach: a normal fight
             else return;
         }
         if (!floor && Move.fighting() == null) {
@@ -275,7 +282,7 @@ public final class Bot {
             boolean melee = false;
             for (Entity e : mc.world.getEntities()) if (enemy(e) && !shooter(e) && reachTo(p, e) < 4.5) melee = true;
             for (Entity e : mc.world.getEntities()) {
-                if (!shooter(e) || !e.isAlive() || ignoreUntil.containsKey(e.getId())) continue;
+                if (!shooter(e) || !e.isAlive() || ignoreUntil.containsKey(e.getId()) || chaseIgnore.containsKey(e.getId())) continue;
                 double d = e.distanceTo(p);
                 boolean aiming = e instanceof MobEntity m && m.isAttacking() && d < 14;
                 if ((p.hurtTime > 0 && !melee) || aiming) {
@@ -283,6 +290,12 @@ public final class Bot {
                 }
             }
             if (shooter != null) {
+                int sx = Integer.signum((int) Math.round(shooter.getX() - p.getX())), sz = Integer.signum((int) Math.round(shooter.getZ() - p.getZ()));
+                if (!safeAhead(mc, p.getBlockPos(), sx, sz)) { chaseIgnore.put(shooter.getId(), now + 600); shooter = null; }
+            }
+            if (shooter != null) {
+                chaseBest = shooter.distanceTo(p);
+                chaseBestAt = now;
                 BotClient.LOGGER.info("[bot] в меня стреляют — бегу к {} ({} блоков)", shooter.getType().getName().getString(), (int) best);
                 chaseSince = now;
                 chaseSeen = now;
@@ -356,6 +369,8 @@ public final class Bot {
                 if (Path.standable(mc.world, n.up(dy))) { ok = n.up(dy); break; }
             }
             if (ok == null || ok.getY() - at.getY() > 1) return false;
+            // a step up needs room to jump (no floor right above our head)
+            if (ok.getY() > at.getY() && !Path.standable(mc.world, at.up())) return false;
             String bn = Ctl.blockName(mc.world.getBlockState(ok.down()));
             if (bn.contains("lava") || bn.contains("fire") || bn.equals("cactus") || bn.equals("magma_block")) return false;
             at = ok;

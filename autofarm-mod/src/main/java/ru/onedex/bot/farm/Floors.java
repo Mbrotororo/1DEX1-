@@ -332,6 +332,9 @@ public final class Floors {
                 BlockPos ref = dirZ != 0 ? floor(x, z - dirZ) : null;
                 boolean ok = placeFloor(x, z, ref, null);
                 if (!ok && mode == Mode.BUILD && noMaterial && s.isRow(x, z)) { stop(false, true); return; }
+                if (!ok && mode == Mode.BUILD && !noMaterial)
+                    BotClient.LOGGER.info("[bot] этаж {}: не поставил сбоку {},{} ({}, мешает {})", k + 1, x, z,
+                            Ctl.name(floor(x, z)), Ctl.lastObstacle == null ? "-" : Ctl.name(Ctl.lastObstacle));
             }
             for (int d = -2; d <= 2; d++) {
                 int x = c + d;
@@ -339,6 +342,10 @@ public final class Floors {
                 BlockPos top = floor(x, z).up();
                 if (!Ctl.solid(top.down())) continue;
                 String here = Ctl.name(top);
+                if (s.isRow(x, z) && !air(here) && !crop(here) && !here.contains("torch") && !container(here) && foreign(here)) {
+                    // grass or a flower grew on the row: away with it, the plant goes there
+                    if (Ctl.mine(top)) here = Ctl.name(top);
+                }
                 if (s.isRow(x, z)) {
                     // planting goes on while building (the plants grow while the next floors go up)
                     if (plant.equals("bamboo")) {
@@ -452,7 +459,8 @@ public final class Floors {
             p.run();
             total.harvested += p.r.harvested;
             total.planted += p.r.planted;
-            if (mode == Mode.BUILD && floorDone(s, f, k)) State.get().markBuilt(f, k);
+            // the ground floor counts only after a whole pass (on flat grass its blocks are right from the start)
+            if (mode == Mode.BUILD && (k > 0 || p.r.finished) && floorDone(s, f, k)) State.get().markBuilt(f, k);
             // a hole that could not be mended while farming: the floor is built again (with a bag of blocks)
             if (mode == Mode.TEND && p.r.hole) State.get().unmarkBuilt(f, k);
             if (p.r.finished) { if (resume != null && resume[1] == k) resume = null; }

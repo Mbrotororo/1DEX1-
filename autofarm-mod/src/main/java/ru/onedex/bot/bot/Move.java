@@ -37,6 +37,8 @@ public final class Move {
     private static volatile Float headYaw, headPitch;
     private static volatile boolean fast;
     private static long lastFrame;
+    private static double restYaw, restPitch;
+    private static int restoringTicks;
 
     public static void activate(boolean on) {
         active = on;
@@ -210,7 +212,9 @@ public final class Move {
             pitchDone = Math.abs(wp - p.getPitch()) < 0.5f;
             if (pitchDone && walkTarget == null) wantPitch = null;
         }
+        if (restoring && ++restoringTicks > 40) restoring = false;   // never wait for a turn forever
         if (restoring && ((yawDone && pitchDone) || walkTarget != null && !turnedAway)) restoring = false;
+        if (!restoring) restoringTicks = 0;
     }
 
     /**
@@ -223,6 +227,7 @@ public final class Move {
         double dt = lastFrame == 0 ? 0 : Math.min(0.1, (now - lastFrame) / 1e9);
         lastFrame = now;
         if (!active || dt <= 0) return;
+        if (headYaw == null && headPitch == null) { restYaw = 0; restPitch = 0; }
         ClientPlayerEntity p = mc.player;
         if (p == null || mc.currentScreen instanceof net.minecraft.client.gui.screen.ingame.HandledScreen<?>) return;
         Float ty = headYaw, tp = headPitch;
@@ -238,7 +243,14 @@ public final class Move {
         double stepYaw = 0, stepPitch = 0;
         if (ty != null) stepYaw = step(MathHelper.wrapDegrees(ty - p.getYaw()), gain, maxSpeed, minSpeed, dt, degPerCount);
         if (tp != null) stepPitch = step(tp - p.getPitch(), gain, maxSpeed * 0.7, minSpeed, dt, degPerCount);
-        long cx = Math.round(stepYaw / degPerCount), cy = Math.round(stepPitch / degPerCount);
+        // what does not make a whole mouse count yet is kept for the next frame (a slow turn still arrives)
+        restYaw += stepYaw / degPerCount;
+        restPitch += stepPitch / degPerCount;
+        long cx = (long) restYaw, cy = (long) restPitch;
+        restYaw -= cx;
+        restPitch -= cy;
+        if (ty == null) restYaw = 0;
+        if (tp == null) restPitch = 0;
         if (cx != 0 || cy != 0) p.changeLookDirection(cx * perCount, cy * perCount);
     }
 
