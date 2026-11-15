@@ -228,7 +228,13 @@ public final class Floors {
             String n = Ctl.name(p);
             if (container(n)) return false;
             // anything that does not belong here goes: a plant, leaves, or stone / cobblestone in a row of soil
-            if (!air(n) && !n.equals("water") && (foreign(n) || s.isRow(dx, dz))) { Ctl.mine(p); n = Ctl.name(p); }
+            if (!air(n) && !n.equals("water") && (foreign(n) || s.isRow(dx, dz))) {
+                boolean stalk = n.startsWith("bamboo");
+                Ctl.mine(p);
+                // a bamboo stalk from the floor below: the server drops the rest of it a moment later
+                if (stalk) Ctl.ticks(3);
+                n = Ctl.name(p);
+            }
             if (!air(n) && !n.equals("water")) return false;
             String mat = material(dx, dz);
             if (mat == null) { noMaterial = true; return false; }
@@ -249,7 +255,9 @@ public final class Floors {
             // leaves or a plant between the eye and the face: clear it and try once more (a bush or bamboo of the
             // farm is planted again on the next farming pass; a hole in the floor would stop the farm)
             String obn = ob == null ? "" : Ctl.name(ob);
-            if (ob != null && !ob.equals(ref) && foreign(obn) && Ctl.mine(ob)) {
+            // (it may be gone by now on its own: the rest of a cut bamboo stalk falls a moment later)
+            if (ob != null && !ob.equals(ref) && (air(obn) || foreign(obn)) && (air(obn) || Ctl.mine(ob) || air(Ctl.name(ob)))) {
+                Ctl.ticks(2);
                 if (ref != null && Ctl.solid(ref) && Ctl.place(p, mat, ref, bridge != null)) return true;
                 return Ctl.placeAny(p, mat);
             }
