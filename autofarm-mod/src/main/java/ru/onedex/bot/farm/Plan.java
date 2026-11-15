@@ -267,16 +267,20 @@ public final class Plan {
         Site s = site();
         Bot.INSTANCE.stage("Копаю землю");
         tidyBag(6);
+        // nothing below the farm's ground is dug: one layer of it at most (and any hill above it), so a hole
+        // is never deeper than one block and the bot always walks out of it
+        int floorY = s.base(st().farm);
         Set<BlockPos> skip = new HashSet<>();
         int moves = 0, dug = 0;
         while (Ctl.count("dirt") < target && Ctl.freeSlots() > 3 && moves < 12) {
+            climbOut(floorY + 1);
             BlockPos next = Ctl.direct(() -> {
                 var w = Ctl.world();
                 BlockPos me = Ctl.player().getBlockPos();
                 BlockPos best = null;
                 double bd = 1e9;
                 for (BlockPos p : BlockPos.iterate(me.add(-14, -3, -14), me.add(14, 3, 14))) {
-                    if (nearFarm(s, p, 4) || skip.contains(p)) continue;
+                    if (p.getY() < floorY || nearFarm(s, p, 4) || skip.contains(p)) continue;
                     String n = Ctl.blockName(w.getBlockState(p));
                     if (!(n.equals("grass_block") || n.equals("dirt") || n.equals("podzol"))) continue;
                     if (p.getX() == me.getX() && p.getZ() == me.getZ()) continue;   // what we stand on
@@ -314,6 +318,14 @@ public final class Plan {
         }
         Ctl.collectDrops(6, 12);
         State.save();
+    }
+
+    /** Down in a hole deeper than a step: build a little column under us and walk out from its top. */
+    static void climbOut(int groundY) {
+        for (int i = 0; i < 3 && Ctl.feet().getY() < groundY - 1; i++) {
+            String mat = Ctl.count("dirt") > 0 ? "dirt" : (Ctl.count("cobblestone") > 0 ? "cobblestone" : null);
+            if (mat == null || !Ctl.pillarUp(mat)) break;
+        }
     }
 
     // ------------------------------------------------------------------ 3. building
