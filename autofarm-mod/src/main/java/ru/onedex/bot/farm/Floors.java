@@ -269,10 +269,14 @@ public final class Floors {
                 if (!Ctl.hold(mat)) return false;
                 Ctl.edgeToward(ref, bridge);
             }
-            if (ref != null && Ctl.solid(ref) && Ctl.place(p, mat, ref, bridge != null)) return true;
+            BlockPos ob = null;
+            if (ref != null && Ctl.solid(ref)) {
+                if (Ctl.place(p, mat, ref, bridge != null)) return true;
+                ob = Ctl.lastObstacle;   // what was in the way of the best face (before other tries overwrite it)
+            }
             if (Ctl.placeAny(p, mat)) return true;
+            if (ob == null) ob = Ctl.lastObstacle;
             // leaves or the like between the eye and the face: clear it and try once more (never a crop of the farm)
-            BlockPos ob = Ctl.lastObstacle;
             String obn = ob == null ? "" : Ctl.name(ob);
             boolean crop = obn.equals("sweet_berry_bush") || obn.startsWith("bamboo");
             if (ob != null && !ob.equals(ref) && !crop && foreign(obn) && Ctl.mine(ob)) {
@@ -332,8 +336,23 @@ public final class Floors {
             return !blocked;
         }
 
+        static boolean crop(String n) { return n.equals("sweet_berry_bush") || n.startsWith("bamboo"); }
+
         /** The cells on both sides of the lane at row z (we came from z - dirZ), then plants and torches. */
         void work(int c, int z, int dirZ) {
+            if (mode == Mode.BUILD) {
+                // a tree in the farm: its leaves and trunk between this floor and the next go (the plants need
+                // the room, and they are in the way of the clicks)
+                for (int d = -2; d <= 2; d++) {
+                    int x = c + d;
+                    if (x < 0 || x >= s.W) continue;
+                    for (int up = 1; up < s.gap; up++) {
+                        BlockPos q = floor(x, z).up(up);
+                        String n = Ctl.name(q);
+                        if (foreign(n) && !crop(n) && Ctl.reach(q) < 4.4) Ctl.mine(q);
+                    }
+                }
+            }
             for (int d : new int[]{-1, 1, -2, 2}) {
                 int x = c + d;
                 if (x < 0 || x >= s.W) continue;
