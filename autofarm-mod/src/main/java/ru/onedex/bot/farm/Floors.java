@@ -285,10 +285,14 @@ public final class Floors {
             noMaterial = false;
             if (!placeFloor(dx, dz, floor(fx, fz), dir)) {
                 if (mode == Mode.TEND) r.hole = true;
+                BotClient.LOGGER.info("[bot] этаж {}: не поставил блок {},{} ({})", k + 1, dx, dz, noMaterial ? "нет блоков" : Ctl.name(floor(dx, dz)));
                 return stop(false, noMaterial);
             }
             clearWay(dx, dz);
-            if (!Ctl.stepTo(cell(dx, dz), edge(dx, dz))) return stop(false, false);
+            if (!Ctl.stepTo(cell(dx, dz), edge(dx, dz))) {
+                BotClient.LOGGER.info("[bot] этаж {}: не прошёл на {},{}", k + 1, dx, dz);
+                return stop(false, false);
+            }
             path.add(new int[]{dx, dz});
             return true;
         }
