@@ -625,6 +625,12 @@ public final class Floors {
             if (!inside || Math.abs(me.getY() - (L + 1)) > 2) {
                 int tx = Math.max(0, Math.min(s.W - 1, dx)), tz = Math.max(0, Math.min(s.L - 1, dz));
                 Ctl.goTo(cell(tx, tz), 1.5, 900);
+                // "near" can still be just outside (by the chests): the last step onto the cell itself
+                BlockPos at = Ctl.feet();
+                int ax = at.getX() - s.farmX(f), az = at.getZ() - s.z;
+                if (!(ax >= 0 && ax < s.W && az >= 0 && az < s.L) && Math.abs(ax - tx) + Math.abs(az - tz) <= 2
+                        && Math.abs(at.getY() - (L + 1)) <= 1)
+                    Ctl.stepTo(cell(tx, tz), true);
                 me = Ctl.feet();
                 dx = me.getX() - s.farmX(f);
                 dz = me.getZ() - s.z;
