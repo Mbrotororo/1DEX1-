@@ -143,7 +143,10 @@ public final class Bot {
         if (p == null || mc.world == null) return false;
         if (p.hurtTime > 0) return true;
         for (Entity e : mc.world.getEntities()) {
-            if (enemy(e) && reachTo(p, e) < 4.5 && p.canSee(e)) return true;
+            if (!enemy(e) || !p.canSee(e)) continue;
+            // a creeper is met early: by the time it hisses there must be time to get away
+            double near = e instanceof CreeperEntity ? 8.0 : 4.5;
+            if (reachTo(p, e) < near) return true;
         }
         return false;
     }

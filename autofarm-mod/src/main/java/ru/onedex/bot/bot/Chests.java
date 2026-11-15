@@ -78,9 +78,13 @@ public final class Chests {
      */
     static boolean leaveForFight() {
         if (!Ctl.call(() -> Bot.INSTANCE.danger())) return false;
+        interrupted = true;
         close();
         return true;
     }
+
+    /** Set when a chest was left because of a monster (so "the chests did not take it" means nothing). */
+    public static volatile boolean interrupted;
 
     /** Puts matching items from the bag into the chest, leaving `keep` of each in the bag. Returns how many went in. */
     public static int deposit(GenericContainerScreenHandler h, Predicate<String> test, Map<String, Integer> keep) {

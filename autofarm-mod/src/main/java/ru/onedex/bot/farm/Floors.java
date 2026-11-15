@@ -182,6 +182,11 @@ public final class Floors {
                 int x = s.farmX(f) + dx, z = s.z + dz;
                 spots.add(new BlockPos(x, s.ground(x, z) + 1, z));
             }
+        // and the strip west of the farm (the column, the storage, the way between the farms)
+        for (int dz = 5; dz < s.L; dz += 12) {
+            int x = s.farmX(f) - 3, z = s.z + dz;
+            spots.add(new BlockPos(x, s.ground(x, z) + 1, z));
+        }
         int missing = 0;
         for (BlockPos spot : spots) if (!Ctl.name(spot).contains("torch")) missing++;
         if (missing == 0) return true;

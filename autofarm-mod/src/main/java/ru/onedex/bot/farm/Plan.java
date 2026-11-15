@@ -448,13 +448,30 @@ public final class Plan {
                 if (n >= 3) { st().badStorage.add(i); State.save(); BotClient.LOGGER.info("[bot] место для сундука {} пропущено", i); }
             }
         }
-        if (storageReady()) { phase(takeNext("farm")); return; }
+        if (storageReady()) {
+            lightStorage(s);
+            phase(takeNext("farm"));
+            return;
+        }
         // not a single chest could be put: tell it and wait (the owner brings chests or frees the place)
         Bot.INSTANCE.stage(Ctl.count("chest") == 0 ? "Положи сундуки в стеш (" + cfg().stashCommand + ")" : "Нет места для сундуков у фермы");
         Ctl.sleep(60_000);
         st().noMoreChests = false;
         if (storage().isEmpty()) st().badStorage.clear();
         State.save();
+    }
+
+    /** A torch in the free cell between two pairs of chests: no monster appears at the storage at night. */
+    static void lightStorage(Site s) {
+        List<BlockPos> spots = s.storageSpots(cfg().storagePairs);
+        for (int i = 1; i + 1 < spots.size(); i += 2) {
+            if (Ctl.count("torch") == 0) return;
+            BlockPos a = spots.get(i);
+            BlockPos gap = s.onGround(a.add(0, 0, 1));
+            if (Ctl.name(gap).contains("torch") || Floors.container(Ctl.name(gap)) || Ctl.solid(gap)) continue;
+            if (Ctl.reach(gap) > 4.0 && !Ctl.goTo(gap.add(-2, 0, 0), 0.8, 300)) continue;
+            placeClearing(gap, "torch", gap.down());
+        }
     }
 
     /** Harvest into the storage, keeping some seeds. False when the storage is full. */
@@ -465,6 +482,7 @@ public final class Plan {
         tidyBag(6);
         if (Ctl.count("sweet_berries") <= cfg().keepSeeds && Ctl.count("bamboo") <= cfg().keepSeeds) return true;
         Bot.INSTANCE.stage("Складываю в хранилище");
+        Chests.interrupted = false;
         for (BlockPos p : storage()) {
             if (Ctl.count("sweet_berries") <= cfg().keepSeeds && Ctl.count("bamboo") <= cfg().keepSeeds) return true;
             if (!Ctl.name(p).contains("chest")) continue;
@@ -473,6 +491,7 @@ public final class Plan {
             Chests.deposit(h, n -> n.equals("sweet_berries") || n.equals("bamboo"), keep);
             Chests.close();
         }
+        if (Chests.interrupted) return true;   // a monster came: not full, just not done (next time)
         return Ctl.count("sweet_berries") <= cfg().keepSeeds + 64 && Ctl.count("bamboo") <= cfg().keepSeeds + 64;
     }
 
