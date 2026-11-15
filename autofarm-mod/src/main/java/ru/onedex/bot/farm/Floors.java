@@ -362,7 +362,8 @@ public final class Floors {
                 return stop(false, noMaterial);
             }
             clearWay(dx, dz);
-            if (!Ctl.stepTo(cell(dx, dz), edge(dx, dz), mode == Mode.TEND)) {
+            // no full stop inside the floor (the edge cells are walked sneaking and to a stop)
+            if (!Ctl.stepTo(cell(dx, dz), edge(dx, dz), !edge(dx, dz))) {
                 BotClient.LOGGER.info("[bot] этаж {}: не прошёл на {},{}", k + 1, dx, dz);
                 return stop(false, false);
             }

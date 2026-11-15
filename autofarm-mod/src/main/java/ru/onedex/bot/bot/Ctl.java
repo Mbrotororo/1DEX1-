@@ -452,11 +452,11 @@ public final class Ctl {
         if (!solid(cell.down())) return false;   // nothing to stand on there (a block the server took back)
         boolean wasSneaking = Move.sneaking();
         Move.sneak(sneak);
-        Move.walkTo(Vec3d.ofBottomCenter(cell), roll && !sneak ? 0.35 : 0.2);
+        Move.walkTo(Vec3d.ofBottomCenter(cell), roll && !sneak ? 0.3 : 0.2);
         int t = 0;
         while (Move.walking() && t++ < 100) ticks(1);
         Move.stopWalking();
-        if (roll && !sneak && !wasSneaking) {
+        if (roll && !sneak) {
             Vec3d p = pos();
             return Math.abs(p.x - (cell.getX() + 0.5)) < 0.45 && Math.abs(p.z - (cell.getZ() + 0.5)) < 0.45 && Math.abs(p.y - cell.getY()) < 0.6;
         }
