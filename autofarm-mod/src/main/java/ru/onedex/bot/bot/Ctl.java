@@ -169,9 +169,36 @@ public final class Ctl {
         p.networkHandler.sendPacket(new net.minecraft.network.packet.c2s.play.CloseHandledScreenC2SPacket(p.playerScreenHandler.syncId));
     }
 
+    /**
+     * Clicks in our own bag only standing still and not sneaking: no player clicks in the inventory while
+     * walking or sneaking (anti-cheats look for exactly that). Releases sneak only where it is safe (the body
+     * is over a block, not leaning over an edge). False if a click must not happen here now.
+     */
+    private static boolean readyForBag() {
+        Move.stopWalking();
+        for (int t = 0; t < 12; t++) {
+            if (call(() -> player().getVelocity().horizontalLengthSquared() < 1e-5)) break;
+            ticks(1);
+        }
+        if (Move.sneaking()) {
+            boolean safe = call(() -> solidNow(BlockPos.ofFloored(player().getX(), player().getY() - 0.3, player().getZ())));
+            if (!safe) return false;
+            Move.sneak(false);
+            ticks(2);   // the server has the release before the click
+        }
+        return true;
+    }
+
     /** The sword into the hotbar (after the stash: shift-clicks may have put it in the bag). */
     public static void swordToHotbar() {
         closeScreen();
+        boolean need = call(() -> {
+            var inv = player().getInventory();
+            boolean bag = false;
+            for (int i = 0; i < 36; i++) if (itemName(inv.getStack(i)).endsWith("_sword")) { if (i < 9) return false; bag = true; }
+            return bag;
+        });
+        if (!need || !readyForBag()) return;
         boolean moved = call(() -> {
             ClientPlayerEntity p = player();
             var inv = p.getInventory();
@@ -207,23 +234,32 @@ public final class Ctl {
      */
     private static int take(Predicate<String> test, Comparator<ItemStack> prefer) {
         closeScreen();
-        return call(() -> {
-            ClientPlayerEntity p = player();
-            var inv = p.getInventory();
-            int best = -1;
+        int best = call(() -> {
+            var inv = player().getInventory();
+            int b = -1;
             for (int i = 0; i < 36; i++) {
                 ItemStack s = inv.getStack(i);
                 if (s.isEmpty() || !test.test(itemName(s))) continue;
-                if (best < 0 || (prefer != null && prefer.compare(s, inv.getStack(best)) > 0)) best = i;
+                if (b < 0 || (prefer != null && prefer.compare(s, inv.getStack(b)) > 0)) b = i;
             }
-            if (best < 0) return 0;
-            if (best < 9) { inv.setSelectedSlot(best); return 1; }
+            if (b >= 0 && b < 9) inv.setSelectedSlot(b);
+            return b;
+        });
+        if (best < 0) return 0;
+        if (best < 9) return 1;
+        boolean sneak = Move.sneaking();
+        if (!readyForBag()) return 0;
+        call(() -> {
+            ClientPlayerEntity p = player();
+            var inv = p.getInventory();
             int hb = swapTarget(inv);
             inv.setSelectedSlot(hb);
             mc().interactionManager.clickSlot(p.playerScreenHandler.syncId, handlerSlot(best), hb, SlotActionType.SWAP, p);
             bagClosed(p);
-            return 2;
+            return null;
         });
+        if (sneak) Move.sneak(true);
+        return 2;
     }
 
     public static boolean hold(Predicate<String> test, Comparator<ItemStack> prefer) {
@@ -237,32 +273,48 @@ public final class Ctl {
     /** The best tool for a block in the hand (by mining speed), or nothing special. True if the hand changed. */
     public static boolean holdBestFor(BlockPos pos) {
         closeScreen();
-        return call(() -> {
-            ClientPlayerEntity p = player();
+        int best = call(() -> {
             BlockState st = world().getBlockState(pos);
-            var inv = p.getInventory();
-            int best = -1;
+            var inv = player().getInventory();
+            int b = -1;
             float bestSpeed = 1.0f;
             for (int i = 0; i < 36; i++) {
                 ItemStack s = inv.getStack(i);
                 if (s.isEmpty()) continue;
                 float sp = s.getMiningSpeedMultiplier(st);
-                if (sp > bestSpeed) { bestSpeed = sp; best = i; }
+                if (sp > bestSpeed) { bestSpeed = sp; b = i; }
             }
-            if (best < 0 || best == inv.getSelectedSlot()) return false;
-            if (best < 9) { inv.setSelectedSlot(best); return true; }
+            // a tool already in the hotbar: just select it
+            if (b >= 0 && b < 9 && b != inv.getSelectedSlot()) { inv.setSelectedSlot(b); return 100 + b; }
+            return b < 9 ? -1 : b;
+        });
+        if (best >= 100) return true;
+        if (best < 0) return false;
+        boolean sneak = Move.sneaking();
+        if (!readyForBag()) return false;   // dig with what is in the hand
+        call(() -> {
+            ClientPlayerEntity p = player();
+            var inv = p.getInventory();
             int hb = swapTarget(inv);
             inv.setSelectedSlot(hb);
             mc().interactionManager.clickSlot(p.playerScreenHandler.syncId, handlerSlot(best), hb, SlotActionType.SWAP, p);
             bagClosed(p);
-            return true;
+            return null;
         });
+        if (sneak) Move.sneak(true);
+        return true;
     }
 
     /** Throws away whole stacks of items with these names, one by one like a player. Returns how many stacks. */
     public static int toss(Predicate<String> test) {
         closeScreen();
         int n = 0;
+        boolean any = call(() -> {
+            var inv = player().getInventory();
+            for (int i = 0; i < 36; i++) { ItemStack s = inv.getStack(i); if (!s.isEmpty() && test.test(itemName(s))) return true; }
+            return false;
+        });
+        if (!any || !readyForBag()) return 0;
         for (int i = 0; i < 36; i++) {
             final int slot = i;
             boolean thrown = call(() -> {
@@ -282,6 +334,7 @@ public final class Ctl {
     public static void tossExcess(String item, int keep) {
         closeScreen();
         boolean any = false;
+        if (count(item) - 64 < keep || !readyForBag()) return;
         for (int i = 0; i < 36; i++) {
             final int slot = i;
             boolean thrown = call(() -> {

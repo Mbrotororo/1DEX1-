@@ -263,7 +263,12 @@ public final class Floors {
             String mat = material(dx, dz);
             if (mat == null) { noMaterial = true; return false; }
             if (!canSpare()) return false;
-            if (bridge != null) Ctl.edgeToward(ref, bridge);
+            if (bridge != null) {
+                // the block in the hand first, standing in the middle of our cell: at the edge we lean out
+                // sneaking, and nobody clicks in the inventory like that
+                if (!Ctl.hold(mat)) return false;
+                Ctl.edgeToward(ref, bridge);
+            }
             if (ref != null && Ctl.solid(ref) && Ctl.place(p, mat, ref, bridge != null)) return true;
             if (Ctl.placeAny(p, mat)) return true;
             // leaves or the like between the eye and the face: clear it and try once more (never a crop of the farm)

@@ -101,11 +101,14 @@ public final class Plan {
         if (food >= 14) return;
         Ctl.closeScreen();
         Comparator<ItemStack> best = Comparator.comparingInt(s -> -foodRank(Ctl.itemName(s)));
+        // the food in the hand first (standing, not sneaking), then sneak and look up
+        if (!Ctl.hold(n -> FOOD.matcher(n).matches(), best)) return;
         Move.sneak(true);
         Move.look(Ctl.call(() -> Ctl.player().getYaw()), -90f);
         Ctl.ticks(6);
         try {
             for (int i = 0; i < 6 && Ctl.call(() -> Ctl.player().getHungerManager().getFoodLevel()) < 19; i++) {
+                // the next piece: from the hotbar it is a slot change only; from the bag hold() stands up for it
                 if (!Ctl.hold(n -> FOOD.matcher(n).matches(), best)) return;
                 KeyBinding use = Ctl.mc().options.useKey;
                 Ctl.run(() -> use.setPressed(true));
