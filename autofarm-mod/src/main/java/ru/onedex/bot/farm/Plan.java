@@ -285,8 +285,7 @@ public final class Plan {
         tidyBag(6);
         Set<BlockPos> skip = new HashSet<>();
         Set<BlockPos> mined = new HashSet<>();
-        List<BlockPos> recent = new ArrayList<>();
-        int moves = 0, dug = 0, noGain = 0, walkFails = 0;
+        int moves = 0, dug = 0, walkFails = 0;
         while (Ctl.count("dirt") < target && Ctl.freeSlots() > 3 && moves < 10) {
             BlockPos next = Ctl.direct(() -> {
                 var w = Ctl.world();
@@ -313,10 +312,8 @@ public final class Plan {
                 return best;
             });
             if (next != null && mined.contains(next)) { skip.add(next); continue; }   // it came back: protected ground
-            if (next == null || noGain >= 8 || walkFails >= 4) {
+            if (next == null || walkFails >= 4) {
                 // nothing (more) to get here: on round the farms to the next side
-                if (noGain >= 8) skip.addAll(recent);
-                noGain = 0;
                 walkFails = 0;
                 moves++;
                 Ctl.collectDrops(6, 10);
@@ -338,17 +335,12 @@ public final class Plan {
                 continue;
             }
             walkFails = 0;
-            int before = Ctl.count("dirt");
+            // (ground that is protected comes back right away: mine() says so, and it is left alone)
             if (Ctl.mine(next)) {
                 mined.add(next);
-                recent.add(next);
-                if (recent.size() > 12) recent.remove(0);
                 dug++;
-                if (dug % 12 == 0) Ctl.collectDrops(6, 10);   // what fell out of reach
+                if (dug % 6 == 0) Ctl.collectDrops(6, 12);   // the dirt falls where the block was: go and get it
                 if (Ctl.freeSlots() <= 4) tidyBag(6);
-                Ctl.ticks(2);
-                if (Ctl.count("dirt") > before) noGain = 0;
-                else noGain++;
             } else skip.add(next);
         }
         Ctl.collectDrops(6, 12);
