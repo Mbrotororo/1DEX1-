@@ -53,14 +53,23 @@ public final class Site {
     public BlockPos shaft(int f) { return new BlockPos(farmX(f) - 1, 0, z + 1); }
 
     /** Storage: pairs of chests along the west side of the berries farm (one free block between pairs). */
+    /**
+     * Storage: pairs of chests three blocks west of the berries farm, on the level of its ground floor (one free
+     * block between pairs, clear of the column at z+1): put and opened from the ground floor, whatever the
+     * land beside the farm is like.
+     */
     public List<BlockPos> storageSpots(int pairs) {
         List<BlockPos> out = new ArrayList<>();
-        for (int j = 0; j + 1 < L && out.size() < pairs * 2; j += 3) {
-            out.add(new BlockPos(x - 4, 0, z + j));
-            out.add(new BlockPos(x - 4, 0, z + j + 1));
+        int sy = first == 0 ? y + 1 : 0;
+        for (int j = 3; j + 1 < L && out.size() < pairs * 2; j += 3) {
+            out.add(new BlockPos(x - 3, sy, z + j));
+            out.add(new BlockPos(x - 3, sy, z + j + 1));
         }
         return out;
     }
+
+    /** Where a storage spot really is (on the ground floor's level, or on the land for the raised layout). */
+    public BlockPos storageAt(BlockPos spot) { return first == 0 ? spot : onGround(spot); }
 
     /** Our whole area: no digging for dirt in here. */
     public boolean inZone(BlockPos p, int margin) {

@@ -41,7 +41,7 @@ public final class Plan {
     static final List<String> FOOD_ORDER = List.of("cooked_beef", "cooked_porkchop", "golden_carrot", "cooked_mutton", "cooked_salmon",
             "cooked_chicken", "baked_potato", "bread", "cooked_cod", "cooked_rabbit", "pumpkin_pie", "apple", "cookie", "carrot", "sweet_berries");
     /** What the bot's own work leaves in the bag and nobody needs (thrown away when the bag gets full). */
-    static final Pattern JUNK = Pattern.compile("^(wheat_seeds|beetroot_seeds|pumpkin_seeds|melon_seeds|.*_sapling|stick|dandelion|poppy|blue_orchid|allium|azure_bluet|.*_tulip|oxeye_daisy|cornflower|lily_of_the_valley|sunflower|lilac|rose_bush|peony|pink_petals|gravel|flint|sand|red_sand|andesite|diorite|granite|tuff|calcite|clay_ball|rotten_flesh|bone|arrow|string|spider_eye|poisonous_potato|kelp|seagrass|dead_bush|vine|glow_lichen|moss_carpet|.*_leaves|short_grass|tall_grass|fern|large_fern|coarse_dirt|rooted_dirt|hanging_roots|mangrove_roots|pointed_dripstone)$");
+    static final Pattern JUNK = Pattern.compile("^(wheat_seeds|beetroot_seeds|pumpkin_seeds|melon_seeds|.*_sapling|stick|dandelion|poppy|blue_orchid|allium|azure_bluet|.*_tulip|oxeye_daisy|cornflower|lily_of_the_valley|sunflower|lilac|rose_bush|peony|pink_petals|gravel|flint|sand|red_sand|calcite|clay_ball|rotten_flesh|bone|arrow|string|spider_eye|poisonous_potato|kelp|seagrass|dead_bush|vine|glow_lichen|moss_carpet|.*_leaves|short_grass|tall_grass|fern|large_fern|coarse_dirt|rooted_dirt|hanging_roots|mangrove_roots|pointed_dripstone)$");
     static final Pattern MANMADE = Pattern.compile(".*(fence|_wall|glass|slab|stairs|planks|lantern|sign|carpet|wool|bricks|trapdoor|door|button|pressure|rail|composter|water_cauldron|cauldron|campfire|hay_block|scaffolding).*");
 
     static State st() { return State.get(); }
@@ -169,7 +169,7 @@ public final class Plan {
             take(h, n -> n.endsWith("_pickaxe"), Math.max(0, 1 - Ctl.countMatch(n -> n.endsWith("_pickaxe"))));
             take(h, n -> FOOD.matcher(n).matches() && !n.equals("sweet_berries"), 64 - Ctl.countMatch(n -> FOOD.matcher(n).matches()));
             take(h, n -> n.equals("sweet_berries") || n.equals("bamboo"), 256 - Ctl.count("sweet_berries") - Ctl.count("bamboo"));
-            take(h, n -> n.equals("dirt") || n.equals("cobblestone"), Math.max(0, (Ctl.freeSlots() - 10) * 64));
+            take(h, n -> n.equals("dirt") || Floors.WALK_ITEMS.contains(n), Math.max(0, (Ctl.freeSlots() - 10) * 64));
             Chests.close();
         }
         st().stashDone = true;
@@ -362,7 +362,7 @@ public final class Plan {
     /** Down in a hole deeper than a step: build a little column under us and walk out from its top. */
     static void climbOut(int groundY) {
         for (int i = 0; i < 3 && Ctl.feet().getY() < groundY - 1; i++) {
-            String mat = Ctl.count("dirt") > 0 ? "dirt" : (Ctl.count("cobblestone") > 0 ? "cobblestone" : null);
+            String mat = Ctl.count("dirt") > 0 ? "dirt" : Floors.walkItem();
             if (mat == null || !Ctl.pillarUp(mat)) break;
         }
     }
@@ -399,12 +399,13 @@ public final class Plan {
             // a bag of dirt first (the rows can only be dirt). The first floor is the ground itself: it is dug
             // level right away (holes take only a little dirt, and what is dug off the bumps comes in).
             // Dirt is dug from where we are; the home command only brings us back to build.
+            // (with blocks in the bag it builds with them first, and goes for more when they run out)
             boolean groundFloor = todo.get(0) == 0 && s.first == 0;
-            int need = groundFloor ? 32 : 200;
+            int need = groundFloor ? 32 : 64;
             if (Ctl.count("dirt") < need) {
                 if (!nearFarm(s, Ctl.feet(), 150)) { if (!goFarm()) return; }
                 Floors.toGround(s);
-                int room = Math.max(0, Ctl.freeSlots() - 4) * 64;
+                int room = Math.min(12, Math.max(0, Ctl.freeSlots() - 4)) * 64;   // 12 stacks a trip at most
                 digDirt(Ctl.count("dirt") + room);
                 if (Ctl.count("dirt") < Math.min(need, 64)) { Ctl.sleep(1000); return; }   // more next time, from here
             }
@@ -458,7 +459,7 @@ public final class Plan {
         Site s = site();
         List<BlockPos> out = new ArrayList<>();
         List<BlockPos> spots = s.storageSpots(cfg().storagePairs);
-        for (int i = 0; i < spots.size(); i++) if (!st().badStorage.contains(i)) out.add(s.onGround(spots.get(i)));
+        for (int i = 0; i < spots.size(); i++) if (!st().badStorage.contains(i)) out.add(s.storageAt(spots.get(i)));
         return out;
     }
 
@@ -489,21 +490,27 @@ public final class Plan {
         List<BlockPos> spots = s.storageSpots(cfg().storagePairs);
         for (int i = 0; i < spots.size(); i++) {
             if (st().badStorage.contains(i)) continue;
-            BlockPos p = s.onGround(spots.get(i));
+            BlockPos p = s.storageAt(spots.get(i));
             if (Ctl.name(p).contains("chest")) continue;
             if (Ctl.count("chest") == 0) {
                 if (!st().noMoreChests) { st().next = takeNext("farm"); needStash("сундуки", "storage"); return; }
                 break;   // the stash had none: we go on with the chests that stand
             }
-            // stand west of the row: both halves of a pair face the same way and join into a double chest
-            BlockPos stand = p.add(-2, 0, 0);
-            boolean ok = Ctl.goTo(stand, 0.8, 400);
+            // stand on the farm's ground floor east of the spot: both halves of a pair face the same way and
+            // join into a double chest; the earth between us and the spot (a bank beside a dug farm) goes first
+            BlockPos stand = new BlockPos(s.farmX(0), p.getY(), p.getZ());
+            boolean ok = Ctl.goTo(stand, 0.6, 600);
             if (ok) {
-                // a flower or a sapling on the spot, grass in the way of the click, a block above (a chest
-                // under a block does not open): all of it goes first
-                for (BlockPos q : new BlockPos[]{p.up(), p, p.add(-1, 0, 0), p.add(-1, 1, 0)}) {
-                    String n = Ctl.name(q);
-                    if (!Floors.air(n) && !Floors.container(n)) Ctl.mine(q);
+                for (int dx = 1; dx <= 3; dx++)
+                    for (int up = 0; up <= 1; up++) {
+                        BlockPos q = new BlockPos(p.getX() + dx - 1, p.getY() + up, p.getZ());
+                        String n = Ctl.name(q);
+                        if (!Floors.air(n) && !Floors.container(n) && !n.contains("torch")) Ctl.mine(q);
+                    }
+                // ground under the chest
+                if (!Ctl.solid(p.down())) {
+                    String mat = Ctl.count("dirt") > 0 ? "dirt" : Floors.walkItem();
+                    if (mat != null) Ctl.placeAny(p.down(), mat);
                 }
                 ok = placeClearing(p, "chest", p.down()) || Ctl.name(p).contains("chest");
             }
@@ -531,9 +538,10 @@ public final class Plan {
         for (int i = 1; i + 1 < spots.size(); i += 2) {
             if (Ctl.count("torch") == 0) return;
             BlockPos a = spots.get(i);
-            BlockPos gap = s.onGround(a.add(0, 0, 1));
-            if (Ctl.name(gap).contains("torch") || Floors.container(Ctl.name(gap)) || Ctl.solid(gap)) continue;
-            if (Ctl.reach(gap) > 4.0 && !Ctl.goTo(gap.add(-2, 0, 0), 0.8, 300)) continue;
+            BlockPos gap = s.storageAt(a.add(0, 0, 1));
+            if (Ctl.name(gap).contains("torch") || Floors.container(Ctl.name(gap)) || Ctl.solid(gap) || !Ctl.solid(gap.down())) continue;
+            BlockPos stand = s.first == 0 ? new BlockPos(s.farmX(0), gap.getY(), gap.getZ()) : gap.add(-2, 0, 0);
+            if (Ctl.reach(gap) > 4.0 && !Ctl.goTo(stand, 0.8, 300)) continue;
             placeClearing(gap, "torch", gap.down());
         }
     }
