@@ -422,15 +422,25 @@ public final class Ctl {
     }
 
     /** Walks straight to the middle of a cell (on the same level). Sneaking keeps it from falling off edges. */
-    public static boolean stepTo(BlockPos cell, boolean sneak) {
+    public static boolean stepTo(BlockPos cell, boolean sneak) { return stepTo(cell, sneak, false); }
+
+    /**
+     * With `roll`: no stop in the middle of the cell, the body rolls on into the next step (for walking past
+     * plants while picking them; not where something is to be built from the cell).
+     */
+    public static boolean stepTo(BlockPos cell, boolean sneak, boolean roll) {
         Bot.INSTANCE.act("шаг " + cell.toShortString());
         if (!solid(cell.down())) return false;   // nothing to stand on there (a block the server took back)
         boolean wasSneaking = Move.sneaking();
         Move.sneak(sneak);
-        Move.walkTo(Vec3d.ofBottomCenter(cell), 0.2);
+        Move.walkTo(Vec3d.ofBottomCenter(cell), roll && !sneak ? 0.35 : 0.2);
         int t = 0;
         while (Move.walking() && t++ < 100) ticks(1);
         Move.stopWalking();
+        if (roll && !sneak && !wasSneaking) {
+            Vec3d p = pos();
+            return Math.abs(p.x - (cell.getX() + 0.5)) < 0.45 && Math.abs(p.z - (cell.getZ() + 0.5)) < 0.45 && Math.abs(p.y - cell.getY()) < 0.6;
+        }
         // let the speed die down before the ledge guard goes, or the last bit of it carries us over the edge
         for (int i = 0; i < 4; i++) {
             if (direct(() -> player().getVelocity().horizontalLengthSquared() < 0.0004)) break;
