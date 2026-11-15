@@ -37,6 +37,11 @@ public final class Ctl {
         public Stopped() { super("stopped", null, false, false); }
     }
 
+    /** We were moved away while the plan waited (ran from a creeper, knocked off): the step starts over from here. */
+    public static final class Moved extends RuntimeException {
+        public Moved() { super("moved", null, false, false); }
+    }
+
     public static MinecraftClient mc() { return MinecraftClient.getInstance(); }
 
     // ------------------------------------------------------------------ thread bridge
@@ -78,14 +83,21 @@ public final class Ctl {
     public static void ticks(int n) {
         int left = Math.max(1, n);
         long last = Bot.INSTANCE.tickCount();
+        Vec3d before = null;
         while (left > 0 || Move.busy()) {
             check();
+            if (before == null && Move.busy()) before = player().getEntityPos();
             try { Thread.sleep(10); } catch (InterruptedException e) { throw new Stopped(); }
             long now = Bot.INSTANCE.tickCount();
             if (now != last) {
                 if (!Move.busy()) left -= (int) (now - last);
                 last = now;
             }
+        }
+        // what we were doing was meant for the place we stood: after being moved away, plan it again
+        if (before != null && player().getEntityPos().distanceTo(before) > 2.0) {
+            run(() -> mc().interactionManager.cancelBlockBreaking());
+            throw new Moved();
         }
     }
 
@@ -176,6 +188,7 @@ public final class Ctl {
      */
     private static boolean readyForBag() {
         Move.stopWalking();
+        ticks(2);   // the server has "no keys pressed" before anything else (flags go out with the next tick)
         for (int t = 0; t < 12; t++) {
             if (call(() -> player().getVelocity().horizontalLengthSquared() < 1e-5)) break;
             ticks(1);
@@ -322,11 +335,11 @@ public final class Ctl {
                 ItemStack s = p.getInventory().getStack(slot);
                 if (s.isEmpty() || !test.test(itemName(s))) return false;
                 mc().interactionManager.clickSlot(p.playerScreenHandler.syncId, handlerSlot(slot), 1, SlotActionType.THROW, p);
+                bagClosed(p);   // never a tick with the bag open
                 return true;
             });
             if (thrown) { n++; ticks(2 + (i % 3)); }
         }
-        if (n > 0) run(() -> bagClosed(player()));
         return n;
     }
 
@@ -346,11 +359,11 @@ public final class Ctl {
                 for (int j = 0; j < 36; j++) if (itemName(inv.getStack(j)).equals(item)) total += inv.getStack(j).getCount();
                 if (total - s.getCount() < keep) return false;
                 mc().interactionManager.clickSlot(p.playerScreenHandler.syncId, handlerSlot(slot), 1, SlotActionType.THROW, p);
+                bagClosed(p);
                 return true;
             });
-            if (thrown) { any = true; ticks(2 + (i % 3)); }
+            if (thrown) ticks(2 + (i % 3));
         }
-        if (any) run(() -> bagClosed(player()));
     }
 
     // ------------------------------------------------------------------ looking and walking

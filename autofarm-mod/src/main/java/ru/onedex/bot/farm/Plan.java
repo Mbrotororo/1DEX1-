@@ -46,6 +46,7 @@ public final class Plan {
 
     static State st() { return State.get(); }
     static long lastShovelTrip;
+    static int interruptedStores;
     static BotConfig cfg() { return BotConfig.get(); }
 
     public static void run() {
@@ -491,7 +492,9 @@ public final class Plan {
             Chests.deposit(h, n -> n.equals("sweet_berries") || n.equals("bamboo"), keep);
             Chests.close();
         }
-        if (Chests.interrupted) return true;   // a monster came: not full, just not done (next time)
+        // a monster came: not full, just not done (next time); but not forever
+        if (Chests.interrupted && ++interruptedStores < 3) return true;
+        interruptedStores = 0;
         return Ctl.count("sweet_berries") <= cfg().keepSeeds + 64 && Ctl.count("bamboo") <= cfg().keepSeeds + 64;
     }
 

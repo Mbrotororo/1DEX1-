@@ -11,6 +11,7 @@ import net.minecraft.entity.mob.ZombifiedPiglinEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.EntityHitResult;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import ru.onedex.bot.BotClient;
 import ru.onedex.bot.farm.Plan;
@@ -94,6 +95,9 @@ public final class Bot {
                 Plan.run();
             } catch (Ctl.Stopped s) {
                 break;
+            } catch (Ctl.Moved m) {
+                BotClient.LOGGER.info("[bot] сдвинуло (бой или крипер) — шаг заново");
+                Move.clear();
             } catch (Throwable t) {
                 if (!mine()) break;
                 lastError = t.getMessage() == null ? t.toString() : t.getMessage();
@@ -109,10 +113,10 @@ public final class Bot {
 
     // ------------------------------------------------------------------ fights
     private final Map<Integer, Long> ignoreUntil = new HashMap<>();
-    private final Map<Integer, Long> seenSince = new HashMap<>();
     private int fightId = -1;
     private long lastOnCrosshair;
     private long fleeSince;
+    private Vec3d fleeTo;
 
     /** A monster that may be fought: not one that only gets angry when hit (and calls its friends). */
     static boolean enemy(Entity e) {
@@ -131,29 +135,78 @@ public final class Bot {
         return eye.distanceTo(new Vec3d(x, y, z));
     }
 
-    /** Up on a farm floor (a gap under the block we stand on): no running about up there. */
+    /** Up on a farm floor (a gap under the block we stand on), or leaning over an edge: no running about there. */
     private static boolean onFloor(MinecraftClient mc, ClientPlayerEntity p) {
-        return mc.world.getBlockState(p.getBlockPos().down(2)).isAir() && !mc.world.getBlockState(p.getBlockPos().down()).isAir();
+        BlockPos f = p.getBlockPos();
+        if (mc.world.getBlockState(f.down()).getCollisionShape(mc.world, f.down()).isEmpty()) return true;   // over an edge
+        return mc.world.getBlockState(f.down(2)).isAir();
     }
 
-    /** Something hurts us or comes for us: a chest window should be closed now (game thread). */
+    private static boolean hissing(Entity e) { return e instanceof CreeperEntity c && c.isAlive() && c.getFuseSpeed() > 0; }
+
+    /** A monster defend() will fight now: in reach, in sight, not left alone. */
+    private boolean fightable(ClientPlayerEntity p, Entity e, double range) {
+        return enemy(e) && !ignoreUntil.containsKey(e.getId()) && reachTo(p, e) < range - 0.2 && p.canSee(e);
+    }
+
+    /**
+     * A chest or menu window should be shut now: a creeper hisses close by, a monster is in reach, or we are
+     * being hit with a monster next to us (game thread). Only what defend() then really deals with.
+     */
     public boolean danger() {
         MinecraftClient mc = MinecraftClient.getInstance();
         ClientPlayerEntity p = mc.player;
         if (p == null || mc.world == null) return false;
-        if (p.hurtTime > 0) return true;
+        double range = p.getEntityInteractionRange();
         for (Entity e : mc.world.getEntities()) {
             if (!enemy(e) || !p.canSee(e)) continue;
-            // a creeper is met early: by the time it hisses there must be time to get away
-            double near = e instanceof CreeperEntity ? 8.0 : 4.5;
-            if (reachTo(p, e) < near) return true;
+            if (hissing(e) && e.distanceTo(p) < 8.5) return true;
+            if (fightable(p, e, range + 0.6)) return true;
+            if (p.hurtTime > 0 && reachTo(p, e) < 4.5) return true;
         }
         return false;
     }
 
+    /** Free ground straight ahead from `from` in direction (dx, dz) for 3 blocks: no drop, no wall, no lava. */
+    private static boolean safeRun(MinecraftClient mc, BlockPos from, int dx, int dz) {
+        BlockPos at = from;
+        for (int i = 1; i <= 3; i++) {
+            BlockPos n = from.add(dx * i, 0, dz * i);
+            BlockPos ok = null;
+            for (int dy : new int[]{0, 1, -1}) {
+                BlockPos c = n.up(dy);
+                if (Path.standable(mc.world, c)) { ok = c; break; }
+            }
+            if (ok == null || Math.abs(ok.getY() - at.getY()) > 1) return false;
+            for (BlockPos q : new BlockPos[]{ok, ok.down()}) {
+                String bn = Ctl.blockName(mc.world.getBlockState(q));
+                if (bn.contains("lava") || bn.contains("fire") || bn.equals("cactus") || bn.equals("magma_block")) return false;
+            }
+            at = ok;
+        }
+        return true;
+    }
+
+    /** Where to run from a creeper: the direction most away from it that has safe ground; null if none. */
+    private static Vec3d fleeTarget(MinecraftClient mc, ClientPlayerEntity p, Entity creeper) {
+        Vec3d away = p.getEntityPos().subtract(creeper.getEntityPos()).multiply(1, 0, 1);
+        if (away.lengthSquared() < 1e-4) away = new Vec3d(1, 0, 0);
+        away = away.normalize();
+        int[][] dirs = {{1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {-1, -1}, {0, -1}, {1, -1}};
+        int[] best = null;
+        double bestDot = 0.1;   // never towards it
+        for (int[] d : dirs) {
+            double dot = (d[0] * away.x + d[1] * away.z) / Math.hypot(d[0], d[1]);
+            if (dot > bestDot && safeRun(mc, p.getBlockPos(), d[0], d[1])) { bestDot = dot; best = d; }
+        }
+        if (best == null) return null;
+        return Vec3d.ofBottomCenter(p.getBlockPos()).add(best[0] * 10, 0, best[1] * 10);
+    }
+
     /**
      * Fights monsters that come close the way a player does: turn to it, hit only when the crosshair is on it
-     * and the swing is charged; walks away from creepers. The bot thread waits meanwhile (see Ctl.ticks).
+     * and the swing is charged. A creeper is hit while calm; once it hisses we run (on safe ground) until it
+     * is quiet again. The bot thread waits meanwhile (see Ctl.ticks).
      */
     private void defend(MinecraftClient mc) {
         ClientPlayerEntity p = mc.player;
@@ -164,41 +217,45 @@ public final class Bot {
         }
         long now = ticks;
         ignoreUntil.values().removeIf(t -> t < now);
-        seenSince.entrySet().removeIf(en -> mc.world.getEntityById(en.getKey()) == null);
         double range = p.getEntityInteractionRange();
+        // being hit: nothing next to us is left alone any more
+        if (p.hurtTime > 0) ignoreUntil.clear();
 
-        // a creeper is hit like any monster while it is calm; once it hisses we run more than 7 blocks away
-        // (then it gives up and goes quiet) and hit it again when it comes back. Up on a floor there is no room.
         boolean floor = onFloor(mc, p);
-        Entity hissing = null;
+        Entity hiss = null;
         for (Entity e : mc.world.getEntities()) {
-            if (e instanceof CreeperEntity c && c.isAlive() && c.getFuseSpeed() > 0 && c.distanceTo(p) < 8.5 && p.canSee(c)) { hissing = c; break; }
+            if (hissing(e) && e.distanceTo(p) < 8.5 && p.canSee(e)) { hiss = e; break; }
         }
-        if (hissing != null && !floor) {
+        if (hiss != null && !floor) {
             // one more hit on the way if it is right in front of us, then away
-            if (mc.crosshairTarget instanceof EntityHitResult hit && hit.getEntity() == hissing && p.getAttackCooldownProgress(0.5f) >= 0.92f) {
-                mc.interactionManager.attackEntity(p, hissing);
+            if (mc.crosshairTarget instanceof EntityHitResult hit && hit.getEntity() == hiss && p.getAttackCooldownProgress(0.5f) >= 0.92f) {
+                mc.interactionManager.attackEntity(p, hiss);
                 p.swingHand(Hand.MAIN_HAND);
             }
-            if (!Move.fleeing()) fleeSince = now;
-            if (now - fleeSince < 100) {
+            if (!Move.fleeing()) {
+                fleeSince = now;
+                fleeTo = fleeTarget(mc, p, hiss);
+                if (fleeTo != null) mc.interactionManager.cancelBlockBreaking();
+            }
+            if (fleeTo != null && now - fleeSince < 100) {
                 Move.fight(null);
-                Vec3d away = p.getEntityPos().subtract(hissing.getEntityPos()).multiply(1, 0, 1);
-                if (away.lengthSquared() < 1e-4) away = new Vec3d(1, 0, 0);
-                Move.flee(p.getEntityPos().add(away.normalize().multiply(10)));
+                Move.flee(fleeTo);
                 return;
             }
+            // no safe way to run: stand and hit it (the knockback keeps it off)
         }
-        if (Move.fleeing()) Move.flee(null);
+        if (Move.fleeing() && (hiss == null || now - fleeSince >= 100)) { Move.flee(null); fleeTo = null; }
 
         Entity cur = Move.fighting();
         if (cur != null) {
-            boolean keep = enemy(cur) && !cur.isRemoved() && reachTo(p, cur) <= range + 0.6 && p.canSee(cur);
-            long since = seenSince.getOrDefault(cur.getId(), now);
-            // hit it within a moment, or leave it (it is out of reach; we do not chase)
-            if (keep && now - lastOnCrosshair > 30 && now - since > 30) keep = false;
-            if (keep && now - since > 300) keep = false;   // ten seconds without getting it
-            if (!keep) { ignoreUntil.put(cur.getId(), now + 300); cur = null; }
+            boolean alive = enemy(cur) && !cur.isRemoved() && p.canSee(cur);
+            if (!alive || reachTo(p, cur) > range + 0.6) {
+                cur = null;   // knocked back or gone: picked again when it comes back
+            } else if (now - lastOnCrosshair > 40) {
+                ignoreUntil.put(cur.getId(), now + 200);   // the crosshair never gets on it from here
+                cur = null;
+            }
+            if (cur == null) fightId = -1;
         }
         if (cur == null) {
             double best = range - 0.2;
@@ -207,10 +264,7 @@ public final class Bot {
                 double d = reachTo(p, e);
                 if (d < best && p.canSee(e)) { best = d; cur = e; }
             }
-            if (cur != null) {
-                seenSince.putIfAbsent(cur.getId(), now);
-                lastOnCrosshair = now;
-            }
+            if (cur != null) lastOnCrosshair = now;
         }
         if (cur == null) { fightId = -1; Move.fight(null); return; }
         if (cur.getId() != fightId) {
