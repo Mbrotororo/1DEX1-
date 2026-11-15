@@ -498,9 +498,10 @@ public final class Plan {
         // a floor finished since the last round: a round right away (its rows get plants while the next goes up)
         boolean newFloor = done.size() > st().tendFloors;
         if (!newFloor && now - st().tendAt < every * 60_000L) return false;
-        // what the round can put on the rows: the plants in the bag, and what fits in it with room left for the
-        // dirt that comes next. Too little: later, when the blocks in the bag are used up
-        int fits = Ctl.count(s.plant(f)) + Math.max(0, Ctl.freeSlots() - 8) * 64;
+        // what the round can put on the rows: the plants in the bag, and what fits in it (two slots kept free).
+        // What is picked is planted on the same round, so a bag full of dirt still leaves room for a round.
+        // Too little: later, when the blocks in the bag are used up
+        int fits = Ctl.count(s.plant(f)) + Math.max(0, Ctl.freeSlots() - 2) * 64;
         if (fits < 32) return false;
         // the rows are read at the farm: from the stash its chunks are not loaded (a failed teleport: next call)
         if (!goFarm()) return false;

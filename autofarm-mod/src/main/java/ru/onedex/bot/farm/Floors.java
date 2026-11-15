@@ -374,6 +374,22 @@ public final class Floors {
             int x = fx, z = fz;
             int sx = Integer.signum(tx - fx), sz = Integer.signum(tz - fz);
             while ((x != tx || z != tz) && !blocked) {
+                // cells ahead with nothing to do (built, nothing to pick or plant) are walked in one go
+                int run = idleRun(x, z, sx, sz, tx, tz, work);
+                if (run >= 2) {
+                    int gx = x + sx * run, gz = z + sz * run;
+                    boolean ok = Ctl.stepTo(cell(gx, gz), edge(gx, gz) || edge(x + sx, z + sz));
+                    // where we got to on the line (all of it, or part of it when something was in the way)
+                    BlockPos me = Ctl.feet();
+                    int mx = me.getX() - s.farmX(f), mz = me.getZ() - s.z;
+                    int got = sx != 0 ? (mx - x) * sx : (mz - z) * sz;
+                    boolean onLine = sx != 0 ? mz == z : mx == x;
+                    if (!ok && (!onLine || got < 0 || got > run || Math.abs(me.getY() - (L + 1)) > 0)) return stop(false, false);
+                    if (!ok) { run = got; if (!Ctl.stepTo(cell(x + sx * run, z + sz * run), true)) return stop(false, false); }
+                    for (int i = 1; i <= run; i++) path.add(new int[]{x + sx * i, z + sz * i});
+                    x += sx * run; z += sz * run;
+                    continue;
+                }
                 int nx = x + sx, nz = z + sz;
                 if (!step(nx, nz, x, z)) return false;
                 x = nx; z = nz;
@@ -387,6 +403,65 @@ public final class Floors {
         void planted() {
             r.planted++;
             if (harvestCap != Integer.MAX_VALUE) harvestCap--;
+        }
+
+        /**
+         * How many cells ahead on the line (up to 8) have nothing to do: the floor there and on its sides is
+         * whole, the way above is free, and nothing is to be picked, planted or lit. Read in one go.
+         */
+        int idleRun(int x, int z, int sx, int sz, int tx, int tz, boolean work) {
+            int left = Math.min(8, Math.abs(tx - x) + Math.abs(tz - z));
+            int berries = Ctl.count("sweet_berries"), bamboo = Ctl.count("bamboo"), torches = Ctl.count("torch");
+            int plants = plant.equals("bamboo") ? bamboo : berries;
+            return Ctl.direct(() -> {
+                int n = 0;
+                for (int i = 1; i <= left; i++) {
+                    int cx = x + sx * i, cz = z + sz * i;
+                    if (!idleCell(cx, cz, work && sz != 0, plants, torches)) break;
+                    n = i;
+                }
+                return n;
+            });
+        }
+
+        private String at(int dx, int dz, int up) {
+            return Ctl.blockName(Ctl.world().getBlockState(floor(dx, dz).up(up)));
+        }
+
+        private boolean idleCell(int cx, int cz, boolean work, int plants, int torches) {
+            if (!floorOkNow(cx, cz)) return false;
+            for (int up = 1; up <= 2; up++) { String n = at(cx, cz, up); if (!air(n) && !n.contains("torch")) return false; }
+            if (!work) return true;
+            for (int d = -2; d <= 2; d++) {
+                int x = cx + d;
+                if (x < 0 || x >= s.W) continue;
+                if (d != 0 && !floorOkNow(x, cz)) return false;
+                String here = at(x, cz, 1);
+                if (mode == Mode.BUILD) {
+                    // the room between this floor and the next is cleared while building
+                    for (int up = 1; up < s.gap; up++) {
+                        String n = at(x, cz, up);
+                        if (!(air(n) || n.equals("water") || container(n) || crop(n) || n.contains("torch"))) return false;
+                    }
+                }
+                if (s.isRow(x, cz)) {
+                    if (air(here)) { if (plants > 0) return false; continue; }
+                    if (!crop(here) && !here.contains("torch") && !container(here) && foreign(here)) return false;
+                    if (mode == Mode.TEND && plants < harvestCap) {
+                        if (here.equals("sweet_berry_bush")) {
+                            BlockState st = Ctl.world().getBlockState(floor(x, cz).up());
+                            if (st.contains(Properties.AGE_3) && st.get(Properties.AGE_3) >= 2) return false;
+                        }
+                        if (here.equals("bamboo") && at(x, cz, 2).equals("bamboo")) return false;
+                    }
+                } else if (s.isTorch(x, cz) && air(here) && torches > 0) return false;
+            }
+            return true;
+        }
+
+        private boolean floorOkNow(int dx, int dz) {
+            String n = Ctl.blockName(Ctl.world().getBlockState(floor(dx, dz)));
+            return (s.isRow(dx, dz) ? SOIL : WALK).matcher(n).matches();
         }
 
         static boolean crop(String n) { return n.equals("sweet_berry_bush") || n.startsWith("bamboo"); }
