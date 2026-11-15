@@ -30,6 +30,8 @@ public final class BotConfig {
     public int farmMinutes = 120;
     /** While the farm is still being built: a harvest-and-plant round over the built floors this often. */
     public int harvestEveryMinutes = 10;
+    /** A second farm, of bamboo (found with /rtp), after the berry farm. Off: only the berry farm. */
+    public boolean bambooFarm = false;
     public int storagePairs = 10;
     public int keepSeeds = 192;
 

@@ -49,6 +49,9 @@ loom {
             if (project.hasProperty('devJoin')) {
                 programArgs "--quickPlayMultiplayer", project.property("devJoin"), "--username", "BotDex", "--width", "1280", "--height", "720"
             }
+            if (project.hasProperty('profile')) {
+                vmArg "-Ddexbot.profile=1"
+            }
             if (project.hasProperty('autostart')) {
                 vmArg "-Ddexbot.autostart=" + project.property("autostart")
             }

@@ -59,8 +59,9 @@ public final class Plan {
             case "storage" -> placeStorage();
             case "farm" -> farm(s.farm);
             case "sell" -> sellAll();
-            case "bamboo" -> findBamboo();
-            case "both" -> farmBoth();
+            // the bamboo farm is off: a saved bamboo step goes back to the berry farm
+            case "bamboo" -> { if (cfg().bambooFarm) findBamboo(); else { s.farm = 0; phase("farm"); } }
+            case "both" -> { if (cfg().bambooFarm) farmBoth(); else { s.farm = 0; phase("farm"); } }
             default -> { s.phase = "stash"; State.save(); }
         }
     }
@@ -132,7 +133,7 @@ public final class Plan {
         // more building blocks than repairs and the column need: only once both farms stand (until then
         // the dirt is for the next floors, and digging it takes long)
         Site s = site();
-        boolean allBuilt = s != null && st().builtCount(0) >= s.F && st().builtCount(1) >= s.F;
+        boolean allBuilt = s != null && st().builtCount(0) >= s.F && (!cfg().bambooFarm || st().builtCount(1) >= s.F);
         if (Ctl.freeSlots() < wantFree && allBuilt) {
             Ctl.tossExcess("dirt", 64 * 3);
             Ctl.tossExcess("cobblestone", 64 * 2);
@@ -438,6 +439,7 @@ public final class Plan {
         Floors.toGround(s);
         if (todo.isEmpty()) {
             st().tendAt = 0;   // the next farm's building starts its own clock
+            st().tendFloors = 0;
             if (f == 0 && !storageReady()) { st().next = takeNext("farm"); phase("storage"); }
             else phase(takeNext("farm"));
             return;
@@ -464,6 +466,7 @@ public final class Plan {
             return;
         }
         Bot.INSTANCE.stage("Строю ферму " + (f == 0 ? "ягод" : "бамбука"));
+        Floors.stopAfterFloor = cfg().harvestEveryMinutes > 0;
         Floors.trip(s, f, todo, Floors.Mode.BUILD);
     }
 
@@ -483,7 +486,9 @@ public final class Plan {
         // the first time: right away when several floors already stand (plants on them may be ripe); else the
         // clock starts now (the ground floor was just planted)
         if (st().tendAt == 0) { st().tendAt = done.size() > 1 ? 1 : now; State.save(); }
-        if (now - st().tendAt < every * 60_000L) return false;
+        // a floor finished since the last round: a round right away (its rows get plants while the next goes up)
+        boolean newFloor = done.size() > st().tendFloors;
+        if (!newFloor && now - st().tendAt < every * 60_000L) return false;
         // what the round can put on the rows: the plants in the bag, and what fits in it with room left for the
         // dirt that comes next. Too little: later, when the blocks in the bag are used up
         int fits = Ctl.count(s.plant(f)) + Math.max(0, Ctl.freeSlots() - 8) * 64;
@@ -491,6 +496,7 @@ public final class Plan {
         // the rows are read at the farm: from the stash its chunks are not loaded (a failed teleport: next call)
         if (!goFarm()) return false;
         st().tendAt = now;   // a round cut short (a fight, a restart) is not begun again at once
+        st().tendFloors = done.size();
         State.save();
         // the floors with empty rows, and how many plants they need: none, no round (until a new floor stands)
         int[] empty = Floors.emptyRows(s, f, done);
@@ -655,7 +661,7 @@ public final class Plan {
         long need = cfg().farmMinutes * 60_000L;
         if (st().farmedMs >= need) {
             st().farmedMs = 0;
-            st().next = f == 0 && !"both".equals(here) ? "bamboo" : "both";
+            st().next = !cfg().bambooFarm ? "farm" : f == 0 && !"both".equals(here) ? "bamboo" : "both";
             phase("sell");
             return;
         }

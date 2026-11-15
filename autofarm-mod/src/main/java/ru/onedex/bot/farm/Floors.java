@@ -569,6 +569,9 @@ public final class Floors {
      */
     static int harvestCap = Integer.MAX_VALUE;
 
+    /** A building trip ends after each finished floor (a harvest round comes next). */
+    static boolean stopAfterFloor;
+
     /** For each of these floors: the row cells with soil under them and nothing planted (grass counts as empty). */
     public static int[] emptyRows(Site s, int f, List<Integer> floors) {
         return Ctl.direct(() -> {
@@ -608,6 +611,7 @@ public final class Floors {
                     && emptyRows(s, f, List.of(k))[0] == 0) continue;
             Bot.INSTANCE.stage((mode == Mode.BUILD ? "Строю этаж " : "Фармлю этаж ") + (k + 1));
             Pass p = new Pass(s, f, k, mode);
+            long t0 = System.currentTimeMillis();
             if (r != null && r[1] == k) p.startLane = r[2];
             if (s.first == 0 && k == 0) {
                 // the ground floor: walked right where we are
@@ -623,8 +627,11 @@ public final class Floors {
             }
             total.harvested += p.r.harvested;
             total.planted += p.r.planted;
+            BotClient.LOGGER.info("[bot] этаж {}: {} за {} с{}", k + 1, mode == Mode.BUILD ? "стройка" : "обход",
+                    (System.currentTimeMillis() - t0) / 1000, p.r.finished ? "" : " (не до конца)");
             // the ground floor counts only after a whole pass (on flat grass its blocks are right from the start)
-            if (mode == Mode.BUILD && (k > 0 || p.r.finished) && floorDone(s, f, k)) State.get().markBuilt(f, k);
+            boolean justBuilt = false;
+            if (mode == Mode.BUILD && (k > 0 || p.r.finished) && floorDone(s, f, k)) { State.get().markBuilt(f, k); justBuilt = true; }
             // a hole that could not be mended while farming: the floor is built again (with a bag of blocks)
             if (mode == Mode.TEND && p.r.hole) State.get().unmarkBuilt(f, k);
             if (p.r.finished) { if (resume[m] != null && resume[m][1] == k) resume[m] = null; }
@@ -632,6 +639,8 @@ public final class Floors {
             if (p.r.full) total.full = true;
             if (p.r.noBlocks) { total.noBlocks = true; break; }
             if (p.r.full) break;
+            // a floor is done: back down for a harvest round (its rows get plants before the next one goes up)
+            if (justBuilt && stopAfterFloor) break;
             if (p.r.stuck) {
                 total.stuck = true;
                 if (k > 0 && !onColumn(s.shaft(f))) break;   // could not get back to the column: no higher floors now

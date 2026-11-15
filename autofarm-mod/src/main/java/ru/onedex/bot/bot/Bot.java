@@ -73,6 +73,7 @@ public final class Bot {
         t.setDaemon(true);
         thread = t;
         t.start();
+        Prof.start(t);
     }
 
     public synchronized void stop() {

@@ -20,7 +20,11 @@ public class BotMenuScreen extends Screen {
     private float rx, ry, rw, rh;  // reset link
     private long resetArmedAt;
 
-    static final String[] STEPS = {"Стеш", "Ферма", "Стройка", "Склад", "Фарм", "Продажа", "Бамбук"};
+    static final String[] ALL_STEPS = {"Стеш", "Ферма", "Стройка", "Склад", "Фарм", "Продажа", "Бамбук"};
+    /** The plan's steps as shown: without the bamboo farm unless it is turned on. */
+    static String[] steps() {
+        return BotConfig.get().bambooFarm ? ALL_STEPS : java.util.Arrays.copyOf(ALL_STEPS, ALL_STEPS.length - 1);
+    }
 
     public BotMenuScreen() { super(Text.literal("1DEX1 Bot")); }
 
@@ -89,6 +93,7 @@ public class BotMenuScreen extends Screen {
 
         // steps
         int cur = stepOf(st.phase);
+        String[] STEPS = steps();
         float sx = cx + 16, sw = (W - 32) / STEPS.length;
         for (int i = 0; i < STEPS.length; i++) {
             float mx = sx + sw * i + sw / 2;

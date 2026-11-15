@@ -23,6 +23,7 @@ public final class State {
     public Map<Integer, List<Integer>> built = new HashMap<>();
     public long farmedMs;          // time spent farming in this round
     public long tendAt;            // the last harvest round while the farm was still being built
+    public int tendFloors;   // how many floors stood at the last harvest round while building
     public long sold;              // items sold in total
     public long harvested;
     public boolean stashDone;
@@ -127,6 +128,7 @@ public final class State {
         digTurn = 0;
         digRing = 0;
         tendAt = 0;
+        tendFloors = 0;
     }
 
     public void unmarkBuilt(int f, int k) {
