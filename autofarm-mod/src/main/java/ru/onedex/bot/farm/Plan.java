@@ -296,6 +296,7 @@ public final class Plan {
         Set<BlockPos> skip = new HashSet<>();
         Set<BlockPos> mined = new HashSet<>();
         int moves = 0, dug = 0, walkFails = 0;
+        BlockPos[] last = {null};   // the block dug before: the next one near it (little turning and walking)
         while (Ctl.count("dirt") < target && Ctl.freeSlots() > 3 && moves < 10) {
             BlockPos next = Ctl.direct(() -> {
                 var w = Ctl.world();
@@ -317,6 +318,7 @@ public final class Plan {
                     if (wet) continue;
                     // near first, higher first (a hill goes before the ground at our feet)
                     double sc = p.getSquaredDistance(me) - 12.0 * (p.getY() - (me.getY() - 1));
+                    if (last[0] != null) sc += 0.6 * p.getSquaredDistance(last[0]);
                     if (sc < bs) { bs = sc; best = p.toImmutable(); }
                 }
                 return best;
@@ -346,8 +348,9 @@ public final class Plan {
             }
             walkFails = 0;
             // (ground that is protected comes back right away: mine() says so, and it is left alone)
-            if (Ctl.mine(next)) {
+            if (Ctl.mine(next, false)) {
                 mined.add(next);
+                last[0] = next;
                 dug++;
                 if (dug % 6 == 0) Ctl.collectDrops(6, 12);   // the dirt falls where the block was: go and get it
                 if (Ctl.freeSlots() <= 4) tidyBag(6);

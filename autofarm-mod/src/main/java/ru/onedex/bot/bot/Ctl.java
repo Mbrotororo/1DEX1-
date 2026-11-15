@@ -314,9 +314,13 @@ public final class Ctl {
     public static boolean hold(String item) { return hold(n -> n.equals(item), null); }
 
     /** The best tool for a block in the hand (by mining speed), or nothing special. True if the hand changed. */
+    /** The last holdBestFor() took the tool out of the bag (not just another hotbar slot). */
+    static boolean lastToolFromBag;
+
     public static boolean holdBestFor(BlockPos pos) {
         closeScreen();
-        int best = call(() -> {
+        lastToolFromBag = false;
+        int best = direct(() -> {
             BlockState st = world().getBlockState(pos);
             var inv = player().getInventory();
             int b = -1;
@@ -328,14 +332,20 @@ public final class Ctl {
                 if (sp > bestSpeed) { bestSpeed = sp; b = i; }
             }
             // a tool already in the hotbar: just select it
+            if (b >= 0 && b < 9 && b != inv.getSelectedSlot()) return 100 + b;
             if (b >= 0 && b < 9) used(b);
-            if (b >= 0 && b < 9 && b != inv.getSelectedSlot()) { inv.setSelectedSlot(b); return 100 + b; }
             return b < 9 ? -1 : b;
         });
-        if (best >= 100) return true;
+        if (best >= 100) {
+            int slot = best - 100;
+            used(slot);
+            post(() -> player().getInventory().setSelectedSlot(slot));
+            return true;
+        }
         if (best < 0) return false;
         boolean sneak = Move.sneaking();
         if (!readyForBag()) return false;   // dig with what is in the hand
+        lastToolFromBag = true;
         call(() -> {
             ClientPlayerEntity p = player();
             var inv = p.getInventory();
@@ -506,12 +516,18 @@ public final class Ctl {
     /** Why the last mine() did not break its block (for the log). */
     public static volatile String lastMineFail = "";
 
-    public static boolean mine(BlockPos p) {
+    public static boolean mine(BlockPos p) { return mine(p, true); }
+
+    /**
+     * With `settle`: waits a moment to see the block does not come back (protected ground). Without it the
+     * next block starts right away (the caller notices a block that came back by itself).
+     */
+    public static boolean mine(BlockPos p, boolean settle) {
         lastMineFail = "";
         if (world().getBlockState(p).isAir()) { lastMineFail = "уже воздух"; return false; }
         if (reach(p) > 5.0) { lastMineFail = "далеко " + String.format("%.1f", reach(p)); return false; }
         Bot.INSTANCE.act("копаю " + p.toShortString());
-        if (holdBestFor(p)) ticks(1);   // the server has to know the tool before the first hit
+        if (holdBestFor(p) && lastToolFromBag) ticks(1);   // a swap from the bag reaches the server before the first hit
         lookAt(Vec3d.ofCenter(p), () -> onFace(p, null));
         Vec3d eye = player().getEyePos();
         Direction face = Direction.getFacing(eye.x - (p.getX() + 0.5), eye.y - (p.getY() + 0.5), eye.z - (p.getZ() + 0.5));
@@ -521,6 +537,7 @@ public final class Ctl {
             return world().getBlockState(p).isAir();
         });
         if (instant) {
+            if (!settle) return true;
             ticks(2);
             if (!world().getBlockState(p).isAir()) { lastMineFail = "вернулся"; return false; }
             return true;
@@ -534,6 +551,7 @@ public final class Ctl {
                 return false;
             });
             if (gone) {
+                if (!settle) return true;
                 ticks(2);
                 if (!world().getBlockState(p).isAir()) { lastMineFail = "вернулся"; return false; }   // a protected block comes back
                 return true;
@@ -654,21 +672,27 @@ public final class Ctl {
     public static boolean edgeToward(BlockPos below, Direction dir) {
         Vec3d face = faceCenter(below, dir);
         Vec3d goal = Vec3d.ofBottomCenter(below.up()).add(dir.getOffsetX() * 1.2, 0, dir.getOffsetZ() * 1.2);
-        // walking up to near the edge, sneaking only for the last bit (the sneak keeps the body on the block)
+        // walking up to near the edge, sneaking only for the last bit: the game thread puts the sneak down
+        // every tick in time (Move.edgeGuard), the sneak then keeps the body on the block
         Vec3d p0 = pos();
         double start = (p0.x - face.x) * dir.getOffsetX() + (p0.z - face.z) * dir.getOffsetZ();
-        Move.sneak(start > -0.12);
-        Move.walkTo(goal, 0.05);
+        Move.sneak(start > -0.25);
+        Move.edgeGuard(face, dir.getOffsetX(), dir.getOffsetZ());
         double over = 0;
-        for (int t = 0; t < 40; t++) {
+        try {
+            Move.walkTo(goal, 0.05);
+            for (int t = 0; t < 40; t++) {
+                ticks(1);
+                Vec3d p = pos();
+                over = (p.x - face.x) * dir.getOffsetX() + (p.z - face.z) * dir.getOffsetZ();
+                if (over > 0.15) break;
+            }
+            Move.stopWalking();
             ticks(1);
-            Vec3d p = pos();
-            over = (p.x - face.x) * dir.getOffsetX() + (p.z - face.z) * dir.getOffsetZ();
-            if (over > -0.12) Move.sneak(true);   // a tick at walking speed later the body is still on the block
-            if (over > 0.15) break;
+        } finally {
+            Move.edgeGuard(null, 0, 0);
+            Move.sneak(true);   // stays sneaking (the step after it lets go once the body is still)
         }
-        Move.stopWalking();
-        ticks(1);
         Vec3d p = pos();
         over = (p.x - face.x) * dir.getOffsetX() + (p.z - face.z) * dir.getOffsetZ();
         return over > 0.06;
@@ -697,10 +721,12 @@ public final class Ctl {
         if (!hold(item)) return false;
         // in the middle of the cell first: off centre the new block would touch our own body
         BlockPos cell = feet();
-        stepTo(cell, true);
+        Vec3d c0 = pos();
+        if (Math.abs(c0.x - (cell.getX() + 0.5)) > 0.15 || Math.abs(c0.z - (cell.getZ() + 0.5)) > 0.15) stepTo(cell, true);
         int startY = feet().getY();
         BlockPos below = cell.down();
-        lookAt(Vec3d.ofCenter(below).add(0, 0.5, 0));   // straight down at the block we stand on
+        // straight down at the block we stand on (the crosshair on its top is enough)
+        lookAt(Vec3d.ofCenter(below).add(0, 0.5, 0), () -> onFace(below, Direction.UP));
         Move.jump(true);
         for (int t = 0; t < 20; t++) {
             ticks(1);
@@ -708,12 +734,20 @@ public final class Ctl {
         }
         BlockPos target = cell;
         run(() -> {
-            mc().interactionManager.interactBlock(player(), Hand.MAIN_HAND,
-                    new BlockHitResult(Vec3d.ofCenter(below).add(0, 0.5, 0), Direction.UP, below, false));
+            // where the crosshair really is: the top of the block we jumped off (looking straight down)
+            HitResult h = player().raycast(4.5, 1.0f, false);
+            BlockHitResult hit = h instanceof BlockHitResult b && b.getType() == HitResult.Type.BLOCK && b.getBlockPos().equals(below)
+                    && b.getSide() == Direction.UP ? b
+                    : new BlockHitResult(Vec3d.ofCenter(below).add(0, 0.5, 0), Direction.UP, below, false);
+            mc().interactionManager.interactBlock(player(), Hand.MAIN_HAND, hit);
             player().swingHand(Hand.MAIN_HAND);
         });
         Move.jump(false);
-        ticks(8);
+        // down on the new block (not a fixed wait)
+        for (int t = 0; t < 10; t++) {
+            ticks(1);
+            if (direct(() -> player().isOnGround()) && feet().getY() >= startY + 1) break;
+        }
         return feet().getY() >= startY + 1 && solid(target);
     }
 
@@ -725,7 +759,7 @@ public final class Ctl {
             if (!mine(f.down())) return false;
         }
         for (int t = 0; t < 40 && feet().getY() >= y0; t++) ticks(1);
-        ticks(4);
+        for (int t = 0; t < 6 && !direct(() -> player().isOnGround()); t++) ticks(1);
         return feet().getY() < y0;
     }
 

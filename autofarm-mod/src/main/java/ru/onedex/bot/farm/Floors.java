@@ -500,6 +500,35 @@ public final class Floors {
             plantAt(c, z);
         }
 
+        /**
+         * Back along our own steps (they hold) in straight stretches: one walk per stretch instead of a stop in
+         * every cell, sneaking only on a stretch along the edge of the floor.
+         */
+        void walkBack() {
+            if (path.isEmpty()) return;
+            int[] cur = path.get(path.size() - 1);
+            int i = path.size() - 2;
+            while (i >= 0) {
+                int dx = Integer.signum(path.get(i)[0] - cur[0]), dz = Integer.signum(path.get(i)[1] - cur[1]);
+                int j = i;
+                boolean edgy = edge(path.get(i)[0], path.get(i)[1]) || edge(cur[0], cur[1]);
+                // the stretch goes on while the next step back is one more cell the same way
+                while (j - 1 >= 0 && path.get(j - 1)[0] - path.get(j)[0] == dx && path.get(j - 1)[1] - path.get(j)[1] == dz
+                        && Math.abs(dx) + Math.abs(dz) == 1) {
+                    j--;
+                    edgy |= edge(path.get(j)[0], path.get(j)[1]);
+                }
+                int[] to = path.get(j);
+                if (!Ctl.stepTo(cell(to[0], to[1]), edgy)) {
+                    // something in the way: cell by cell from where we are
+                    for (int q = i; q >= 0; q--) if (!Ctl.stepTo(cell(path.get(q)[0], path.get(q)[1]), true)) return;
+                    return;
+                }
+                cur = to;
+                i = j - 1;
+            }
+        }
+
         /** The side of the head that is nearer: -1 (west, lower x) or 1 (east). */
         int firstSide() {
             float yaw = Ctl.direct(() -> Ctl.player().getYaw());
@@ -577,10 +606,7 @@ public final class Floors {
             // otherwise along our own steps (we know they hold)
             boolean home = r.finished && walkHome(s, f);
             if (!home) {
-                for (int i = path.size() - 2; i >= 0; i--) {
-                    int[] p = path.get(i);
-                    if (!Ctl.stepTo(cell(p[0], p[1]), true)) break;
-                }
+                walkBack();
                 Ctl.stepTo(new BlockPos(col.getX(), L + 1, col.getZ()), true);
                 if (!onColumn(col)) walkHome(s, f);
             }

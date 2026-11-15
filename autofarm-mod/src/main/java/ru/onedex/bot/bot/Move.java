@@ -36,6 +36,14 @@ public final class Move {
     // where the head turns to (set every tick, turned to every frame); fast = in a fight
     private static volatile Float headYaw, headPitch;
     private static volatile boolean fast;
+    // leaning over an edge to bridge: the sneak goes down on the game thread, every tick, before the body
+    // could leave the block (a frame hitch runs several ticks back to back; the bot thread may miss them)
+    private static volatile Vec3d edgeFace;
+    private static volatile int edgeDx, edgeDz;
+
+    /** Guards the walk toward this edge (the middle of the block's side face, facing dx/dz); null = off. */
+    public static void edgeGuard(Vec3d face, int dx, int dz) { edgeDx = dx; edgeDz = dz; edgeFace = face; }
+
     /** Working (building, harvesting, digging): the head turns like a quick builder's, still smooth. */
     public static volatile boolean quick;
     private static long lastFrame;
@@ -60,6 +68,7 @@ public final class Move {
         fleeTo = null;
         restoring = false;
         critJump = false;
+        edgeFace = null;
         headYaw = null;
         headPitch = null;
     }
@@ -185,6 +194,14 @@ public final class Move {
             return;
         }
         fast = false;
+
+        Vec3d ef = edgeFace;
+        if (ef != null) {
+            // where the body is now along the walk, past the edge (> 0.3 it would fall): one more tick at
+            // walking speed moves it about 0.22, so from 0.25 before the edge the sneak is on
+            double over = (p.getX() - ef.x) * edgeDx + (p.getZ() - ef.z) * edgeDz;
+            if (over > -0.25) sneak = true;
+        }
 
         Vec3d t = walkTarget;
         boolean turnedAway = false;
