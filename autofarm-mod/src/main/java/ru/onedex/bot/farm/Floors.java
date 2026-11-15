@@ -484,15 +484,16 @@ public final class Floors {
                 }
             }
             // one side whole (its blocks, then its plants), then the other: the head turns across only once.
-            // The side the head is nearer to first.
+            // The side the head is nearer to first. Far before near: the look at the far block's face (and at
+            // the torch spot) passes just over the near cell, a block or a bush there would be in the way.
             int first = firstSide();
             for (int sgn : new int[]{first, -first}) {
-                for (int d : new int[]{sgn, 2 * sgn}) {
+                for (int d : new int[]{2 * sgn, sgn}) {
                     int x = c + d;
                     if (x < 0 || x >= s.W) continue;
                     if (!side(x, z, dirZ)) return;
                 }
-                for (int d : new int[]{sgn, 2 * sgn}) {
+                for (int d : new int[]{2 * sgn, sgn}) {
                     int x = c + d;
                     if (x >= 0 && x < s.W) plantAt(x, z);
                 }

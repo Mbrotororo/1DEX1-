@@ -255,9 +255,9 @@ public final class Move {
         double s = mc.options.getMouseSensitivity().getValue() * 0.6 + 0.2;
         double perCount = s * s * s * 8.0;           // what one mouse count gives to changeLookDirection
         double degPerCount = perCount * 0.15;        // and that many degrees
-        double gain = fast || quick ? 16.0 : 10.0;            // how quickly it closes in (per second): eases out
-        double maxSpeed = fast || quick ? 900.0 : 420.0;      // degrees per second at most
-        double minSpeed = 35.0;                      // the last bit is not crawled
+        double gain = quick && !fast ? 20.0 : fast ? 16.0 : 10.0;     // how quickly it closes in (per second): eases out
+        double maxSpeed = fast || quick ? 950.0 : 420.0;              // degrees per second at most
+        double minSpeed = quick ? 60.0 : 35.0;                        // the last bit is not crawled
 
         double stepYaw = 0, stepPitch = 0;
         if (ty != null) stepYaw = step(MathHelper.wrapDegrees(ty - p.getYaw()), gain, maxSpeed, minSpeed, dt, degPerCount);
