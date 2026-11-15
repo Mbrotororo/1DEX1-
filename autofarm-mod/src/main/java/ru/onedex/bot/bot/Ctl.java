@@ -341,7 +341,7 @@ public final class Ctl {
             return world().getBlockState(p).isAir();
         });
         if (instant) { ticks(2); return world().getBlockState(p).isAir(); }
-        for (int t = 0; t < 200; t++) {
+        for (int t = 0; t < 400; t++) {
             ticks(1);
             boolean gone = call(() -> {
                 if (world().getBlockState(p).isAir()) return true;

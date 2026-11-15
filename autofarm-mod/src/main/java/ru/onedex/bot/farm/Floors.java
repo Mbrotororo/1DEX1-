@@ -82,6 +82,17 @@ public final class Floors {
         return onColumn(c);
     }
 
+    /**
+     * What the column is built of. Cobblestone keeps the dirt for the rows, but only with a pickaxe: the
+     * column is dug down again, and cobblestone without a pickaxe takes ten seconds a block.
+     */
+    static String columnBlock() {
+        boolean pick = Ctl.has(n -> n.endsWith("_pickaxe"));
+        if (pick && Ctl.count("cobblestone") > 0) return "cobblestone";
+        if (Ctl.count("dirt") > 0) return "dirt";
+        return Ctl.count("cobblestone") > 0 ? "cobblestone" : null;
+    }
+
     static boolean climb(Site s, int f, int k) {
         int target = s.floorY(k) + 1;
         if (!onColumn(s.shaft(f))) return false;
@@ -89,8 +100,7 @@ public final class Floors {
         while (Ctl.feet().getY() < target && guard++ < 120) {
             BlockPos head = Ctl.feet().up(2);
             if (Ctl.solid(head) && !Ctl.mine(head)) return false;
-            // cobblestone first: the dirt is for the rows
-            String mat = Ctl.count("cobblestone") > 0 ? "cobblestone" : (Ctl.count("dirt") > 0 ? "dirt" : null);
+            String mat = columnBlock();
             if (mat == null) return false;
             boolean up = false;
             for (int t = 0; t < 8 && !up; t++) { up = Ctl.pillarUp(mat); if (!up) Ctl.ticks(5 + t * 2); }
