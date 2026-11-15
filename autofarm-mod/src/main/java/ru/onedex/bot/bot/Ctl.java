@@ -432,9 +432,12 @@ public final class Ctl {
         while (Move.walking() && t++ < 100) ticks(1);
         Move.stopWalking();
         // let the speed die down before the ledge guard goes, or the last bit of it carries us over the edge
-        if (sneak || wasSneaking) ticks(2);
+        for (int i = 0; i < 4; i++) {
+            if (direct(() -> player().getVelocity().horizontalLengthSquared() < 0.0004)) break;
+            ticks(1);
+        }
         Move.sneak(false);
-        ticks(1);
+        if (sneak || wasSneaking) ticks(1);   // the release goes out before the next move
         Vec3d p = pos();
         return Math.abs(p.x - (cell.getX() + 0.5)) < 0.35 && Math.abs(p.z - (cell.getZ() + 0.5)) < 0.35 && Math.abs(p.y - cell.getY()) < 0.6;
     }
@@ -581,7 +584,7 @@ public final class Ctl {
         Bot.INSTANCE.act("ставлю " + item);
         if (!hold(item)) { lastFail = "не взял " + item; return false; }
         String before = name(target);   // direct read
-        Vec3d aim = call(() -> aimAt(ref, face));
+        Vec3d aim = direct(() -> aimAt(ref, face));
         if (aim == null) { lastFail = "луч закрыт"; return false; }   // lastObstacle says what is in the way
         lookAt(aim, () -> onFace(ref, face));
         // the check and the click in one go on the game thread (where the crosshair really is right now)
@@ -598,6 +601,8 @@ public final class Ctl {
             return b;
         });
         if (hit == null) return false;
+        // the game shows a placed block at once (the server confirms it later): no wait then
+        if (!verify && !name(target).equals(before)) return true;
         for (int t = 0; t < 6; t++) {
             ticks(1);
             if (!name(target).equals(before)) {
@@ -633,18 +638,18 @@ public final class Ctl {
         // walking up to near the edge, sneaking only for the last bit (the sneak keeps the body on the block)
         Vec3d p0 = pos();
         double start = (p0.x - face.x) * dir.getOffsetX() + (p0.z - face.z) * dir.getOffsetZ();
-        Move.sneak(start > -0.35);
+        Move.sneak(start > -0.12);
         Move.walkTo(goal, 0.05);
         double over = 0;
         for (int t = 0; t < 40; t++) {
             ticks(1);
             Vec3d p = pos();
             over = (p.x - face.x) * dir.getOffsetX() + (p.z - face.z) * dir.getOffsetZ();
-            if (over > -0.35) Move.sneak(true);
+            if (over > -0.12) Move.sneak(true);   // a tick at walking speed later the body is still on the block
             if (over > 0.15) break;
         }
         Move.stopWalking();
-        ticks(2);
+        ticks(1);
         Vec3d p = pos();
         over = (p.x - face.x) * dir.getOffsetX() + (p.z - face.z) * dir.getOffsetZ();
         return over > 0.06;
