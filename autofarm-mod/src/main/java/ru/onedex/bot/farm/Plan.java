@@ -263,6 +263,22 @@ public final class Plan {
      * A block is dug only when nothing next to it stands higher: the ground goes down one even layer at a
      * time and there is never a pit to fall into. When nothing is left around, it walks further out.
      */
+    static final Pattern DIGGABLE = Pattern.compile("^(grass_block|dirt|podzol|coarse_dirt|rooted_dirt|mycelium)$");
+
+    /** The farms themselves with their column and storage strips (and a little around): never dug. */
+    static boolean farmGround(Site s, BlockPos p) {
+        for (int f = 0; f < 2; f++) {
+            int x0 = s.farmX(f) - (f == 0 ? 9 : 5), x1 = s.farmX(f) + s.W + 2;
+            if (p.getX() >= x0 && p.getX() <= x1 && p.getZ() >= s.z - 4 && p.getZ() <= s.z + s.L + 3) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Digs the dirt and grass the bot sees around it, never on the farms. Nothing deeper than the ground it
+     * stands on, hills and bumps first, so the land goes down evenly; out of a hole it cannot walk out of by
+     * a little column. When nothing is left in sight it goes round the farms to the next side.
+     */
     static void digDirt(int target) {
         Site s = site();
         Bot.INSTANCE.stage("Копаю землю");
@@ -271,49 +287,48 @@ public final class Plan {
         Set<BlockPos> mined = new HashSet<>();
         List<BlockPos> recent = new ArrayList<>();
         int moves = 0, dug = 0, noGain = 0, walkFails = 0;
-        while (Ctl.count("dirt") < target && Ctl.freeSlots() > 3 && moves < 14) {
+        while (Ctl.count("dirt") < target && Ctl.freeSlots() > 3 && moves < 10) {
             BlockPos next = Ctl.direct(() -> {
                 var w = Ctl.world();
                 BlockPos me = Ctl.player().getBlockPos();
                 BlockPos best = null;
-                double bd = 1e9;
-                for (BlockPos p : BlockPos.iterate(me.add(-14, -3, -14), me.add(14, 3, 14))) {
-                    if (nearFarm(s, p, 4) || skip.contains(p)) continue;
+                double bs = 1e18;
+                for (BlockPos p : BlockPos.iterate(me.add(-16, -1, -16), me.add(16, 5, 16))) {
+                    if (p.getY() < me.getY() - 1 || skip.contains(p)) continue;   // not deeper than where we stand
                     String n = Ctl.blockName(w.getBlockState(p));
-                    if (!(n.equals("grass_block") || n.equals("dirt") || n.equals("podzol"))) continue;
+                    if (!DIGGABLE.matcher(n).matches()) continue;
                     if (p.getX() == me.getX() && p.getZ() == me.getZ()) continue;   // what we stand on
+                    if (farmGround(s, p)) continue;
                     BlockPos up = p.up();
                     if (!w.getBlockState(up).getCollisionShape(w, up).isEmpty() || !w.getFluidState(up).isEmpty()) continue;
                     if (!Ctl.solidNow(p.down())) continue;   // no hole into a cave
-                    // only the top of the ground around it (nothing within two blocks stands higher): the ground
-                    // goes down in wide even layers, every hole has a one-block step out
-                    boolean top = true, wet = false;
-                    for (int dx = -2; dx <= 2 && top; dx++)
-                        for (int dz = -2; dz <= 2 && top; dz++) {
-                            if (dx == 0 && dz == 0) continue;
-                            if (Ctl.solidNow(p.add(dx, 1, dz))) top = false;
-                            if (Math.abs(dx) + Math.abs(dz) == 1 && !w.getFluidState(p.add(dx, 0, dz)).isEmpty()) wet = true;
-                        }
-                    if (!top || wet) continue;
-                    double dd = p.getSquaredDistance(me);
-                    if (dd < bd) { bd = dd; best = p.toImmutable(); }
+                    boolean wet = false;
+                    for (net.minecraft.util.math.Direction d : net.minecraft.util.math.Direction.Type.HORIZONTAL)
+                        if (!w.getFluidState(p.offset(d)).isEmpty()) wet = true;   // water would run in
+                    if (wet) continue;
+                    // near first, higher first (a hill goes before the ground at our feet)
+                    double sc = p.getSquaredDistance(me) - 12.0 * (p.getY() - (me.getY() - 1));
+                    if (sc < bs) { bs = sc; best = p.toImmutable(); }
                 }
                 return best;
             });
             if (next != null && mined.contains(next)) { skip.add(next); continue; }   // it came back: protected ground
             if (next == null || noGain >= 8 || walkFails >= 4) {
-                // nothing (more) to get here: further out, away from the farms (a bit to the side each time)
+                // nothing (more) to get here: on round the farms to the next side
                 if (noGain >= 8) skip.addAll(recent);
                 noGain = 0;
                 walkFails = 0;
                 moves++;
                 Ctl.collectDrops(6, 10);
-                Vec3d me = Ctl.pos();
+                int turn = st().digTurn++;
+                double ang = turn * Math.PI / 4;
+                double r = Math.max(s.farmX(1) + s.W - s.x, s.L) / 2.0 + 12 + 10 * ((turn / 8) % 4);
                 Vec3d c = farmsCenter(s);
-                double ang = Math.atan2(me.z - c.z, me.x - c.x) + (moves % 2 == 0 ? 1 : -1) * 0.35 * moves;
-                int tx = (int) Math.round(me.x + Math.cos(ang) * 16), tz = (int) Math.round(me.z + Math.sin(ang) * 16);
-                int ty = Ctl.direct(() -> Site.groundNow(Ctl.world(), tx, tz, (int) me.y + 12)) + 1;
-                if (!Ctl.goTo(new BlockPos(tx, ty, tz), 4, 600)) climbOut();
+                int tx = (int) Math.round(c.x + Math.cos(ang) * r), tz = (int) Math.round(c.z + Math.sin(ang) * r);
+                Bot.INSTANCE.stage("Иду за землёй");
+                int ty = Ctl.direct(() -> Site.groundNow(Ctl.world(), tx, tz, Ctl.feet().getY() + 20)) + 1;
+                if (!Ctl.goTo(new BlockPos(tx, ty, tz), 6, 900)) climbOut();
+                Bot.INSTANCE.stage("Копаю землю");
                 continue;
             }
             if (Ctl.reach(next) > 4.3 && !Ctl.goTo(next.up(), 3.0, 300)) {
@@ -370,6 +385,38 @@ public final class Plan {
     static void build(int f) {
         Site s = site();
         if (s == null) { phase("clear"); return; }
+        List<Integer> todo = unbuilt(f);
+        if (!todo.isEmpty()) {
+            // torches are needed for floors never built (a floor mended after a hole has its torches)
+            boolean fresh = false;
+            for (int k : todo) if (!st().everBuilt(f, k)) fresh = true;
+            if (fresh && Ctl.count("torch") == 0) {
+                if (!st().noMoreTorches) { needStash("факелы", "build"); return; }
+                // the stash had none: wait for them; a dark farm grows nothing and monsters spawn on it
+                Bot.INSTANCE.stage("Положи факелы в стеш (" + cfg().stashCommand + ")");
+                Ctl.sleep(60_000);
+                st().noMoreTorches = false;
+                State.save();
+                return;
+            }
+            if (!Ctl.has(n -> n.endsWith("_shovel")) && System.currentTimeMillis() - lastShovelTrip > 15 * 60_000L) {
+                lastShovelTrip = System.currentTimeMillis();
+                needStash("лопаты", "build");
+                return;
+            }
+            // a bag of dirt first (the rows can only be dirt). The first floor is the ground itself: it is dug
+            // level right away (holes take only a little dirt, and what is dug off the bumps comes in).
+            // Dirt is dug from where we are; the home command only brings us back to build.
+            boolean groundFloor = todo.get(0) == 0 && s.first == 0;
+            int need = groundFloor ? 32 : 200;
+            if (Ctl.count("dirt") < need) {
+                if (!nearFarm(s, Ctl.feet(), 150)) { if (!goFarm()) return; }
+                Floors.toGround(s);
+                int room = Math.max(0, Ctl.freeSlots() - 4) * 64;
+                digDirt(Ctl.count("dirt") + room);
+                if (Ctl.count("dirt") < Math.min(need, 64)) { Ctl.sleep(1000); return; }   // more next time, from here
+            }
+        }
         if (!goFarm()) return;
         if (!nearFarm(s, Ctl.feet(), 40)) {
             // the home command leads somewhere else now: a new place for the farm
@@ -392,8 +439,12 @@ public final class Plan {
             BotClient.LOGGER.info("[bot] ферма бамбука: земля {}", s.y1);
         }
         Floors.toGround(s);
-        List<Integer> todo = unbuilt(f);
-        if (!todo.isEmpty() && todo.get(0) == 0) {
+        if (todo.isEmpty()) {
+            if (f == 0 && !storageReady()) { st().next = takeNext("farm"); phase("storage"); }
+            else phase(takeNext("farm"));
+            return;
+        }
+        if (todo.get(0) == 0) {
             // somebody's chest (or furnace, barrel...) on the ground of the farm: the bot never breaks those
             BlockPos box = Ctl.direct(() -> {
                 for (BlockPos p : BlockPos.iterate(new BlockPos(s.farmX(f), s.base(f) + 1, s.z), new BlockPos(s.farmX(f) + s.W - 1, s.base(f) + s.gap - 1, s.z + s.L - 1)))
@@ -405,38 +456,6 @@ public final class Plan {
                 Ctl.sleep(30_000);
                 return;
             }
-        }
-        if (todo.isEmpty()) {
-            if (f == 0 && !storageReady()) { st().next = takeNext("farm"); phase("storage"); }
-            else phase(takeNext("farm"));
-            return;
-        }
-        // torches are needed for floors never built (a floor mended after a hole has its torches)
-        boolean fresh = false;
-        for (int k : todo) if (!st().everBuilt(f, k)) fresh = true;
-        if (fresh && Ctl.count("torch") == 0) {
-            if (!st().noMoreTorches) { needStash("факелы", "build"); return; }
-            // the stash had none: wait for them; a dark farm grows nothing and monsters spawn on it
-            Bot.INSTANCE.stage("Положи факелы в стеш (" + cfg().stashCommand + ")");
-            Ctl.sleep(60_000);
-            st().noMoreTorches = false;
-            State.save();
-            return;
-        }
-        if (!Ctl.has(n -> n.endsWith("_shovel")) && System.currentTimeMillis() - lastShovelTrip > 15 * 60_000L) {
-            lastShovelTrip = System.currentTimeMillis();
-            needStash("лопаты", "build");
-            return;
-        }
-        // a bag of dirt: the rows can only be dirt (cobblestone is for the walkways and the column)
-        // the first floor is the ground itself: it is dug level right away (holes take only a little dirt,
-        // and what is dug off the bumps comes in); for the floors above, a bag of dirt first
-        boolean groundFloor = todo.get(0) == 0 && s.first == 0;
-        int need = groundFloor ? 32 : 200;
-        if (Ctl.count("dirt") < need) {
-            int room = Math.max(0, Ctl.freeSlots() - 4) * 64;
-            digDirt(Ctl.count("dirt") + room);
-            if (Ctl.count("dirt") < Math.min(need, 64)) { Ctl.sleep(2000); return; }
         }
         Bot.INSTANCE.stage("Строю ферму " + (f == 0 ? "ягод" : "бамбука"));
         Floors.trip(s, f, todo, Floors.Mode.BUILD);
