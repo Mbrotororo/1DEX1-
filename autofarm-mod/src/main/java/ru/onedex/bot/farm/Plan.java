@@ -257,20 +257,28 @@ public final class Plan {
             double cx = s.x + s.W + 4, cz = s.z + s.L / 2.0;   // between the two farms
             double R = Math.max(s.W * 2 + 8, s.L) / 2.0 + 14 + ring;
             BlockPos spot = new BlockPos((int) Math.round(cx + Math.cos(ang) * R), s.y, (int) Math.round(cz + Math.sin(ang) * R));
+            // the top layer of this spot: nothing below it is dug, so a hole is never more than 1 deep
+            // (the highest ground around the spot: where part of it is dug already, only the rest goes)
+            int layer = Ctl.direct(() -> {
+                int top = -999;
+                for (int ox = -4; ox <= 4; ox += 2) for (int oz = -4; oz <= 4; oz += 2)
+                    top = Math.max(top, Site.groundNow(Ctl.world(), spot.getX() + ox, spot.getZ() + oz, s.y + 1));
+                return top;
+            });
             Vec3d me = Ctl.pos();
             if (Math.hypot(me.x - spot.getX(), me.z - spot.getZ()) > 16) {
-                Ctl.goTo(new BlockPos(spot.getX(), s.ground(spot.getX(), spot.getZ()) + 1, spot.getZ()), 6, 1200);
+                Ctl.goTo(new BlockPos(spot.getX(), layer + 1, spot.getZ()), 6, 1200);
             }
+            climbOut(layer + 1);
             List<BlockPos> found = Ctl.direct(() -> {
                 List<BlockPos> out = new ArrayList<>();
                 BlockPos c = Ctl.player().getBlockPos();
-                int base = c.getY() - 1;   // the ground we stand on
-                for (BlockPos p : BlockPos.iterate(c.add(-5, -1, -5), c.add(5, 2, 5))) {
+                for (BlockPos p : BlockPos.iterate(c.add(-5, -2, -5), c.add(5, 2, 5))) {
                     String n = Ctl.blockName(Ctl.world().getBlockState(p));
                     if (!(n.equals("grass_block") || n.equals("dirt") || n.equals("podzol"))) continue;
                     if (s.inZone(p, 1)) continue;
-                    // one layer at a time and never the block we stand on: no pit to get stuck in
-                    if (p.getY() < base || (p.getX() == c.getX() && p.getZ() == c.getZ())) continue;
+                    // the top layer only and never the block we stand on: no pit to get stuck in
+                    if (p.getY() < layer || (p.getX() == c.getX() && p.getZ() == c.getZ())) continue;
                     var above = Ctl.world().getBlockState(p.up());
                     if (!above.getCollisionShape(Ctl.world(), p.up()).isEmpty() || !above.getFluidState().isEmpty()) continue;
                     boolean wet = false;
@@ -302,6 +310,14 @@ public final class Plan {
             if (Ctl.count("dirt") > before) fails = 0; else fails++;
         }
         State.save();
+    }
+
+    /** Down in a hole deeper than a step: build a little column under us and walk out from its top. */
+    static void climbOut(int groundY) {
+        for (int i = 0; i < 4 && Ctl.feet().getY() < groundY - 1; i++) {
+            String mat = Ctl.count("dirt") > 0 ? "dirt" : (Ctl.count("cobblestone") > 0 ? "cobblestone" : null);
+            if (mat == null || !Ctl.pillarUp(mat)) break;
+        }
     }
 
     // ------------------------------------------------------------------ 3. building
