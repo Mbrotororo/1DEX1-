@@ -125,8 +125,11 @@ public final class Plan {
         if (Ctl.freeSlots() >= wantFree) return;
         Bot.INSTANCE.stage("Выкидываю мусор");
         Ctl.toss(n -> JUNK.matcher(n).matches());
-        // more building blocks than repairs and the column need (not while building: that is what it is for)
-        if (Ctl.freeSlots() < wantFree && !"build".equals(st().phase)) {
+        // more building blocks than repairs and the column need: only once both farms stand (until then
+        // the dirt is for the next floors, and digging it takes long)
+        Site s = site();
+        boolean allBuilt = s != null && st().builtCount(0) >= s.F && st().builtCount(1) >= s.F;
+        if (Ctl.freeSlots() < wantFree && allBuilt) {
             Ctl.tossExcess("dirt", 64 * 3);
             Ctl.tossExcess("cobblestone", 64 * 2);
         }
