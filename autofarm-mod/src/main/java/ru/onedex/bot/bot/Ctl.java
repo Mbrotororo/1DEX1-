@@ -314,6 +314,18 @@ public final class Ctl {
     public static boolean hold(String item) { return hold(n -> n.equals(item), null); }
 
     /** The best tool for a block in the hand (by mining speed), or nothing special. True if the hand changed. */
+    /** How fast this item breaks this block: the tool's speed and its Efficiency, as the game counts it. */
+    static float speedFor(ItemStack s, BlockState st) {
+        float sp = s.getMiningSpeedMultiplier(st);
+        if (sp > 1.0f) {
+            var eff = world().getRegistryManager().getOrThrow(net.minecraft.registry.RegistryKeys.ENCHANTMENT)
+                    .getOrThrow(net.minecraft.enchantment.Enchantments.EFFICIENCY);
+            int lvl = net.minecraft.enchantment.EnchantmentHelper.getLevel(eff, s);
+            if (lvl > 0) sp += lvl * lvl + 1;
+        }
+        return sp;
+    }
+
     /** The last holdBestFor() took the tool out of the bag (not just another hotbar slot). */
     static boolean lastToolFromBag;
 
@@ -328,8 +340,9 @@ public final class Ctl {
             for (int i = 0; i < 36; i++) {
                 ItemStack s = inv.getStack(i);
                 if (s.isEmpty()) continue;
-                float sp = s.getMiningSpeedMultiplier(st);
-                if (sp > bestSpeed) { bestSpeed = sp; b = i; }
+                float sp = speedFor(s, st);
+                // a tie goes to the one in the hand, then to the hotbar (no swap for nothing)
+                if (sp > bestSpeed || (sp == bestSpeed && b >= 0 && (i == inv.getSelectedSlot() || (i < 9 && b >= 9)))) { bestSpeed = sp; b = i; }
             }
             // a tool already in the hotbar: just select it
             if (b >= 0 && b < 9 && b != inv.getSelectedSlot()) return 100 + b;
@@ -453,8 +466,11 @@ public final class Ctl {
         boolean wasSneaking = Move.sneaking();
         Move.sneak(sneak);
         Move.walkTo(Vec3d.ofBottomCenter(cell), roll && !sneak ? 0.3 : 0.2);
+        // time for the way: sneaking is about 1.3 blocks a second, walking about 4.3
+        double dist = Math.sqrt(Math.pow(pos().x - (cell.getX() + 0.5), 2) + Math.pow(pos().z - (cell.getZ() + 0.5), 2));
+        int limit = 20 + (int) (dist * (sneak ? 18 : 7));
         int t = 0;
-        while (Move.walking() && t++ < 100) ticks(1);
+        while (Move.walking() && t++ < limit) ticks(1);
         Move.stopWalking();
         if (roll && !sneak) {
             Vec3d p = pos();
@@ -518,6 +534,9 @@ public final class Ctl {
 
     public static boolean mine(BlockPos p) { return mine(p, true); }
 
+    /** When the last block that was not broken at once broke (game ticks). */
+    private static long lastHardBreak = -100;
+
     /**
      * With `settle`: waits a moment to see the block does not come back (protected ground). Without it the
      * next block starts right away (the caller notices a block that came back by itself).
@@ -529,6 +548,9 @@ public final class Ctl {
         Bot.INSTANCE.act("копаю " + p.toShortString());
         if (holdBestFor(p) && lastToolFromBag) ticks(1);   // a swap from the bag reaches the server before the first hit
         lookAt(Vec3d.ofCenter(p), () -> onFace(p, null));
+        // holding the button, the game starts the next block 6 ticks after one that took time to break
+        long wait = lastHardBreak + 6 - Bot.INSTANCE.tickCount();
+        if (wait > 0) ticks((int) wait);
         Vec3d eye = player().getEyePos();
         Direction face = Direction.getFacing(eye.x - (p.getX() + 0.5), eye.y - (p.getY() + 0.5), eye.z - (p.getZ() + 0.5));
         boolean instant = call(() -> {
@@ -551,6 +573,7 @@ public final class Ctl {
                 return false;
             });
             if (gone) {
+                lastHardBreak = Bot.INSTANCE.tickCount();
                 if (!settle) return true;
                 ticks(2);
                 if (!world().getBlockState(p).isAir()) { lastMineFail = "вернулся"; return false; }   // a protected block comes back
@@ -793,15 +816,26 @@ public final class Ctl {
     // ------------------------------------------------------------------ drops
     /** Walks over item drops nearby so they get picked up. */
     public static void collectDrops(double radius, int max) {
+        java.util.Set<Integer> tried = new java.util.HashSet<>();
         for (int i = 0; i < max; i++) {
-            Vec3d at = call(() -> {
+            // the nearest item not tried yet and not already within reach of the body (that one comes by itself)
+            Object[] it = call(() -> {
                 ClientPlayerEntity p = player();
-                List<ItemEntity> items = world().getEntitiesByClass(ItemEntity.class, new Box(p.getBlockPos()).expand(radius), e -> true);
-                return items.stream().min(Comparator.comparingDouble(e -> e.squaredDistanceTo(p))).map(ItemEntity::getEntityPos).orElse(null);
+                Box reach = p.getBoundingBox().expand(1.0, 0.5, 1.0);
+                ItemEntity best = null;
+                double bd = 1e18;
+                for (ItemEntity e : world().getEntitiesByClass(ItemEntity.class, new Box(p.getBlockPos()).expand(radius), e -> true)) {
+                    if (tried.contains(e.getId()) || reach.intersects(e.getBoundingBox())) continue;
+                    double dd = e.squaredDistanceTo(p);
+                    if (dd < bd) { bd = dd; best = e; }
+                }
+                return best == null ? null : new Object[]{best.getId(), best.getEntityPos()};
             });
-            if (at == null) return;
-            if (!goTo(BlockPos.ofFloored(at), 0.8, 120)) return;
-            ticks(3);
+            if (it == null) break;
+            tried.add((Integer) it[0]);
+            // to the item's own cell (an item in a dug hole lies a block down: "near" from above is not enough)
+            goTo(BlockPos.ofFloored((Vec3d) it[1]), 0, 120);
         }
+        ticks(2);
     }
 }

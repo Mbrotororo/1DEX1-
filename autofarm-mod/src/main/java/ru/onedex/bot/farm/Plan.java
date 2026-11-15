@@ -264,7 +264,7 @@ public final class Plan {
      * A block is dug only when nothing next to it stands higher: the ground goes down one even layer at a
      * time and there is never a pit to fall into. When nothing is left around, it walks further out.
      */
-    static final Pattern DIGGABLE = Pattern.compile("^(grass_block|dirt|podzol|coarse_dirt|rooted_dirt|mycelium)$");
+    static final Pattern DIGGABLE = Pattern.compile("^(grass_block|dirt|podzol|mycelium)$");   // these drop dirt (coarse and rooted dirt drop themselves)
 
     /** The farms themselves with their column and storage strips (and a little around): never dug. */
     static boolean farmGround(Site s, BlockPos p) {

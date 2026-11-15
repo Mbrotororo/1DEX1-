@@ -171,6 +171,21 @@ public final class Floors {
         int[] d = {p.getX() - s.farmX(f), p.getZ() - s.z};
         if (d[0] < 0 || d[0] >= s.W || d[1] < 0 || d[1] >= s.L) return onColumn(c);
         java.util.function.BiPredicate<Integer, Integer> walk = (tx, tz) -> {
+            int sx = Integer.signum(tx - d[0]), sz = Integer.signum(tz - d[1]);
+            // a straight stretch over a whole floor: one walk (sneaking only along the border of the floor)
+            if ((sx == 0 || sz == 0) && (d[0] != tx || d[1] != tz)) {
+                boolean whole = Ctl.direct(() -> {
+                    for (int x = d[0], z = d[1]; ; x += sx, z += sz) {
+                        if (!Ctl.solidNow(new BlockPos(s.farmX(f) + x, y - 1, s.z + z))) return false;
+                        if (x == tx && z == tz) return true;
+                    }
+                });
+                boolean border = sx != 0 ? (d[1] <= 0 || d[1] >= s.L - 1) : (d[0] <= 0 || d[0] >= s.W - 1);
+                if (whole && Ctl.stepTo(new BlockPos(s.farmX(f) + tx, y, s.z + tz), border)) { d[0] = tx; d[1] = tz; return true; }
+                BlockPos me = Ctl.feet();
+                d[0] = me.getX() - s.farmX(f);
+                d[1] = me.getZ() - s.z;
+            }
             while (d[0] != tx || d[1] != tz) {
                 int nx = d[0] + Integer.signum(tx - d[0]), nz = d[1] + Integer.signum(tz - d[1]);
                 if (!Ctl.stepTo(new BlockPos(s.farmX(f) + nx, y, s.z + nz), true)) return false;
@@ -178,10 +193,14 @@ public final class Floors {
             }
             return true;
         };
+        int cz = c.getZ() - s.z;
         if (d[0] % 2 != 0 && d[0] > 0 && !walk.test(d[0] - 1, d[1])) return false;
-        if (d[0] != 0 && d[1] != 0 && d[1] != s.L - 1 && !walk.test(d[0], d[1] < s.L / 2 ? 0 : s.L - 1)) return false;
+        // along our walkway column to the end row by the column (inside the floor, not sneaking), then along
+        // that end row and the short bit of the west border to the column
+        int endRow = cz < s.L / 2 ? 0 : s.L - 1;
+        if (d[0] != 0 && d[1] != endRow && !walk.test(d[0], endRow)) return false;
         if (!walk.test(0, d[1])) return false;
-        if (!walk.test(0, c.getZ() - s.z)) return false;
+        if (!walk.test(0, cz)) return false;
         // after a fall to a lower floor the column itself stands here: open it and step in
         BlockPos in = new BlockPos(c.getX(), y, c.getZ());
         for (BlockPos q : new BlockPos[]{in.up(), in}) {
@@ -379,7 +398,7 @@ public final class Floors {
                 int run = idleRun(x, z, sx, sz, tx, tz, work);
                 if (run >= 2) {
                     int gx = x + sx * run, gz = z + sz * run;
-                    boolean ok = Ctl.stepTo(cell(gx, gz), edge(gx, gz) || edge(x + sx, z + sz));
+                    boolean ok = Ctl.stepTo(cell(gx, gz), alongEdge(x, z, sx, sz));
                     // where we got to on the line (all of it, or part of it when something was in the way)
                     BlockPos me = Ctl.feet();
                     int mx = me.getX() - s.farmX(f), mz = me.getZ() - s.z;
@@ -513,13 +532,10 @@ public final class Floors {
             while (i >= 0) {
                 int dx = Integer.signum(path.get(i)[0] - cur[0]), dz = Integer.signum(path.get(i)[1] - cur[1]);
                 int j = i;
-                boolean edgy = edge(path.get(i)[0], path.get(i)[1]) || edge(cur[0], cur[1]);
+                boolean edgy = alongEdge(cur[0], cur[1], dx, dz);
                 // the stretch goes on while the next step back is one more cell the same way
                 while (j - 1 >= 0 && path.get(j - 1)[0] - path.get(j)[0] == dx && path.get(j - 1)[1] - path.get(j)[1] == dz
-                        && Math.abs(dx) + Math.abs(dz) == 1) {
-                    j--;
-                    edgy |= edge(path.get(j)[0], path.get(j)[1]);
-                }
+                        && Math.abs(dx) + Math.abs(dz) == 1) j--;
                 int[] to = path.get(j);
                 if (!Ctl.stepTo(cell(to[0], to[1]), edgy)) {
                     // something in the way: cell by cell from where we are
@@ -529,6 +545,15 @@ public final class Floors {
                 cur = to;
                 i = j - 1;
             }
+        }
+
+        /**
+         * A straight walk from (x, z) in direction (sx, sz) runs along the border of the floor (there it is
+         * walked sneaking: a step sideways would be off the floor). Into the floor or across to the border is
+         * walked normally: the walk stops in the middle of the cell, far from its outer side.
+         */
+        boolean alongEdge(int x, int z, int sx, int sz) {
+            return sx != 0 ? (z <= 0 || z >= s.L - 1) : (x <= 0 || x >= s.W - 1);
         }
 
         /** The side of the head that is nearer: -1 (west, lower x) or 1 (east). */
