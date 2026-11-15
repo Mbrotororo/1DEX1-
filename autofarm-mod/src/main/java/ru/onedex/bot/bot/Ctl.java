@@ -72,6 +72,15 @@ public final class Ctl {
 
     public static void run(Runnable r) { call(() -> { r.run(); return null; }); }
 
+    /**
+     * Hands a change to the game thread without waiting for it. The game runs these in order, so whatever is
+     * called after it (a click) happens after it.
+     */
+    public static void post(Runnable r) {
+        check();
+        mc().execute(r);
+    }
+
     /** A read done right on the bot thread (the game may change things meanwhile, a retry fixes that). */
     public static <T> T direct(Supplier<T> f) {
         check();
@@ -276,7 +285,7 @@ public final class Ctl {
         int best = found[0];
         if (best < 0) return 0;
         if (best < 9) {
-            if (found[1] != best) run(() -> player().getInventory().setSelectedSlot(best));
+            if (found[1] != best) post(() -> player().getInventory().setSelectedSlot(best));
             used(best);
             return 1;
         }
