@@ -466,12 +466,15 @@ public final class Plan {
         // clock starts now (the ground floor was just planted)
         if (st().tendAt == 0 && !done.isEmpty()) { st().tendAt = done.size() > 1 ? 1 : now; State.save(); }
         if (!done.isEmpty() && now - st().tendAt > cfg().harvestEveryMinutes * 60_000L && Ctl.freeSlots() > 3) {
-            st().tendAt = now;
+            st().tendAt = now;   // a round cut short (a fight, a restart) is not begun again at once
             State.save();
             Bot.INSTANCE.stage("Собираю урожай и сажаю");
             Floors.Result r = Floors.trip(s, f, done, Floors.Mode.TEND);
             st().harvested += r.harvested;
+            BotClient.LOGGER.info("[bot] обход: собрал {}, посадил {}", r.harvested, r.planted);
             if (storageReady()) store();   // more than is needed for planting goes into the chests
+            // the clock starts when the round is over: a long round on many floors is followed by building
+            st().tendAt = System.currentTimeMillis();
             State.save();
             return;
         }
