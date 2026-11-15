@@ -281,9 +281,11 @@ public final class Plan {
             int layer = Ctl.direct(() -> {
                 BlockPos c = Ctl.player().getBlockPos();
                 int top = -999;
-                for (int ox = -4; ox <= 4; ox += 2) for (int oz = -4; oz <= 4; oz += 2)
-                    top = Math.max(top, Site.groundNow(Ctl.world(), c.getX() + ox, c.getZ() + oz, c.getY() + 12));
-                return top;
+                for (int ox = -4; ox <= 4; ox += 2) for (int oz = -4; oz <= 4; oz += 2) {
+                    int g = Site.groundNow(Ctl.world(), c.getX() + ox, c.getZ() + oz, c.getY() + 12);
+                    if (g <= c.getY() + 1) top = Math.max(top, g);   // a cliff or a wall next to us is not our ground
+                }
+                return top == -999 ? c.getY() - 1 : top;
             });
             climbOut(layer + 1);
             List<BlockPos> found = Ctl.direct(() -> {
@@ -330,7 +332,7 @@ public final class Plan {
 
     /** Down in a hole deeper than a step: build a little column under us and walk out from its top. */
     static void climbOut(int groundY) {
-        for (int i = 0; i < 4 && Ctl.feet().getY() < groundY - 1; i++) {
+        for (int i = 0; i < 3 && Ctl.feet().getY() < groundY - 1; i++) {
             String mat = Ctl.count("dirt") > 0 ? "dirt" : (Ctl.count("cobblestone") > 0 ? "cobblestone" : null);
             if (mat == null || !Ctl.pillarUp(mat)) break;
         }

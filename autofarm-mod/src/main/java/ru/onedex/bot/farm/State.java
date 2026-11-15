@@ -65,7 +65,11 @@ public final class State {
         if (INSTANCE.built == null) INSTANCE.built = new HashMap<>();
         if (INSTANCE.lit == null) INSTANCE.lit = new ArrayList<>();
         if (INSTANCE.badStorage == null) INSTANCE.badStorage = new ArrayList<>();
-        if (INSTANCE.ever == null) INSTANCE.ever = new HashMap<>(INSTANCE.built);
+        if (INSTANCE.ever == null) INSTANCE.ever = new HashMap<>();
+        if (INSTANCE.ever.isEmpty()) {
+            // a state saved before this was kept: what is built now has been built
+            for (var e : INSTANCE.built.entrySet()) INSTANCE.ever.put(e.getKey(), new ArrayList<>(e.getValue()));
+        }
     }
 
     /** Written to a temp file and moved over the old one, so a crash never leaves half a file. */

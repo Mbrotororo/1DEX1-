@@ -175,6 +175,8 @@ public final class Floors {
      * Torches on the ground under a farm, about 10 blocks apart: with no light there monsters would spawn
      * under floor 0, right where /home g puts us. False if there are not enough torches for it.
      */
+    static final java.util.Map<BlockPos, Integer> lightTries = new java.util.HashMap<>();
+
     static boolean lightGround(Site s, int f) {
         List<BlockPos> spots = new ArrayList<>();
         for (int dx = 4; dx < s.W; dx += 10)
@@ -187,6 +189,10 @@ public final class Floors {
             int x = s.farmX(f) - 3, z = s.z + dz;
             spots.add(new BlockPos(x, s.ground(x, z) + 1, z));
         }
+        // water, a log or anything solid there: that spot is left out (nothing is ever clicked on water)
+        spots.removeIf(sp -> !Ctl.direct(() -> Ctl.world().getFluidState(sp).isEmpty() && Ctl.world().getFluidState(sp.down()).isEmpty())
+                || Ctl.solid(sp) || Floors.container(Ctl.name(sp)));
+        spots.removeIf(sp -> lightTries.getOrDefault(sp, 0) >= 3);   // could not get a torch there three times
         int missing = 0;
         for (BlockPos spot : spots) if (!Ctl.name(spot).contains("torch")) missing++;
         if (missing == 0) return true;
@@ -194,6 +200,7 @@ public final class Floors {
         Bot.INSTANCE.stage("Свечу под фермой");
         for (BlockPos spot : spots) {
             if (Ctl.name(spot).contains("torch")) continue;
+            lightTries.merge(spot, 1, Integer::sum);
             if (!Ctl.goTo(spot, 1.5, 400)) continue;
             String n = Ctl.name(spot);
             if (!air(n) && !container(n) && !Ctl.solid(spot)) Ctl.mine(spot);   // grass or a flower on the spot
@@ -203,7 +210,7 @@ public final class Floors {
             if (ob != null && !ob.equals(spot.down()) && !container(Ctl.name(ob)) && !Ctl.solid(ob) && Ctl.mine(ob))
                 Ctl.place(spot, "torch", spot.down());
         }
-        for (BlockPos spot : spots) if (!Ctl.name(spot).contains("torch")) return false;
+        for (BlockPos spot : spots) if (!Ctl.name(spot).contains("torch") && lightTries.getOrDefault(spot, 0) < 3) return false;
         return true;
     }
 
@@ -281,10 +288,10 @@ public final class Floors {
             }
             if (Ctl.placeAny(p, mat)) return true;
             if (ob == null) ob = Ctl.lastObstacle;
-            // leaves or the like between the eye and the face: clear it and try once more (never a crop of the farm)
+            // leaves or a plant between the eye and the face: clear it and try once more (a bush or bamboo of the
+            // farm is planted again on the next farming pass; a hole in the floor would stop the farm)
             String obn = ob == null ? "" : Ctl.name(ob);
-            boolean crop = obn.equals("sweet_berry_bush") || obn.startsWith("bamboo");
-            if (ob != null && !ob.equals(ref) && !crop && foreign(obn) && Ctl.mine(ob)) {
+            if (ob != null && !ob.equals(ref) && foreign(obn) && Ctl.mine(ob)) {
                 if (ref != null && Ctl.solid(ref) && Ctl.place(p, mat, ref, bridge != null)) return true;
                 return Ctl.placeAny(p, mat);
             }
