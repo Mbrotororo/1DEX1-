@@ -116,7 +116,7 @@ public final class Bot {
 
     /** A monster that may be fought: not one that only gets angry when hit (and calls its friends). */
     static boolean enemy(Entity e) {
-        if (!(e instanceof Monster) || !e.isAlive() || e instanceof CreeperEntity) return false;
+        if (!(e instanceof Monster) || !e.isAlive()) return false;
         if (e instanceof EndermanEntity en) return en.isAngry();
         return !(e instanceof ZombifiedPiglinEntity) && !(e instanceof PiglinEntity);
     }
@@ -143,7 +143,7 @@ public final class Bot {
         if (p == null || mc.world == null) return false;
         if (p.hurtTime > 0) return true;
         for (Entity e : mc.world.getEntities()) {
-            if ((enemy(e) || (e instanceof CreeperEntity && e.isAlive())) && reachTo(p, e) < 4.5 && p.canSee(e)) return true;
+            if (enemy(e) && reachTo(p, e) < 4.5 && p.canSee(e)) return true;
         }
         return false;
     }
@@ -164,30 +164,33 @@ public final class Bot {
         seenSince.entrySet().removeIf(en -> mc.world.getEntityById(en.getKey()) == null);
         double range = p.getEntityInteractionRange();
 
-        // a creeper close by: on the ground we walk away from it; up on a floor there is nowhere to go
+        // a creeper is hit like any monster while it is calm; once it hisses we run more than 7 blocks away
+        // (then it gives up and goes quiet) and hit it again when it comes back. Up on a floor there is no room.
         boolean floor = onFloor(mc, p);
-        Entity creeper = null;
-        double cd = 7.0;
+        Entity hissing = null;
         for (Entity e : mc.world.getEntities()) {
-            if (!(e instanceof CreeperEntity) || !e.isAlive()) continue;
-            double d = e.distanceTo(p);
-            if (d < cd && p.canSee(e)) { cd = d; creeper = e; }
+            if (e instanceof CreeperEntity c && c.isAlive() && c.getFuseSpeed() > 0 && c.distanceTo(p) < 8.5 && p.canSee(c)) { hissing = c; break; }
         }
-        if (creeper != null && !floor) {
+        if (hissing != null && !floor) {
+            // one more hit on the way if it is right in front of us, then away
+            if (mc.crosshairTarget instanceof EntityHitResult hit && hit.getEntity() == hissing && p.getAttackCooldownProgress(0.5f) >= 0.92f) {
+                mc.interactionManager.attackEntity(p, hissing);
+                p.swingHand(Hand.MAIN_HAND);
+            }
             if (!Move.fleeing()) fleeSince = now;
-            if (now - fleeSince < 160) {
+            if (now - fleeSince < 100) {
                 Move.fight(null);
-                Vec3d away = p.getEntityPos().subtract(creeper.getEntityPos()).multiply(1, 0, 1);
+                Vec3d away = p.getEntityPos().subtract(hissing.getEntityPos()).multiply(1, 0, 1);
                 if (away.lengthSquared() < 1e-4) away = new Vec3d(1, 0, 0);
                 Move.flee(p.getEntityPos().add(away.normalize().multiply(10)));
                 return;
             }
         }
-        if (Move.fleeing() && (creeper == null || now - fleeSince >= 160)) Move.flee(null);
+        if (Move.fleeing()) Move.flee(null);
 
         Entity cur = Move.fighting();
         if (cur != null) {
-            boolean keep = (enemy(cur) || cur instanceof CreeperEntity) && !cur.isRemoved() && reachTo(p, cur) <= range + 0.6 && p.canSee(cur);
+            boolean keep = enemy(cur) && !cur.isRemoved() && reachTo(p, cur) <= range + 0.6 && p.canSee(cur);
             long since = seenSince.getOrDefault(cur.getId(), now);
             // hit it within a moment, or leave it (it is out of reach; we do not chase)
             if (keep && now - lastOnCrosshair > 30 && now - since > 30) keep = false;
@@ -197,8 +200,7 @@ public final class Bot {
         if (cur == null) {
             double best = range - 0.2;
             for (Entity e : mc.world.getEntities()) {
-                boolean can = enemy(e) || (floor && e instanceof CreeperEntity && e.isAlive());
-                if (!can || ignoreUntil.containsKey(e.getId())) continue;
+                if (!enemy(e) || ignoreUntil.containsKey(e.getId())) continue;
                 double d = reachTo(p, e);
                 if (d < best && p.canSee(e)) { best = d; cur = e; }
             }
