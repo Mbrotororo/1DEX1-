@@ -1,0 +1,25 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+@font-face { font-family: 'Pixel'; src: url('fonts/PressStart2P.woff') format('woff'); }
+@font-face { font-family: 'Russo'; src: url('fonts/RussoOne.woff') format('woff'); }
+html, body { margin: 0; padding: 0; background: #000; overflow: hidden; }
+#stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; }
+#gl { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+#ui { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; pointer-events: none; }
+#ui * { box-sizing: border-box; }
+</style></head>
+<body><div id="stage"><canvas id="gl" width="1920" height="1080"></canvas><div id="ui"></div></div>
+<script type="importmap">{ "imports": { "three": "./lib/three.module.js" } }</script>
+<script type="module">
+import * as E from './engine.js';
+const clip = new URLSearchParams(location.search).get('clip') || 'test';
+const mod = await import('./scenes/' + clip + '.js');
+await E.init();
+await mod.setup(E);
+window.DURATION = mod.DURATION;
+window.renderAt = (t) => { mod.update(t, E); E.render(); return true; };
+await document.fonts.ready;
+window.renderAt(0);
+window.READY = true;
+</script></body></html>
