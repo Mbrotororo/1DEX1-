@@ -539,6 +539,8 @@ public final class Plan {
             if (Ctl.count("torch") == 0) return;
             BlockPos a = spots.get(i);
             BlockPos gap = s.storageAt(a.add(0, 0, 1));
+            // a bank of earth left there: the torch goes on top of it
+            for (int up = 0; up < 3 && Ctl.solid(gap); up++) gap = gap.up();
             if (Ctl.name(gap).contains("torch") || Floors.container(Ctl.name(gap)) || Ctl.solid(gap) || !Ctl.solid(gap.down())) continue;
             BlockPos stand = s.first == 0 ? new BlockPos(s.farmX(0), gap.getY(), gap.getZ()) : gap.add(-2, 0, 0);
             if (Ctl.reach(gap) > 4.0 && !Ctl.goTo(stand, 0.8, 300)) continue;
