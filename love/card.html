@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>QR-открытка</title>
+<link rel="stylesheet" href="fonts.css">
+<style>
+/* Workbench at night: the card sits under a lamp on the left, the settings on the right. */
+:root {
+  --night-0: #0b1322;
+  --night-1: #17263d;
+  --panel: rgba(255, 255, 255, 0.06);
+  --line: rgba(255, 255, 255, 0.14);
+  --frost: #eef3ff;
+  --frost-dim: #aebdd8;
+  --ice: #9ccaff;
+  --ice-hi: #c9e4ff;
+  --ice-ink: #0f2340;
+  --serif: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --script: "Marck Script", "Segoe Script", cursive;
+  --ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { background: var(--night-1); }
+body {
+  margin: 0; min-height: 100vh;
+  background: radial-gradient(70% 50% at 30% 35%, rgba(150, 190, 255, 0.16), transparent 70%),
+              linear-gradient(180deg, var(--night-0), var(--night-1));
+  background-attachment: fixed;
+  color: var(--frost);
+  font-family: var(--ui); font-size: 15px;
+}
+.wrap {
+  max-width: 1100px; margin: 0 auto;
+  padding-block: max(28px, env(safe-area-inset-top, 0px)) 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 28px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 22rem);
+  align-items: start;
+}
+@media (max-width: 860px) { .wrap { grid-template-columns: minmax(0, 1fr); } }
+.preview { display: grid; justify-items: center; gap: 10px; }
+#card {
+  width: 100%; max-width: min(540px, 100%); height: auto; aspect-ratio: 3 / 4;
+  border-radius: 6px;
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.5);
+}
+.panel {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  padding: 22px; display: grid; gap: 18px;
+}
+h1 { margin: 0; font-family: var(--serif); font-weight: 500; font-size: 2rem; line-height: 1.1; }
+.lead { margin: -8px 0 0; color: var(--frost-dim); line-height: 1.5; }
+.field { display: grid; gap: 6px; }
+.field label, .field .label { font-size: 0.8rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--frost-dim); }
+.field input {
+  width: 100%; min-width: 0; height: 44px; padding: 0 12px;
+  border-radius: 10px; border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.2); color: var(--frost); font: inherit; font-size: 16px;
+}
+.field input:focus { outline: 2px solid var(--ice); outline-offset: 1px; }
+.field small { color: var(--frost-dim); line-height: 1.4; }
+.swatches { display: flex; flex-wrap: wrap; gap: 10px; }
+.swatches label { position: relative; cursor: pointer; }
+.swatches input { position: absolute; opacity: 0; }
+.swatches span {
+  display: block; width: 36px; height: 36px; border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+}
+.swatches input:checked + span { border-color: var(--frost); box-shadow: 0 0 0 3px rgba(156, 202, 255, 0.45); }
+.swatches input:focus-visible + span { outline: 2px solid var(--ice); outline-offset: 3px; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; }
+button, .btn {
+  height: 44px; padding: 0 18px; border-radius: 999px; cursor: pointer;
+  font: inherit; font-weight: 600; text-decoration: none;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.btn-main { border: 0; color: var(--ice-ink); background: linear-gradient(180deg, var(--ice-hi), var(--ice)); box-shadow: 0 0 26px rgba(156, 202, 255, 0.4); flex: 1 1 auto; }
+.btn-ghost { border: 1px solid var(--line); color: var(--frost); background: transparent; }
+button:focus-visible, .btn:focus-visible { outline: 2px solid var(--ice-hi); outline-offset: 3px; }
+.status { color: var(--frost-dim); font-size: 0.85rem; line-height: 1.45; min-height: 1.45em; }
+.status.warn { color: #ffd59c; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="preview">
+    <canvas id="card" width="1080" height="1440" aria-label="Открытка с QR-кодом в форме сердца"></canvas>
+  </div>
+
+  <form class="panel" id="form" autocomplete="off">
+    <h1>QR-открытка</h1>
+    <p class="lead">Картинка-сердечко: она наводит камеру и попадает на страницу с письмом.</p>
+
+    <div class="field">
+      <label for="name">Имя на открытке</label>
+      <input id="name" maxlength="40" value="Любимая">
+    </div>
+    <div class="field">
+      <label for="url">Ссылка в QR-коде</label>
+      <input id="url" type="url" inputmode="url" value="https://mbrotororo.github.io/1DEX1-/love/">
+      <small>Адрес, где лежит страница с письмом (index.html из этой папки).</small>
+    </div>
+    <div class="field">
+      <label for="caption">Подпись снизу</label>
+      <input id="caption" maxlength="60" value="наведи камеру ♡">
+    </div>
+    <div class="field">
+      <span class="label" id="color-label">Цвет</span>
+      <div class="swatches" role="radiogroup" aria-labelledby="color-label" id="swatches"></div>
+    </div>
+    <div class="row">
+      <button type="button" class="btn-ghost" id="reseed">Другой узор</button>
+      <a class="btn btn-ghost" id="open-link" href="./" target="_blank" rel="noopener">Открыть письмо</a>
+    </div>
+    <div class="row">
+      <button type="submit" class="btn-main" id="download">Скачать PNG</button>
+    </div>
+    <p class="status" id="status" aria-live="polite"></p>
+  </form>
+</div>
+
+<script src="vendor/qrcode.js"></script>
+<script src="heart-qr.js"></script>
+<script>
+(function () {
+  'use strict';
+  const COLORS = [
+    { id: 'blue', name: 'Синий', ink: '#2b58a8' },
+    { id: 'rose', name: 'Розовый', ink: '#b8336a' },
+    { id: 'wine', name: 'Бордовый', ink: '#7a1f3d' },
+    { id: 'graphite', name: 'Графит', ink: '#2a2c33' },
+  ];
+  const $ = (id) => document.getElementById(id);
+  const canvas = $('card');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  // URL parameters prefill the form: ?name=&url=&caption=&color=&seed=
+  const qs = new URLSearchParams(location.search);
+  ['name', 'url', 'caption'].forEach((k) => { if (qs.has(k)) $(k).value = qs.get(k); });
+  let seed = qs.has('seed') ? parseInt(qs.get('seed'), 10) || 7 : 7;
+  const startColor = COLORS.some((c) => c.id === qs.get('color')) ? qs.get('color') : 'blue';
+
+  $('swatches').innerHTML = COLORS.map((c) =>
+    '<label title="' + c.name + '"><input type="radio" name="color" value="' + c.id + '"' + (c.id === startColor ? ' checked' : '') +
+    ' aria-label="' + c.name + '"><span style="background:' + c.ink + '"></span></label>').join('');
+
+  function rgba(hex, a) {
+    const n = parseInt(hex.slice(1), 16);
+    return 'rgba(' + (n >> 16) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+  }
+  function grain() {
+    // fixed-seed paper grain, built once
+    const img = ctx.createImageData(W, H);
+    let a = 12345;
+    for (let i = 0; i < img.data.length; i += 4) {
+      a = (a * 1664525 + 1013904223) >>> 0;
+      const v = (a >>> 24);
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = v > 127 ? 255 : 0;
+      img.data[i + 3] = (v & 15) + 2;
+    }
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    c.getContext('2d').putImageData(img, 0, 0);
+    return c;
+  }
+  let grainLayer = null;
+
+  const HEART = new Path2D('M0 0.5C-0.15 0.35-0.5 0.15-0.5-0.12C-0.5-0.42-0.12-0.5 0-0.25C0.12-0.5 0.5-0.42 0.5-0.12C0.5 0.15 0.15 0.35 0 0.5Z');
+
+  function draw() {
+    const name = $('name').value.trim();
+    const url = $('url').value.trim();
+    const caption = $('caption').value.trim();
+    const color = COLORS.find((c) => c.id === (document.querySelector('input[name=color]:checked') || {}).value) || COLORS[0];
+    const ink = color.ink;
+
+    // paper
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#f6f1e8'; ctx.fillRect(0, 0, W, H);
+    let g = ctx.createRadialGradient(W * 0.35, H * 0.2, 0, W * 0.35, H * 0.2, H * 0.9);
+    g.addColorStop(0, 'rgba(255,255,255,0.65)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    g = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.8);
+    g.addColorStop(0, 'rgba(150,120,80,0)'); g.addColorStop(1, 'rgba(150,120,80,0.16)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    if (!grainLayer) grainLayer = grain();
+    ctx.drawImage(grainLayer, 0, 0);
+
+    // frame
+    ctx.strokeStyle = rgba(ink, 0.32); ctx.lineWidth = 2.5; ctx.strokeRect(46, 46, W - 92, H - 92);
+    ctx.strokeStyle = rgba(ink, 0.16); ctx.lineWidth = 1.5; ctx.strokeRect(60, 60, W - 120, H - 120);
+
+    // name
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    let size = 124;
+    do { ctx.font = '400 ' + size + 'px "Marck Script", cursive'; size -= 4; } while (ctx.measureText(name).width > 820 && size > 40);
+    ctx.fillStyle = ink;
+    ctx.fillText(name, W / 2, 238);
+
+    // ornament
+    ctx.strokeStyle = rgba(ink, 0.45); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(W / 2 - 170, 296); ctx.lineTo(W / 2 - 30, 296); ctx.moveTo(W / 2 + 30, 296); ctx.lineTo(W / 2 + 170, 296); ctx.stroke();
+    ctx.save(); ctx.translate(W / 2, 297); ctx.scale(26, 26); ctx.fillStyle = rgba(ink, 0.7); ctx.fill(HEART); ctx.restore();
+
+    // heart QR
+    let info = null, error = '';
+    try { info = HeartQR.draw(ctx, url || ' ', W / 2, 792, 840, { seed, color: ink }); }
+    catch (e) { error = 'Ссылка слишком длинная для QR-кода.'; }
+
+    // caption
+    ctx.font = 'italic 500 54px "Cormorant Garamond", Georgia, serif';
+    ctx.fillStyle = rgba(ink, 0.78);
+    ctx.fillText(caption, W / 2, 1300);
+
+    const st = $('status');
+    st.classList.toggle('warn', !!error || !url || url.length > 80);
+    if (error) st.textContent = error;
+    else if (!url) st.textContent = 'Впиши ссылку, иначе QR-код никуда не ведёт.';
+    else st.textContent = 'QR: ' + info.modules + '×' + info.modules + ' модулей, защита от ошибок 30%. Узор №' + seed + '.' +
+      (url.length > 80 ? ' Ссылка длинная, код получится плотнее: лучше короче.' : '');
+    $('open-link').href = url || './';
+  }
+
+  async function start() {
+    try {
+      await Promise.all([
+        document.fonts.load('400 124px "Marck Script"', 'Любимая'),
+        document.fonts.load('italic 500 54px "Cormorant Garamond"', 'наведи камеру'),
+      ]);
+    } catch (e) { /* fall back to system fonts */ }
+    draw();
+    document.body.dataset.ready = '1';
+  }
+
+  ['name', 'url', 'caption'].forEach((id) => $(id).addEventListener('input', draw));
+  $('swatches').addEventListener('change', draw);
+  $('reseed').addEventListener('click', () => { seed = (seed * 31 + 17) % 9973 || 1; draw(); });
+  $('form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    canvas.toBlob((blob) => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'otkrytka-' + ($('name').value.trim() || 'qr').replace(/[^\wа-яё-]+/gi, '_') + '.png';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    }, 'image/png');
+  });
+  start();
+})();
+</script>
+</body>
+</html>
