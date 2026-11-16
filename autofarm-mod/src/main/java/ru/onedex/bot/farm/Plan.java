@@ -52,6 +52,13 @@ public final class Plan {
     public static void run() {
         State s = st();
         if (!cfg().bambooFarm && s.farm != 0) { s.farm = 0; State.save(); }
+        if (cfg().farmOnly && !(s.phase.equals("farm") || (s.phase.equals("sell") && s.site != null))) {
+            // only farming and selling: whatever step was saved, the bot farms (it never goes back to the start)
+            s.phase = "farm";
+            s.next = null;
+            s.after = null;
+            State.save();
+        }
         eat();
         switch (s.phase) {
             case "stash" -> stash();
@@ -583,7 +590,8 @@ public final class Plan {
         int have = 0;
         for (BlockPos p : l) if (Ctl.name(p).contains("chest")) have++;
         if (have == 0) return false;
-        return have == l.size() || st().noMoreChests;
+        // farm only: no chests are put, the ones that stand are used
+        return have == l.size() || st().noMoreChests || cfg().farmOnly;
     }
 
     static final Map<Integer, Integer> storageFails = new HashMap<>();
@@ -700,13 +708,17 @@ public final class Plan {
 
     // ------------------------------------------------------------------ 5. farming
     static void farm(int f) {
-        Site s = site();
         if (!goFarm()) return;
+        // only farming and selling: the farm is found in the world, its standing floors are the ones farmed
+        if (cfg().farmOnly && !standingFarm()) return;
+        Site s = site();
         Floors.toGround(s);
         String here = st().phase;
-        if (!storageReady()) { st().next = here; phase("storage"); return; }
-        // a floor with a hole that farming could not mend is built again first
-        if (!unbuilt(f).isEmpty()) { st().farm = f; st().next = here; phase("build"); return; }
+        if (!cfg().farmOnly) {
+            if (!storageReady()) { st().next = here; phase("storage"); return; }
+            // a floor with a hole that farming could not mend is built again first
+            if (!unbuilt(f).isEmpty()) { st().farm = f; st().next = here; phase("build"); return; }
+        }
         // empty rows on the farm: all of them are planted first (the farming time and selling wait for it)
         if (plantFarm(s, f)) { State.save(); return; }
         long need = cfg().farmMinutes * 60_000L;
@@ -895,6 +907,105 @@ public final class Plan {
             goFarm();
             if (!any) return;
         }
+    }
+
+    // ------------------------------------------------------------------ farm only: the farm stands
+    /** A floor counts as standing when this share of its cells is right (a few holes are mended on the way). */
+    static final double STANDING = 0.8;
+
+    /** The share of floor k's cells that are right (soil on the rows, a walkway block between them). */
+    static double floorShare(Site s, int f, int k) {
+        int L = s.floorY(f, k);
+        return Ctl.direct(() -> {
+            int ok = 0;
+            for (int dx = 0; dx < s.W; dx++) for (int dz = 0; dz < s.L; dz++) {
+                String n = Ctl.blockName(Ctl.world().getBlockState(new BlockPos(s.farmX(f) + dx, L, s.z + dz)));
+                if ((s.isRow(dx, dz) ? Floors.SOIL : Floors.WALK).matcher(n).matches()) ok++;
+            }
+            return ok / (double) (s.W * s.L);
+        });
+    }
+
+    /** Floors above the ground that stand at this place. */
+    static int standingFloors(Site s) {
+        int n = 0;
+        for (int k = 1; k < s.F; k++) if (floorShare(s, 0, k) >= STANDING) n++;
+        return n;
+    }
+
+    /** Waits (up to 10 s) until the blocks of the area around the place have come from the server. */
+    static boolean areaLoaded(Site s) {
+        for (int t = 0; t < 20; t++) {
+            boolean all = Ctl.direct(() -> {
+                for (int x = s.x - 7; ; x = Math.min(x + 16, s.x + s.W + 1)) {
+                    for (int z = s.z - 2; ; z = Math.min(z + 16, s.z + s.L + 1)) {
+                        if (!Ctl.loaded(new BlockPos(x, s.y, z))) return false;
+                        if (z == s.z + s.L + 1) break;
+                    }
+                    if (x == s.x + s.W + 1) break;
+                }
+                return true;
+            });
+            if (all) return true;
+            Ctl.ticks(10);
+        }
+        return false;
+    }
+
+    /**
+     * The farm at /home g, as it stands: around /home g as the bot lays it out (/home g in its middle), or else
+     * from the corner of the floor above us (/home g somewhere else on the ground floor). Null if none is there.
+     */
+    static Site findFarm() {
+        BlockPos home = Ctl.feet();
+        int ground = Ctl.direct(() -> Site.groundNow(Ctl.world(), home.getX(), home.getZ(), home.getY()));
+        Site s = Site.around(home, ground);
+        if (!areaLoaded(s)) return null;
+        if (standingFloors(s) > 0) return s;
+        // the layer of the first floor above us: along it to the west and to the north edge of the farm
+        int y1 = s.floorY(0, 1);
+        int[] edge = Ctl.direct(() -> {
+            java.util.function.IntPredicate layerX = x -> Floors.WALK.matcher(Ctl.blockName(Ctl.world().getBlockState(new BlockPos(x, y1, home.getZ())))).matches();
+            java.util.function.IntPredicate layerZ = z -> Floors.WALK.matcher(Ctl.blockName(Ctl.world().getBlockState(new BlockPos(home.getX(), y1, z)))).matches();
+            if (!layerX.test(home.getX())) return null;
+            int x = home.getX(), z = home.getZ();
+            for (int i = 0; i < s.W + 2 && layerX.test(x - 1); i++) x--;
+            for (int i = 0; i < s.L + 2 && layerZ.test(z - 1); i++) z--;
+            return new int[]{x, z};
+        });
+        if (edge == null) return null;
+        Site t = Site.around(home, ground);
+        t.x = edge[0];
+        t.z = edge[1];
+        return areaLoaded(t) && standingFloors(t) > 0 ? t : null;
+    }
+
+    /**
+     * Farm only: the saved place if its floors stand there, else the farm found at /home g. The floors that
+     * stand are the built ones (whatever the progress file said). False (and a wait) when no farm is there.
+     */
+    static boolean standingFarm() {
+        Site s = site();
+        if (s == null || !areaLoaded(s) || standingFloors(s) == 0) {
+            Site found = findFarm();
+            if (found == null) {
+                Bot.INSTANCE.stage("Не вижу ферму у " + cfg().farmCommand + ": встань на её 1-й этаж и сделай /sethome g");
+                Ctl.sleep(30_000);
+                return false;
+            }
+            BotClient.LOGGER.info("[bot] нашёл ферму: {} {} {}", found.x, found.y, found.z);
+            st().forgetSite();
+            st().site = found;
+            s = found;
+        }
+        st().farm = 0;
+        for (int k = 0; k < s.F; k++) {
+            boolean up = k == 0 || floorShare(s, 0, k) >= STANDING;
+            if (up && !st().isBuilt(0, k)) st().markBuilt(0, k);
+            else if (!up && st().isBuilt(0, k)) st().unmarkBuilt(0, k);
+        }
+        State.save();
+        return true;
     }
 
     static void sellAll() {

@@ -24,6 +24,7 @@ public class BotClient implements ClientModInitializer {
     public static final String MOD_ID = "dexbot";
     public static final Logger LOGGER = LoggerFactory.getLogger("1DEX1 Bot");
     public static KeyBinding MENU_KEY;
+    private static boolean autoStarted;
 
     @Override
     public void onInitializeClient() {
@@ -38,8 +39,16 @@ public class BotClient implements ClientModInitializer {
             while (MENU_KEY.wasPressed()) {
                 if (client.currentScreen == null) client.setScreen(new BotMenuScreen());
             }
-            // test runs: start by itself a little after joining
-            if (autostart != null && !Bot.INSTANCE.running() && client.player != null && client.player.age == 200) Bot.INSTANCE.start();
+            // started by itself a little after joining a server (test runs: in any world), once per joining
+            if (client.world == null) autoStarted = false;
+            else if (!autoStarted && client.player != null && client.player.age >= 200
+                    && (autostart != null || (BotConfig.get().autoStart && client.getCurrentServerEntry() != null))) {
+                autoStarted = true;
+                if (!Bot.INSTANCE.running()) {
+                    Bot.INSTANCE.start();
+                    client.player.sendMessage(Text.literal("1DEX1 Bot запущен: фарм и продажа. F7 — меню и стоп"), false);
+                }
+            }
             try { Bot.INSTANCE.clientTick(client); } catch (Throwable t) { LOGGER.error("bot tick", t); }
         });
 

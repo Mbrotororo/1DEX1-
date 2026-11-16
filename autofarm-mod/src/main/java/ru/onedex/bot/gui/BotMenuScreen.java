@@ -23,6 +23,7 @@ public class BotMenuScreen extends Screen {
     static final String[] ALL_STEPS = {"Стеш", "Ферма", "Стройка", "Склад", "Фарм", "Продажа", "Бамбук"};
     /** The plan's steps as shown: without the bamboo farm unless it is turned on. */
     static String[] steps() {
+        if (BotConfig.get().farmOnly) return new String[]{"Фарм", "Продажа"};
         return BotConfig.get().bambooFarm ? ALL_STEPS : java.util.Arrays.copyOf(ALL_STEPS, ALL_STEPS.length - 1);
     }
 
@@ -45,6 +46,7 @@ public class BotMenuScreen extends Screen {
     }
 
     static int stepOf(String phase) {
+        if (BotConfig.get().farmOnly) return phase.equals("sell") ? 1 : 0;
         return switch (phase) {
             case "stash" -> 0;
             case "clear" -> 1;

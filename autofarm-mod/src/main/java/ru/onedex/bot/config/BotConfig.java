@@ -34,12 +34,19 @@ public final class BotConfig {
     public boolean bambooFarm = false;
     public int storagePairs = 10;
     public int keepSeeds = 192;
+    /**
+     * Only farming and selling: the farm at /home g stands already. The bot finds it there, plants its empty rows,
+     * farms and sells, and never goes to the stash, builds, or puts chests. Off: the whole plan from the start.
+     */
+    public boolean farmOnly = true;
+    /** Starts by itself a little after joining a server (once per joining; F7 stops it). */
+    public boolean autoStart = true;
 
     public boolean hud = true;
 
     /** Settings written by an older version get the new farm layout (the commands stay as they were). */
     public int configVersion = 0;
-    static final int VERSION = 2;
+    static final int VERSION = 3;
 
     private static BotConfig INSTANCE;
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -63,6 +70,13 @@ public final class BotConfig {
             INSTANCE.floorGap = 3;
             INSTANCE.firstFloorHeight = 0;
             if (INSTANCE.farmSpacing <= 8) INSTANCE.farmSpacing = 30;
+        }
+        if (INSTANCE.configVersion < 3) {
+            // 1.2.2: the farm stands: only farming and selling, started by itself
+            INSTANCE.farmOnly = true;
+            INSTANCE.autoStart = true;
+        }
+        if (INSTANCE.configVersion < VERSION) {
             INSTANCE.configVersion = VERSION;
         }
         save();
