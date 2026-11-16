@@ -698,6 +698,8 @@ public final class Floors {
                 // none: the rest of it is not walked
                 if (mode == Mode.TEND && harvestCap != Integer.MAX_VALUE && Ctl.count(plant) >= harvestCap
                         && emptyRows(s, f, List.of(k))[0] == 0) break;
+                // no plants left and nothing more to pick on this floor: back to the column
+                if (mode == Mode.TEND && nothingToDo(s, f, k)) break;
                 int c = lanes.get(li);
                 r.lane = li;
                 // along the end line two cells past the lane and back: the end-line cells beside the lane are
@@ -746,6 +748,33 @@ public final class Floors {
     /** The trip plants a standing farm's empty rows (shown as such). */
     static boolean planting;
 
+    /**
+     * A capped round (planting, or a harvest round while building) with no plants in the bag: floor k has nothing
+     * to do when no more may be picked, or nothing on it is ripe.
+     */
+    static boolean nothingToDo(Site s, int f, int k) {
+        String plant = s.plant(f);
+        if (harvestCap == Integer.MAX_VALUE || Ctl.count(plant) > 0) return false;
+        return harvestCap <= 0 || ripe(s, f, k) == 0;
+    }
+
+    /** How many plants on floor k can be picked now (berries of age 2 and 3, bamboo two pieces high). */
+    static int ripe(Site s, int f, int k) {
+        int L = s.floorY(f, k);
+        boolean bamboo = s.plant(f).equals("bamboo");
+        return Ctl.direct(() -> {
+            int n = 0;
+            for (int dx = 1; dx < s.W; dx += 2) for (int dz = 1; dz < s.L - 1; dz++) {
+                BlockPos p = new BlockPos(s.farmX(f) + dx, L + 1, s.z + dz);
+                BlockState st = Ctl.world().getBlockState(p);
+                String n0 = Ctl.blockName(st);
+                if (bamboo) { if (n0.equals("bamboo") && Ctl.blockName(Ctl.world().getBlockState(p.up())).equals("bamboo")) n++; }
+                else if (n0.equals("sweet_berry_bush") && st.contains(Properties.AGE_3) && st.get(Properties.AGE_3) >= 2) n++;
+            }
+            return n;
+        });
+    }
+
     /** For each of these floors: the row cells with soil under them and nothing planted (grass counts as empty). */
     public static int[] emptyRows(Site s, int f, List<Integer> floors) {
         return Ctl.direct(() -> {
@@ -788,6 +817,8 @@ public final class Floors {
             order = o2;
         }
         for (int k : order) {
+            // a capped round with no plants left and nothing (more) to pick on this floor: it is not walked
+            if (mode == Mode.TEND && nothingToDo(s, f, k)) continue;
             // a harvest round while building: once the bag holds what the empty rows need, a floor with nothing
             // to plant on is not walked
             if (mode == Mode.TEND && harvestCap != Integer.MAX_VALUE && Ctl.count(s.plant(f)) >= harvestCap

@@ -228,12 +228,29 @@ public final class Plan {
         State.save();
         BotClient.LOGGER.info("[bot] ферма: {} {} {}", s.x, s.y, s.z);
         // a farm of this size stands here already (the progress file was lost): it is taken as it is and
-        // nothing on it is broken; floors missing on it are built as usual
+        // nothing on it is broken; floors missing on it are built as usual. Its whole area must have arrived
+        // from the server first (a missing chunk reads as air, and the farm would look absent)
+        boolean all = false;
+        for (int t = 0; t < 20 && !(all = Ctl.direct(() -> {
+            for (int x = s.x - 7; ; x = Math.min(x + 16, s.x + s.W + 1)) {
+                for (int z = s.z - 2; ; z = Math.min(z + 16, s.z + s.L + 1)) {
+                    if (!Ctl.loaded(new BlockPos(x, s.y, z))) return false;
+                    if (z == s.z + s.L + 1) break;
+                }
+                if (x == s.x + s.W + 1) break;
+            }
+            return true;
+        })); t++) Ctl.ticks(10);
+        if (!all) {
+            BotClient.LOGGER.info("[bot] место фермы ещё не прогрузилось — попробую позже");
+            Ctl.sleep(5000);
+            return;
+        }
         int standing = 0;
         for (int k = 1; k < s.F; k++) if (Floors.floorDone(s, 0, k)) standing++;
         if (standing > 0) {
             BotClient.LOGGER.info("[bot] здесь уже стоит ферма ({} этажей над землёй) — продолжаю с ней", standing);
-            adoptFloors(s, 0);
+            adoptFloors(s, 0, true);
             st().farm = 0;
             phase(takeNext("build"));
             return;
@@ -403,7 +420,7 @@ public final class Plan {
     static void build(int f) {
         Site s = site();
         if (s == null) { phase("clear"); return; }
-        adoptFloors(s, f);   // floors that stand already are not built again (read only when at the farm)
+        adoptFloors(s, f, false);   // floors that stand already are not built again (read only when at the farm)
         List<Integer> todo = unbuilt(f);
         if (!todo.isEmpty()) {
             // torches are needed for floors never built (a floor mended after a hole has its torches)
@@ -449,7 +466,7 @@ public final class Plan {
             phase("clear");
             return;
         }
-        adoptFloors(s, f);
+        adoptFloors(s, f, false);
         todo = unbuilt(f);
         if (f == 1 && s.y1 == null) {
             // the bamboo farm's own ground: the usual height of the ground where it goes
@@ -745,6 +762,8 @@ public final class Plan {
     static long storageDryAt;
     /** A planting round got nowhere (nothing to plant with, or rows it cannot plant): plain farming until then. */
     static long plantPausedUntil;
+    /** Planting rounds in a row that could not get up to the floors. */
+    static int plantFails;
 
     /**
      * The farm stands, but rows are empty (a farm built before planting was on, a bag of berries brought later):
@@ -776,6 +795,13 @@ public final class Plan {
             if (Ctl.count(plant) < want) storageDryAt = now;   // the chests are out of them
         }
         fits = Ctl.count(plant) + Math.max(0, Ctl.freeSlots() - 2) * 64;
+        if (fits < 32) {
+            // no plants and a bag full of other things: nothing to plant with this round
+            plantPausedUntil = now + 10 * 60_000L;
+            BotClient.LOGGER.info("[bot] засаживаю ферму: нечем сажать и сумка полная — пока фармлю");
+            return false;
+        }
+        int had = Ctl.count(plant);
         List<Integer> floors = new ArrayList<>();
         for (int k : done) if (k <= top) floors.add(k);   // the floors above the last empty row are not walked
         Floors.Result r;
@@ -791,11 +817,18 @@ public final class Plan {
         st().harvested += r.harvested;
         int left = Math.max(0, need - r.planted);
         BotClient.LOGGER.info("[bot] засаживаю ферму: посадил {}, собрал {}, осталось пустых {}", r.planted, r.harvested, left);
-        if (r.planted == 0) {
-            // nothing to plant with and nothing ripe yet, or rows that cannot be planted: farming goes on, and the
-            // farming rounds plant whatever they pick on the way; planting is tried again later
-            plantPausedUntil = System.currentTimeMillis() + 20 * 60_000L;
-            BotClient.LOGGER.info("[bot] засаживаю ферму: не вышло — пока фармлю, попробую через 20 минут");
+        if (r.planted > 0) plantFails = 0;
+        else if (r.stuck && had > 0 && ++plantFails < 3) {
+            // the way up failed this time (a monster at the column, lag): the next round tries again at once
+            BotClient.LOGGER.info("[bot] засаживаю ферму: не дошёл до этажа — ещё раз");
+        } else {
+            // nothing to plant with and nothing ripe yet: farming goes on (its rounds plant what they pick on the
+            // way) and planting is tried again in 20 minutes. Plants in the bag and still nothing planted: the
+            // rows left cannot be planted (something is in the way), tried again much later
+            plantFails = 0;
+            boolean stuckRows = had > 0 && !r.stuck;
+            plantPausedUntil = System.currentTimeMillis() + (stuckRows ? 120 : 20) * 60_000L;
+            BotClient.LOGGER.info("[bot] засаживаю ферму: не вышло — пока фармлю, попробую через {} минут", stuckRows ? 120 : 20);
         }
         // what is more than the empty rows still need goes into the chests
         if (storageReady()) store(Math.max(cfg().keepSeeds, left));
@@ -818,14 +851,15 @@ public final class Plan {
 
     /**
      * Floors that stand in the world but are not marked built (the progress was lost, or they were put by hand):
-     * marked, so they are not built a second time. The ground floor counts when the floor above it stands.
+     * marked, so they are not built a second time. The ground floor (whose layer is right on flat land from the
+     * start) only with `ground`, for a farm found standing, when the floor above it stands.
      * Read only at the farm (its blocks are loaded there).
      */
-    static void adoptFloors(Site s, int f) {
+    static void adoptFloors(Site s, int f, boolean ground) {
         if (!nearFarm(s, Ctl.feet(), 40)) return;
         for (int k = s.F - 1; k >= 0; k--) {
             if (st().isBuilt(f, k)) continue;
-            if (k == 0 && (s.F < 2 || !st().isBuilt(f, 1))) continue;
+            if (k == 0 && (!ground || s.F < 2 || !st().isBuilt(f, 1))) continue;
             if (Floors.floorDone(s, f, k)) {
                 st().markBuilt(f, k);
                 BotClient.LOGGER.info("[bot] этаж {} уже стоит — не строю его заново", k + 1);
