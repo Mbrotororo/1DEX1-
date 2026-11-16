@@ -852,7 +852,8 @@ public final class Plan {
      * the bag: dirt is dug next to the farm (a few stacks of plants go into the chests to make room for it).
      */
     static boolean columnBlocks(Site s, String plant) {
-        int want = (s.F - 1) * s.gap + 10;
+        // the climb to the top floor, and what the floors may take for mending a hole above that
+        int want = Math.max((s.F - 1) * s.gap + 10, 4 * (s.F - 1) + 8) + 8;
         if (s.F <= 1 || Floors.blocks() >= want) return true;
         if (Ctl.freeSlots() < 6 && storageReady()) store(Math.max(0, Ctl.count(plant) - (6 - Ctl.freeSlots()) * 64));
         Floors.toGround(s);
@@ -933,16 +934,48 @@ public final class Plan {
         return n;
     }
 
+    /**
+     * The share of the cells just outside floor k (all round it, the column cell left out) that hold a floor
+     * block. 0 for the real place: outside the farm the floors above the ground have air. An outline shifted
+     * even by one block has a whole side inside the real farm.
+     */
+    static double borderShare(Site s, int k) {
+        int L = s.floorY(0, k);
+        BlockPos col = s.shaft(0);
+        return Ctl.direct(() -> {
+            int n = 0, all = 0;
+            for (int dx = -1; dx <= s.W; dx++) for (int dz = -1; dz <= s.L; dz++) {
+                if (dx >= 0 && dx < s.W && dz >= 0 && dz < s.L) continue;
+                int x = s.x + dx, z = s.z + dz;
+                if (x == col.getX() && z == col.getZ()) continue;
+                all++;
+                if (Floors.WALK.matcher(Ctl.blockName(Ctl.world().getBlockState(new BlockPos(x, L, z)))).matches()) n++;
+            }
+            return n / (double) all;
+        });
+    }
+
+    /**
+     * This is the farm exactly: a floor above the ground stands whole on it (90%) with nothing of a floor all
+     * round it. A place that is off by a block (rows and walkways swapped, the column inside the farm) fails.
+     */
+    static boolean exactFarm(Site s) {
+        for (int k = 1; k < s.F; k++) if (floorShare(s, 0, k) >= 0.9 && borderShare(s, k) <= 0.05) return true;
+        return false;
+    }
+
     /** Waits (up to 10 s) until the blocks of the area around the place have come from the server. */
-    static boolean areaLoaded(Site s) {
+    static boolean areaLoaded(Site s) { return areaLoaded(s.x - 7, s.z - 2, s.x + s.W + 1, s.z + s.L + 1, s.y); }
+
+    static boolean areaLoaded(int x0, int z0, int x1, int z1, int y) {
         for (int t = 0; t < 20; t++) {
             boolean all = Ctl.direct(() -> {
-                for (int x = s.x - 7; ; x = Math.min(x + 16, s.x + s.W + 1)) {
-                    for (int z = s.z - 2; ; z = Math.min(z + 16, s.z + s.L + 1)) {
-                        if (!Ctl.loaded(new BlockPos(x, s.y, z))) return false;
-                        if (z == s.z + s.L + 1) break;
+                for (int x = x0; ; x = Math.min(x + 16, x1)) {
+                    for (int z = z0; ; z = Math.min(z + 16, z1)) {
+                        if (!Ctl.loaded(new BlockPos(x, y, z))) return false;
+                        if (z == z1) break;
                     }
-                    if (x == s.x + s.W + 1) break;
+                    if (x == x1) break;
                 }
                 return true;
             });
@@ -953,43 +986,85 @@ public final class Plan {
     }
 
     /**
-     * The farm at /home g, as it stands: around /home g as the bot lays it out (/home g in its middle), or else
-     * from the corner of the floor above us (/home g somewhere else on the ground floor). Null if none is there.
+     * The farm at /home g (we stand there): of all the places of the farm's size that hold /home g, the one
+     * whose first floor above the ground matches it whole with nothing of a floor round it (one place only
+     * can be that). /home g on an upper floor: the ground floor is found under it. Null if there is no farm.
      */
     static Site findFarm() {
         BlockPos home = Ctl.feet();
-        int ground = Ctl.direct(() -> Site.groundNow(Ctl.world(), home.getX(), home.getZ(), home.getY()));
-        Site s = Site.around(home, ground);
-        if (!areaLoaded(s)) return null;
-        if (standingFloors(s) > 0) return s;
-        // the layer of the first floor above us: along it to the west and to the north edge of the farm
-        int y1 = s.floorY(0, 1);
-        int[] edge = Ctl.direct(() -> {
-            java.util.function.IntPredicate layerX = x -> Floors.WALK.matcher(Ctl.blockName(Ctl.world().getBlockState(new BlockPos(x, y1, home.getZ())))).matches();
-            java.util.function.IntPredicate layerZ = z -> Floors.WALK.matcher(Ctl.blockName(Ctl.world().getBlockState(new BlockPos(home.getX(), y1, z)))).matches();
-            if (!layerX.test(home.getX())) return null;
-            int x = home.getX(), z = home.getZ();
-            for (int i = 0; i < s.W + 2 && layerX.test(x - 1); i++) x--;
-            for (int i = 0; i < s.L + 2 && layerZ.test(z - 1); i++) z--;
-            return new int[]{x, z};
+        Site shape = Site.around(home, home.getY());
+        int W = shape.W, Ln = shape.L, gap = shape.gap;
+        if (!areaLoaded(home.getX() - W - 8, home.getZ() - Ln - 3, home.getX() + W + 2, home.getZ() + Ln + 2, home.getY())) return null;
+        int ground = Ctl.direct(() -> {
+            int g = Site.groundNow(Ctl.world(), home.getX(), home.getZ(), home.getY());
+            // standing on an upper floor (air right under it): down a floor, as long as that is so
+            for (int i = 0; i < shape.F; i++) {
+                int air = 0;
+                for (int dx = -2; dx <= 2; dx++) for (int dz = -2; dz <= 2; dz++)
+                    if (Ctl.world().getBlockState(new BlockPos(home.getX() + dx, g - 1, home.getZ() + dz)).isAir()) air++;
+                if (air < 15) break;
+                g -= gap;
+            }
+            return g;
         });
-        if (edge == null) return null;
+        int y1 = ground + shape.first + gap;   // the first floor above the ground
+        // that floor's layer around us: 1 = soil, 2 = a walkway block only, 0 = anything else
+        int gx = home.getX() - W - 1, gz = home.getZ() - Ln - 1, gw = 2 * W + 2, gl = 2 * Ln + 2;
+        byte[][] cls = Ctl.direct(() -> {
+            byte[][] c = new byte[gw][gl];
+            for (int i = 0; i < gw; i++) for (int j = 0; j < gl; j++) {
+                String n = Ctl.blockName(Ctl.world().getBlockState(new BlockPos(gx + i, y1, gz + j)));
+                c[i][j] = (byte) (Floors.SOIL.matcher(n).matches() ? 1 : Floors.WALK.matcher(n).matches() ? 2 : 0);
+            }
+            return c;
+        });
+        int bestX = 0, bestZ = 0;
+        double best = -1;
+        for (int x0 = home.getX() - W + 1; x0 <= home.getX(); x0++) {
+            for (int z0 = home.getZ() - Ln + 1; z0 <= home.getZ(); z0++) {
+                int ok = 0;
+                for (int dx = 0; dx < W; dx++) for (int dz = 0; dz < Ln; dz++) {
+                    byte c = cls[x0 + dx - gx][z0 + dz - gz];
+                    if (shape.isRow(dx, dz) ? c == 1 : c != 0) ok++;
+                }
+                double share = ok / (double) (W * Ln);
+                if (share < 0.9) continue;
+                int out = 0, all = 0;
+                for (int dx = -1; dx <= W; dx++) for (int dz = -1; dz <= Ln; dz++) {
+                    if (dx >= 0 && dx < W && dz >= 0 && dz < Ln) continue;
+                    if (dx == -1 && dz == 1) continue;   // the column
+                    all++;
+                    if (cls[x0 + dx - gx][z0 + dz - gz] != 0) out++;
+                }
+                if (out / (double) all > 0.05) continue;
+                if (share > best) { best = share; bestX = x0; bestZ = z0; }
+            }
+        }
+        if (best < 0) return null;
         Site t = Site.around(home, ground);
-        t.x = edge[0];
-        t.z = edge[1];
-        return areaLoaded(t) && standingFloors(t) > 0 ? t : null;
+        t.x = bestX;
+        t.z = bestZ;
+        return t;
     }
 
     /**
-     * Farm only: the saved place if its floors stand there, else the farm found at /home g. The floors that
-     * stand are the built ones (whatever the progress file said). False (and a wait) when no farm is there.
+     * Farm only: the saved place if it is exactly the farm standing there, else the farm found at /home g. The
+     * floors that stand are the built ones (whatever the progress file said). False (and a wait) when no farm is
+     * there, or its blocks have not come yet (the saved place is kept then).
      */
     static boolean standingFarm() {
         Site s = site();
-        if (s == null || !areaLoaded(s) || standingFloors(s) == 0) {
+        if (s != null && !areaLoaded(s)) {
+            // far from it (goFarm left us near): /home g brings us there; still not loaded: later
+            if (!Ctl.teleport(cfg().farmCommand, 200) || !areaLoaded(s)) { Ctl.sleep(5000); return false; }
+        }
+        if (s == null || !exactFarm(s)) {
+            // looked for from /home g itself (goFarm does not send the command when we are near the farm)
+            if (!Ctl.teleport(cfg().farmCommand, 200)) { Ctl.sleep(5000); return false; }
             Site found = findFarm();
             if (found == null) {
-                Bot.INSTANCE.stage("Не вижу ферму у " + cfg().farmCommand + ": встань на её 1-й этаж и сделай /sethome g");
+                Bot.INSTANCE.stage("Не вижу ферму у " + cfg().farmCommand + ": встань на её 1-й этаж (на землю) и сделай /sethome g");
+                BotClient.LOGGER.info("[bot] ферму у /home g не нашёл");
                 Ctl.sleep(30_000);
                 return false;
             }
@@ -1005,6 +1080,16 @@ public final class Plan {
             else if (!up && st().isBuilt(0, k)) st().unmarkBuilt(0, k);
         }
         State.save();
+        // up on a floor and the column does not take us down (the home command puts us up there again): the
+        // farm can only be worked from its ground floor
+        Floors.toGround(s);
+        BlockPos me = Ctl.feet();
+        if (me.getY() > s.base(0) + 2 && s.inZone(me, 0)) {
+            Bot.INSTANCE.stage("Не могу спуститься с этажа: сделай /sethome g на земле фермы (на 1-м этаже)");
+            BotClient.LOGGER.info("[bot] /home g на этаже, а не на земле — жду");
+            Ctl.sleep(60_000);
+            return false;
+        }
         return true;
     }
 

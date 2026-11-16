@@ -25,6 +25,7 @@ public class BotClient implements ClientModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger("1DEX1 Bot");
     public static KeyBinding MENU_KEY;
     private static boolean autoStarted;
+    private static int joinTicks;
 
     @Override
     public void onInitializeClient() {
@@ -40,8 +41,9 @@ public class BotClient implements ClientModInitializer {
                 if (client.currentScreen == null) client.setScreen(new BotMenuScreen());
             }
             // started by itself a little after joining a server (test runs: in any world), once per joining
-            if (client.world == null) autoStarted = false;
-            else if (!autoStarted && client.player != null && client.player.age >= 200
+            // (counted from joining: a player who died at once does not tick on the death screen; the bot respawns)
+            if (client.world == null) { autoStarted = false; joinTicks = 0; }
+            else if (!autoStarted && client.player != null && ++joinTicks >= 200
                     && (autostart != null || (BotConfig.get().autoStart && client.getCurrentServerEntry() != null))) {
                 autoStarted = true;
                 if (!Bot.INSTANCE.running()) {
