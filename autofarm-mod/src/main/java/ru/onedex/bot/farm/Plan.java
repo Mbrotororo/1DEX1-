@@ -227,6 +227,17 @@ public final class Plan {
         st().site = s;
         State.save();
         BotClient.LOGGER.info("[bot] ферма: {} {} {}", s.x, s.y, s.z);
+        // a farm of this size stands here already (the progress file was lost): it is taken as it is and
+        // nothing on it is broken; floors missing on it are built as usual
+        int standing = 0;
+        for (int k = 1; k < s.F; k++) if (Floors.floorDone(s, 0, k)) standing++;
+        if (standing > 0) {
+            BotClient.LOGGER.info("[bot] здесь уже стоит ферма ({} этажей над землёй) — продолжаю с ней", standing);
+            adoptFloors(s, 0);
+            st().farm = 0;
+            phase(takeNext("build"));
+            return;
+        }
         // break the small farm (berry bushes give seeds) and anything built on the place
         Bot.INSTANCE.stage("Ломаю мини-ферму");
         for (int round = 0; round < 4; round++) {
@@ -392,6 +403,7 @@ public final class Plan {
     static void build(int f) {
         Site s = site();
         if (s == null) { phase("clear"); return; }
+        adoptFloors(s, f);   // floors that stand already are not built again (read only when at the farm)
         List<Integer> todo = unbuilt(f);
         if (!todo.isEmpty()) {
             // torches are needed for floors never built (a floor mended after a hole has its torches)
@@ -437,6 +449,8 @@ public final class Plan {
             phase("clear");
             return;
         }
+        adoptFloors(s, f);
+        todo = unbuilt(f);
         if (f == 1 && s.y1 == null) {
             // the bamboo farm's own ground: the usual height of the ground where it goes
             s.y1 = Ctl.direct(() -> {
@@ -642,26 +656,29 @@ public final class Plan {
     }
 
     /** Harvest into the storage, keeping some seeds. False when the storage is full. */
-    static boolean store() {
+    static boolean store() { return store(cfg().keepSeeds); }
+
+    /** Harvest into the storage, keeping `keepN` of the plants in the bag. False when the storage is full. */
+    static boolean store(int keepN) {
         Map<String, Integer> keep = new HashMap<>();
-        keep.put("sweet_berries", cfg().keepSeeds);
-        keep.put("bamboo", cfg().keepSeeds);
+        keep.put("sweet_berries", keepN);
+        keep.put("bamboo", keepN);
         tidyBag(6);
-        if (Ctl.count("sweet_berries") <= cfg().keepSeeds && Ctl.count("bamboo") <= cfg().keepSeeds) return true;
+        if (Ctl.count("sweet_berries") <= keepN && Ctl.count("bamboo") <= keepN) return true;
         Bot.INSTANCE.stage("Складываю в хранилище");
         Chests.interrupted = false;
         for (BlockPos p : storage()) {
-            if (Ctl.count("sweet_berries") <= cfg().keepSeeds && Ctl.count("bamboo") <= cfg().keepSeeds) return true;
+            if (Ctl.count("sweet_berries") <= keepN && Ctl.count("bamboo") <= keepN) return true;
             if (!Ctl.name(p).contains("chest")) continue;
             GenericContainerScreenHandler h = Chests.open(p);
             if (h == null) continue;
-            Chests.deposit(h, n -> n.equals("sweet_berries") || n.equals("bamboo"), keep);
+            if (Chests.deposit(h, n -> n.equals("sweet_berries") || n.equals("bamboo"), keep) > 0) storageDryAt = 0;
             Chests.close();
         }
         // a monster came: not full, just not done (next time); but not forever
         if (Chests.interrupted && ++interruptedStores < 3) return true;
         interruptedStores = 0;
-        return Ctl.count("sweet_berries") <= cfg().keepSeeds + 64 && Ctl.count("bamboo") <= cfg().keepSeeds + 64;
+        return Ctl.count("sweet_berries") <= keepN + 64 && Ctl.count("bamboo") <= keepN + 64;
     }
 
     // ------------------------------------------------------------------ 5. farming
@@ -673,6 +690,8 @@ public final class Plan {
         if (!storageReady()) { st().next = here; phase("storage"); return; }
         // a floor with a hole that farming could not mend is built again first
         if (!unbuilt(f).isEmpty()) { st().farm = f; st().next = here; phase("build"); return; }
+        // empty rows on the farm: all of them are planted first (the farming time and selling wait for it)
+        if (plantFarm(s, f)) { State.save(); return; }
         long need = cfg().farmMinutes * 60_000L;
         if (st().farmedMs >= need) {
             st().farmedMs = 0;
@@ -683,6 +702,7 @@ public final class Plan {
         long t0 = System.currentTimeMillis();
         String plant = s.plant(f);
         if (Ctl.count(plant) < 32) takeFromStorage(plant, cfg().keepSeeds);
+        columnBlocks(s, plant);
         Bot.INSTANCE.stage("Фармлю " + (f == 0 ? "ягоды" : "бамбук"));
         List<Integer> floors = new ArrayList<>();
         for (int k = 0; k < s.F; k++) if (st().isBuilt(f, k)) floors.add(k);
@@ -706,14 +726,110 @@ public final class Plan {
         State.save();
     }
 
-    static void takeFromStorage(String item, int want) {
+    /** Takes the item from the chests until the bag holds `want` of it (or they have none). How many came out. */
+    static int takeFromStorage(String item, int want) {
+        int got = 0;
         for (BlockPos p : storage()) {
-            if (Ctl.count(item) >= want) return;
+            if (Ctl.count(item) >= want || Ctl.freeSlots() == 0) break;
             if (!Ctl.name(p).contains("chest")) continue;
             GenericContainerScreenHandler h = Chests.open(p);
             if (h == null) continue;
-            Chests.withdraw(h, n -> n.equals(item), want - Ctl.count(item));
+            got += Chests.withdraw(h, n -> n.equals(item), want - Ctl.count(item));
             Chests.close();
+        }
+        return got;
+    }
+
+    // ------------------------------------------------------------------ planting a standing farm
+    /** When the chests last had none of the plants (they are not opened again for it for a while). */
+    static long storageDryAt;
+    /** A planting round got nowhere (nothing to plant with, or rows it cannot plant): plain farming until then. */
+    static long plantPausedUntil;
+
+    /**
+     * The farm stands, but rows are empty (a farm built before planting was on, a bag of berries brought later):
+     * every empty row on every floor is planted before the farming time starts. The plants come from the bag,
+     * then the chests; when both are out, from the rows planted already (only as much as the empty rows need is
+     * picked). Rounds go on until no row is empty. True if a round was made.
+     */
+    static boolean plantFarm(Site s, int f) {
+        long now = System.currentTimeMillis();
+        if (now < plantPausedUntil) return false;
+        List<Integer> done = new ArrayList<>();
+        for (int k = 0; k < s.F; k++) if (st().isBuilt(f, k)) done.add(k);
+        if (done.isEmpty()) return false;
+        int[] empty = Floors.emptyRows(s, f, done);
+        int need = 0, top = -1;
+        for (int i = 0; i < done.size(); i++) if (empty[i] > 0) { need += empty[i]; top = done.get(i); }
+        if (need == 0) return false;
+        String plant = s.plant(f);
+        BotClient.LOGGER.info("[bot] засаживаю ферму: пустых грядок {}, в сумке {}", need, Ctl.count(plant));
+        Bot.INSTANCE.stage("Засаживаю ферму: пустых грядок " + need);
+        // the blocks for the column first (the bag may be full of plants: a few stacks go into the chests for them)
+        columnBlocks(s, plant);
+        // the bag is filled from the chests (two slots stay free: the column is dug back down into the bag)
+        int fits = Ctl.count(plant) + Math.max(0, Ctl.freeSlots() - 2) * 64;
+        int want = Math.min(need, fits);
+        if (Ctl.count(plant) < want && now - storageDryAt > 10 * 60_000L) {
+            Bot.INSTANCE.stage("Беру ягоды из хранилища");
+            takeFromStorage(plant, want);
+            if (Ctl.count(plant) < want) storageDryAt = now;   // the chests are out of them
+        }
+        fits = Ctl.count(plant) + Math.max(0, Ctl.freeSlots() - 2) * 64;
+        List<Integer> floors = new ArrayList<>();
+        for (int k : done) if (k <= top) floors.add(k);   // the floors above the last empty row are not walked
+        Floors.Result r;
+        // what is picked: only what the empty rows still need, and what fits (with a bag of plants: nothing)
+        Floors.harvestCap = Math.min(need + 32, fits);
+        Floors.planting = true;
+        try {
+            r = Floors.trip(s, f, floors, Floors.Mode.TEND);
+        } finally {
+            Floors.harvestCap = Integer.MAX_VALUE;
+            Floors.planting = false;
+        }
+        st().harvested += r.harvested;
+        int left = Math.max(0, need - r.planted);
+        BotClient.LOGGER.info("[bot] засаживаю ферму: посадил {}, собрал {}, осталось пустых {}", r.planted, r.harvested, left);
+        if (r.planted == 0) {
+            // nothing to plant with and nothing ripe yet, or rows that cannot be planted: farming goes on, and the
+            // farming rounds plant whatever they pick on the way; planting is tried again later
+            plantPausedUntil = System.currentTimeMillis() + 20 * 60_000L;
+            BotClient.LOGGER.info("[bot] засаживаю ферму: не вышло — пока фармлю, попробую через 20 минут");
+        }
+        // what is more than the empty rows still need goes into the chests
+        if (storageReady()) store(Math.max(cfg().keepSeeds, left));
+        return true;
+    }
+
+    /**
+     * Blocks to climb the column up to the top floor (it is dug back down into the bag, so they last). None in
+     * the bag: dirt is dug next to the farm (a few stacks of plants go into the chests to make room for it).
+     */
+    static boolean columnBlocks(Site s, String plant) {
+        int want = (s.F - 1) * s.gap + 10;
+        if (s.F <= 1 || Floors.blocks() >= want) return true;
+        if (Ctl.freeSlots() < 6 && storageReady()) store(Math.max(0, Ctl.count(plant) - (6 - Ctl.freeSlots()) * 64));
+        Floors.toGround(s);
+        digDirt(Ctl.count("dirt") + want - Floors.blocks() + 16);
+        goFarm();
+        return Floors.blocks() >= want;
+    }
+
+    /**
+     * Floors that stand in the world but are not marked built (the progress was lost, or they were put by hand):
+     * marked, so they are not built a second time. The ground floor counts when the floor above it stands.
+     * Read only at the farm (its blocks are loaded there).
+     */
+    static void adoptFloors(Site s, int f) {
+        if (!nearFarm(s, Ctl.feet(), 40)) return;
+        for (int k = s.F - 1; k >= 0; k--) {
+            if (st().isBuilt(f, k)) continue;
+            if (k == 0 && (s.F < 2 || !st().isBuilt(f, 1))) continue;
+            if (Floors.floorDone(s, f, k)) {
+                st().markBuilt(f, k);
+                BotClient.LOGGER.info("[bot] этаж {} уже стоит — не строю его заново", k + 1);
+            }
         }
     }
 

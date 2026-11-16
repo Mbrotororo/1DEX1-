@@ -421,8 +421,9 @@ public final class Floors {
                 if (!step(nx, nz, x, z)) return false;
                 x = nx; z = nz;
                 if (work) work(x, z, sz);
-                // a full bag matters only while farming (building empties the bag)
-                if (mode == Mode.TEND && Ctl.freeSlots() < 2) return stop(true, false);
+                // a full bag matters only while farming (building empties the bag), and only while something is
+                // still to be picked: a bag full of plants for the empty rows goes on planting
+                if (mode == Mode.TEND && Ctl.freeSlots() < 2 && Ctl.count(plant) < harvestCap) return stop(true, false);
             }
             return !blocked;
         }
@@ -742,6 +743,9 @@ public final class Floors {
     /** A building trip ends after each finished floor (a harvest round comes next). */
     static boolean stopAfterFloor;
 
+    /** The trip plants a standing farm's empty rows (shown as such). */
+    static boolean planting;
+
     /** For each of these floors: the row cells with soil under them and nothing planted (grass counts as empty). */
     public static int[] emptyRows(Site s, int f, List<Integer> floors) {
         return Ctl.direct(() -> {
@@ -788,7 +792,9 @@ public final class Floors {
             // to plant on is not walked
             if (mode == Mode.TEND && harvestCap != Integer.MAX_VALUE && Ctl.count(s.plant(f)) >= harvestCap
                     && emptyRows(s, f, List.of(k))[0] == 0) continue;
-            Bot.INSTANCE.stage((mode == Mode.BUILD ? "Строю этаж " : "Фармлю этаж ") + (k + 1));
+            // a trip over all the floors of a big farm takes long: hunger is looked at before each floor
+            Plan.eat();
+            Bot.INSTANCE.stage((mode == Mode.BUILD ? "Строю этаж " : planting ? "Засаживаю этаж " : "Фармлю этаж ") + (k + 1));
             Pass p = new Pass(s, f, k, mode);
             long t0 = System.currentTimeMillis();
             if (r != null && r[1] == k) p.startLane = r[2];
