@@ -1,0 +1,58 @@
+/* ============================================================
+   В ЧЕСТЬ ВЫХОДА GTA 6. Работает, только когда в js/data.js стоит SEASON = 'gta'
+   (тогда у <html> есть класс .gta). Выключил — этих правил как будто нет.
+   ============================================================ */
+
+/* ---------- полоска розыска: 5 звёзд справа сверху, пока ломаешь остров ---------- */
+.gta-wanted{
+	position:fixed;right:max(16px,var(--gutter));top:calc(var(--topbar) + var(--safe-top) + 14px);z-index:41;
+	display:flex;align-items:center;gap:6px;padding:8px 10px;pointer-events:none;
+	background:rgba(12,9,20,.78);box-shadow:inset 0 0 0 2px rgba(255,255,255,.12),0 5px 0 rgba(0,0,0,.35);
+	opacity:0;transform:translateY(-8px);transition:opacity .35s,transform .35s var(--ease);
+}
+.gta-wanted.is-on{opacity:1;transform:none}
+.gta-wanted__t{margin-right:4px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#ffd9a8}
+.gta-wanted .pxi{font-size:22px;filter:grayscale(1) brightness(.35);transition:filter .3s}
+.gta-wanted .pxi.is-lit{filter:none;animation:gta-star 1s steps(2,jump-none) infinite}
+.gta-wanted.is-new .pxi.is-lit:last-of-type{animation:gta-star .25s steps(2,jump-none) 6}
+@keyframes gta-star{50%{filter:brightness(.55)}}
+/* на телефоне сверху надпись 1DEX1 SHOP — звёзды внизу по центру, над хотбаром */
+@media (max-width:700px){
+	.gta-wanted{top:auto;right:50%;bottom:calc(84px + env(safe-area-inset-bottom,0px));transform:translate(50%,8px)}
+	.gta-wanted.is-on{transform:translate(50%,0)}
+}
+
+/* ---------- кейс-кейс: из него вылетают деньги ---------- */
+.gta-cash{position:absolute;left:50%;top:42%;width:0;height:0;pointer-events:none;z-index:4}
+.gta-cash i{
+	position:absolute;width:22px;height:11px;margin:-6px 0 0 -11px;
+	background:linear-gradient(90deg,#3d8c3a 0 3px,#6fd05a 3px 19px,#3d8c3a 19px);box-shadow:inset 0 0 0 1px #2a5e27;
+	animation:gta-cash 1.6s cubic-bezier(.2,.7,.4,1) forwards;animation-delay:var(--d);
+}
+.gta-cash i::after{content:"";position:absolute;left:9px;top:3px;width:4px;height:5px;border-radius:50%;background:#2a5e27}
+@keyframes gta-cash{
+	0%{transform:translate(0,0) rotate(0);opacity:0}
+	10%{opacity:1}
+	45%{transform:translate(var(--x),var(--y)) rotate(var(--r))}
+	100%{transform:translate(calc(var(--x)*1.3),calc(var(--y) + 140px)) rotate(calc(var(--r)*2.5));opacity:0}
+}
+
+/* ---------- «Миссия выполнена!» ---------- */
+.gta-mission{
+	position:fixed;left:50%;top:40%;z-index:46;transform:translate(-50%,-50%);pointer-events:none;
+	display:grid;justify-items:center;gap:8px;text-align:center;white-space:nowrap;
+	font:400 clamp(24px,5.4vw,58px)/1.05 var(--font-display);color:#ffd23f;
+	text-shadow:0 4px 0 #8a3b00,0 0 34px rgba(255,160,60,.5);
+	animation:gta-mission 2.8s var(--ease) forwards;
+}
+.gta-mission small{font:400 clamp(14px,2.4vw,24px)/1 var(--font-display);color:#fff;text-shadow:0 3px 0 #2a1a5c}
+@keyframes gta-mission{
+	0%{opacity:0;transform:translate(-50%,-50%) scale(1.6)}
+	12%{opacity:1;transform:translate(-50%,-50%) scale(1)}
+	80%{opacity:1;transform:translate(-50%,-50%) scale(1)}
+	100%{opacity:0;transform:translate(-50%,-56%) scale(.97)}
+}
+
+@media (prefers-reduced-motion:reduce){
+	.gta-wanted .pxi.is-lit,.gta-wanted.is-new .pxi.is-lit:last-of-type{animation:none}
+}

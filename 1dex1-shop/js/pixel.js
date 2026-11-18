@@ -18,6 +18,11 @@ export const GLYPHS = {
 	Ь: ['#....', '#....', '#....', '####.', '#...#', '#...#', '####.'],
 };
 GLYPHS.Н = GLYPHS.H;
+// для знака «GTA 6»
+GLYPHS.G = ['.####', '#....', '#....', '#.###', '#...#', '#...#', '.###.'];
+GLYPHS.T = ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '..#..'];
+GLYPHS.A = ['.###.', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'];
+GLYPHS['6'] = ['.###.', '#....', '#....', '####.', '#...#', '#...#', '.###.'];
 
 // Список пикселей слова: [{x, y, row}] — y растёт вверх. Пробел занимает 3 пикселя.
 export const wordPixels = (word) => {
@@ -122,6 +127,8 @@ export const ICONS = {
 	// банковская карта и QR-код (способы оплаты)
 	card: ['.........', 'qqqqqqqqq', 'qpppppppq', 'qkkkkkkkq', 'qpppppppq', 'qggpppppq', 'qggpwwpwq', 'qqqqqqqqq', '.........'],
 	qr: ['lll.l.lll', 'l.l...l.l', 'lll.l.lll', '...l.l...', 'l.lll.l.l', '...l..l..', 'lll.l.ll.', 'l.l..l..l', 'lll.ll.l.'],
+	// звезда розыска
+	star: ['....g....', '...gGg...', '...gGg...', 'gggGGGggg', '.gGGGGGg.', '..gGGGg..', '..gGgGg..', '.gGg.gGg.', '.gg...gg.'],
 	// новогодние: подарок, ёлка со звездой, снежинка
 	gift: ['..g...g..', '.gGg.gGg.', '..ggggg..', 'rrrrgrrrr', 'gggggGggg', 'reeegeeer', 'reeegeeer', 'reeegeeer', 'eeeegeeee'],
 	tree: ['....g....', '...tGt...', '...ttt...', '..ttrtt..', '..ttttt..', '.ttgtttT.', '.tttttTT.', 'ttrtttTTT', '....b....'],
@@ -179,6 +186,28 @@ const GIFT_BASE = [
 	'keeeeeehgeeeeeek',
 	'.kkkkkkkkkkkkkk.',
 ];
+// ---------- кейс к выходу GTA 6: кейс-чемоданчик с деньгами ----------
+const CASH_LID = [
+	'......kkkk......',
+	'.....kSSSSk.....',
+	'.....kS..Sk.....',
+	'kkkkkkkkkkkkkkkk',
+	'kSSSSSSSSSSSSSSk',
+	'kssgssssssssgssk',
+];
+const CASH_BASE = [
+	'kssgssssssssgssk',
+	'kSssssssssssssdk',
+	'kSssssssssssssdk',
+	'kSssssssgGsssssk',
+	'kSssssssssssssdk',
+	'kSssssssssssssdk',
+	'kddddddddddddddk',
+	'.kkkkkkkkkkkkkk.',
+];
+export const cashArt = () =>
+	`<span class="case__lid">${pixelSvg(CASH_LID, C)}</span><span class="case__base">${pixelSvg(CASH_BASE, C)}</span>`;
+
 export const giftArt = () =>
 	`<span class="case__lid">${pixelSvg(GIFT_LID, C)}</span><span class="case__base">${pixelSvg(GIFT_BASE, C)}</span>`;
 

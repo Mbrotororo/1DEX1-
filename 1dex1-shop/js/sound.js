@@ -200,3 +200,53 @@ export const fireworkSound = (kind = 'pop') => {
 		// звук не обязателен
 	}
 };
+
+// сигнал машины: «би-бип» из двух тонов
+export const hornSound = () => {
+	try {
+		const a = audio();
+		const t0 = a.currentTime;
+		for (const [at, len] of [[0, 0.16], [0.22, 0.22]]) {
+			for (const f of [392, 494]) {
+				const o = a.createOscillator();
+				o.type = 'square';
+				o.frequency.value = f;
+				const g = a.createGain();
+				g.gain.setValueAtTime(0.0001, t0 + at);
+				g.gain.exponentialRampToValueAtTime(0.05, t0 + at + 0.02);
+				g.gain.setValueAtTime(0.05, t0 + at + len - 0.03);
+				g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + len);
+				o.connect(g).connect(a.destination);
+				o.start(t0 + at);
+				o.stop(t0 + at + len + 0.02);
+			}
+		}
+	} catch {
+		// звук не обязателен
+	}
+};
+
+// двигатель заводится: низкое урчание, которое разгоняется
+export const engineSound = () => {
+	try {
+		const a = audio();
+		const t0 = a.currentTime;
+		const o = a.createOscillator();
+		o.type = 'sawtooth';
+		o.frequency.setValueAtTime(42, t0);
+		o.frequency.exponentialRampToValueAtTime(95, t0 + 0.5);
+		o.frequency.exponentialRampToValueAtTime(60, t0 + 1.1);
+		const lp = a.createBiquadFilter();
+		lp.type = 'lowpass';
+		lp.frequency.value = 400;
+		const g = a.createGain();
+		g.gain.setValueAtTime(0.0001, t0);
+		g.gain.exponentialRampToValueAtTime(0.12, t0 + 0.08);
+		g.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.2);
+		o.connect(lp).connect(g).connect(a.destination);
+		o.start(t0);
+		o.stop(t0 + 1.25);
+	} catch {
+		// звук не обязателен
+	}
+};

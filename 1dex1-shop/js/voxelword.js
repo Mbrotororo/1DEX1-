@@ -34,7 +34,8 @@ export const fontReady = () => {
 // rows — высота заглавной буквы в блоках. Возвращает {cells, width, height}:
 // у клетки x, y — центр (начало координат — середина надписи, y вверх), gx, gy — номер клетки,
 // ty — 0 у верха строки и 1 у низа (для градиента), seed — случайное число клетки.
-export const rasterize = (lines, rows) => {
+// glyphs: true — сразу пиксельные буквы 5×7 (у них чётче G, T, A, 6), без шрифта сайта.
+export const rasterize = (lines, rows, {glyphs = false} = {}) => {
 	const S = 6; // пикселей холста на клетку: по ним считается, закрашена ли клетка
 	const c = document.createElement('canvas');
 	const g = c.getContext('2d', {willReadFrequently: true});
@@ -53,9 +54,9 @@ export const rasterize = (lines, rows) => {
 	g.fillStyle = '#fff';
 	g.textBaseline = 'alphabetic';
 	lines.forEach((l, i) => g.fillText(l, (c.width - widths[i]) / 2, (2 + i * lineH + rows) * S));
-	const px = g.getImageData(0, 0, c.width, c.height).data;
+	const px = glyphs ? [] : g.getImageData(0, 0, c.width, c.height).data;
 	const raw = [];
-	for (let gy = 0; gy < H; gy++) {
+	for (let gy = 0; gy < H && !glyphs; gy++) {
 		for (let gx = 0; gx < W; gx++) {
 			let sum = 0;
 			for (let y = 1; y < S; y += 2) for (let x = 1; x < S; x += 2) sum += px[((gy * S + y) * c.width + gx * S + x) * 4 + 3];

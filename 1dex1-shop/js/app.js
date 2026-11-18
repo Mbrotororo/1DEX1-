@@ -8,10 +8,11 @@ import {initFootWord} from './footer.js';
 import {applyI18n, getLang, locale, onLang, setLang, t} from './i18n.js';
 import {getDoc} from './legal.js';
 import {fontReady} from './voxelword.js';
-import {caseArt, coverArt, giftArt, icon, navIcon} from './pixel.js';
-import {boomSound, breakSound, fireworkSound, hissSound, punchSound, shatterSound} from './sound.js';
+import {caseArt, cashArt, coverArt, giftArt, icon, navIcon} from './pixel.js';
+import {boomSound, breakSound, engineSound, fireworkSound, hissSound, hornSound, punchSound, shatterSound} from './sound.js';
 import {fireworks} from './fireworks.js';
 import {initNewYear, snowBurst} from './newyear.js';
+import {cashBurst, initGta, missionBanner, setWanted} from './gta.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -129,10 +130,12 @@ let products = [];
 let heroApi = null;
 // праздничное оформление (js/data.js → SEASON)
 const NY = SEASON === 'newyear';
+const GTA = SEASON === 'gta'; // в честь выхода GTA 6
 const celebrate = () => {
 	fireworks({reducedMotion, onLaunch: () => fireworkSound('launch'), onPop: () => fireworkSound('pop')});
 	heroApi?.celebrate?.();
 };
+if (GTA) initGta();
 if (NY) initNewYear({reducedMotion, hero: () => heroApi, celebrate: () => heroApi?.celebrate?.(), debug: new URLSearchParams(location.search).has('debug')});
 let filter = 'all';
 const seenTabs = new Set();
@@ -930,7 +933,7 @@ let paintCase = () => {};
 	const btn = $('#case-open');
 	const dots = [$('.hotbar__dot'), $('.topnav__dot')].filter(Boolean);
 	const LOOT_ICON = {money: 'coin', rp: 'gem'};
-	art.innerHTML = NY ? giftArt() : caseArt(); // под Новый год кейс — подарочная коробка
+	art.innerHTML = NY ? giftArt() : GTA ? cashArt() : caseArt(); // под Новый год — подарок, к GTA 6 — кейс с деньгами
 	const total = CASE.loot.reduce((sum, l) => sum + l.chance, 0);
 	const pct = (c) => {
 		const v = (c / total) * 100;
@@ -1014,6 +1017,10 @@ let paintCase = () => {};
 				art.classList.add('is-open');
 				breakSound();
 				if (NY) snowBurst(art.parentElement, reducedMotion);
+				if (GTA) {
+					cashBurst(art.parentElement, reducedMotion);
+					missionBanner(res.prize.kind === 'money' ? `+${res.prize.amount} ₽` : t('case.rp'));
+				}
 				showPrize(res.prize);
 				opening = false;
 				paintCase();
@@ -1212,6 +1219,15 @@ Promise.all([import('./hero.js'), fontReady()])
 						break;
 					case 'shatter':
 						shatterSound();
+						break;
+					case 'wanted':
+						setWanted(data);
+						break;
+					case 'horn':
+						hornSound();
+						break;
+					case 'engine':
+						engineSound();
 						break;
 					case 'creeperHiss':
 						hissSound();

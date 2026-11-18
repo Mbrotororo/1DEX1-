@@ -235,6 +235,11 @@ const makeTextures = () => {
 			return d > 6.5 ? [70, 48, 42] : Math.floor(d) % 2 ? [124, 92, 78] : [88, 62, 54];
 		}),
 		// ---------- Энд ----------
+		// пляж к выходу GTA 6
+		sand: pixelTexture((x, y) => {
+			const v = n(x, y, 27);
+			return shade([232, 208, 146], v < 0.14 ? 0.88 : v > 0.88 ? 1.06 : (x * 3 + y * 7) % 13 === 0 ? 0.93 : 1);
+		}),
 		// новогодние: снег сверху блока, бок травы под снегом, хвоя ели и хвоя со снегом
 		snow: pixelTexture((x, y) => {
 			const v = n(x, y, 23);
@@ -529,6 +534,7 @@ const saveProgress = (p) => {
 //  'free' — стена сломана, 'tickle' — пять кликов по скину
 export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = null, sky = null, season = ''} = {}) => {
 	const NY = season === 'newyear'; // новогодний стиль: снег, ёлка, снеговик, Санта, шапка с шарфом
+	const GTA = season === 'gta'; // в честь выхода GTA 6: большой пляжный остров, машина, лежак, Майами
 	// Новогоднее — украшение: если в нём что-то сломается, остров, миры и персонаж всё равно работают.
 	// Ошибку пишем в консоль один раз, сломавшуюся часть больше не трогаем.
 	const nyBroken = new Set();
@@ -538,7 +544,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			fn();
 		} catch (err) {
 			nyBroken.add(what);
-			console.error(`1DEX1: новогоднее «${what}» отключено`, err);
+			console.error(`1DEX1: украшение «${what}» отключено`, err);
 		}
 	};
 	let renderer;
@@ -570,6 +576,12 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	const rim = new THREE.DirectionalLight(0x9a6bff, 1.6);
 	rim.position.set(5, 2, -6);
 	scene.add(rim);
+	if (GTA) {
+		// тёплый закатный свет
+		amb.color.set('#ffe0cc');
+		key.color.set('#fff2d8');
+		rim.color.set('#ff6fb0');
+	}
 
 	// world не зависит от мыши; island внутри него сам качается вместе с персонажем
 	const world = new THREE.Group();
@@ -597,13 +609,14 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	};
 
 	const rand = rng(11);
-	const radii = [3.75, 3.3, 2.75, 2.15, 1.5, 0.85];
+	const radii = GTA ? [6.6, 5.9, 5.0, 3.9, 2.7, 1.5] : [3.75, 3.3, 2.75, 2.15, 1.5, 0.85];
+	const RX = GTA ? 7 : 4;
 	radii.forEach((radius, layer) => {
-		for (let x = -4; x <= 4; x++) {
-			for (let z = -4; z <= 4; z++) {
+		for (let x = -RX; x <= RX; x++) {
+			for (let z = -RX; z <= RX; z++) {
 				const d = Math.hypot(x, z) + (rand() - 0.5) * 0.7;
 				if (d > radius) continue;
-				let type = layer === 0 ? 'grass' : layer === 1 ? 'dirt' : layer === 2 ? (rand() < 0.45 ? 'dirt' : 'stone') : 'stone';
+				let type = layer === 0 ? (GTA && d > radius - 1.7 ? 'sand' : 'grass') : layer === 1 ? 'dirt' : layer === 2 ? (rand() < 0.45 ? 'dirt' : 'stone') : 'stone';
 				if (type === 'stone') {
 					const o = rand();
 					if (o < 0.08) type = 'coal';
@@ -649,10 +662,30 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 
 	// Дуб, как в Minecraft: ствол из пяти брёвен, два широких слоя листвы,
 	// слой поуже и «крестик» на макушке. Нижние листья выше головы персонажа.
-	const TREE = {x: -1, z: -2};
-	const SPRUCE = NY; // под Новый год вместо дуба — ёлка (нижние лапы тоже выше головы персонажа)
-	for (let y = 0; y < (SPRUCE ? 6 : 5); y++) addBlock('log', TREE.x, y + 0.5, TREE.z);
+	const TREE = GTA ? {x: -2, z: -3} : {x: -1, z: -2};
+	// к GTA 6: машина справа спереди, лежак с зонтиком слева спереди (в блоках острова)
+	const CAR = {x: 3.3, z: 2.4, rot: -0.55};
+	const LOUNGE = {x: -3.6, z: 2.8, rot: 0.45};
+	const UMBRELLA = {x: -5.0, z: 1.6};
+	const SPRUCE = NY && !GTA; // под Новый год вместо дуба — ёлка (нижние лапы тоже выше головы персонажа)
+	const PALM = GTA; // к GTA 6 — пальма: высокий ствол и листья-веера, свисающие к краям
+	for (let y = 0; y < (SPRUCE ? 6 : PALM ? 7 : 5); y++) addBlock('log', TREE.x, y + 0.5, TREE.z);
 	const leaf = (dx, y, dz) => (y < 4 && portalDist(PORTAL_O, TREE.x + dx, TREE.z + dz) < 1.1 ? null : addBlock('leaves', TREE.x + dx, y, TREE.z + dz));
+	if (PALM) {
+		// крона пальмы: восемь листьев-лучей, у концов свисают вниз
+		leaf(0, 7.5, 0);
+		leaf(0, 8.5, 0);
+		for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+			leaf(dx, 7.5, dz);
+			leaf(dx * 2, 7.5, dz * 2);
+			leaf(dx * 3, 6.5, dz * 3);
+			leaf(dx * 3, 5.5, dz * 3);
+		}
+		for (const [dx, dz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+			leaf(dx, 7.5, dz);
+			leaf(dx * 2, 6.5, dz * 2);
+		}
+	}
 	if (SPRUCE) {
 		// ярусы: широкий, узкий, ромб, крестик, макушка
 		for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) if ((dx || dz) && !(Math.abs(dx) === 2 && Math.abs(dz) === 2)) leaf(dx, 3.5, dz);
@@ -661,7 +694,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		for (const [dx, dz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) leaf(dx, 6.5, dz);
 		leaf(0, 7.5, 0);
 	}
-	for (const y of SPRUCE ? [] : [3.5, 4.5]) {
+	for (const y of SPRUCE || PALM ? [] : [3.5, 4.5]) {
 		for (let dx = -2; dx <= 2; dx++) {
 			for (let dz = -2; dz <= 2; dz++) {
 				if (dx === 0 && dz === 0) continue; // там ствол
@@ -670,7 +703,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			}
 		}
 	}
-	if (!SPRUCE) {
+	if (!SPRUCE && !PALM) {
 		for (let dx = -1; dx <= 1; dx++) {
 			for (let dz = -1; dz <= 1; dz++) {
 				if (Math.abs(dx) === 1 && Math.abs(dz) === 1 && rand() < 0.5) continue;
@@ -680,10 +713,16 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		for (const [dx, dz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) leaf(dx, 6.5, dz);
 	}
 	// куст
-	const BUSHES = [
-		{x: -3, z: -1},
-		{x: 2, z: 2},
-	].filter((b) => blockAt.has(`${b.x},-0.5,${b.z}`));
+	const BUSHES = (GTA
+		? [
+				{x: -4, z: -1},
+				{x: 1, z: -4},
+			]
+		: [
+				{x: -3, z: -1},
+				{x: 2, z: 2},
+			]
+	).filter((b) => blockAt.has(`${b.x},-0.5,${b.z}`));
 	const SNOWMAN = NY ? BUSHES.find((b) => b.x === 2 && b.z === 2) : null;
 	for (const bsh of BUSHES) if (bsh !== SNOWMAN) addBlock('leaves', bsh.x, 0.5, bsh.z);
 
@@ -696,6 +735,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			return [side, side, lambert(tex.snow), lambert(tex.dirt), side, side];
 		})() : [grassSide, grassSide, lambert(tex.grassTop), lambert(tex.dirt), grassSide, grassSide],
 		dirt: lambert(tex.dirt),
+		sand: lambert(tex.sand),
 		stone: lambert(tex.stone),
 		coal: lambert(tex.coal),
 		iron: lambert(tex.iron),
@@ -710,6 +750,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		netherrack: '#73342f', quartzOre: '#e8dccb', netherGold: '#ffc83d', ancientDebris: '#6a4a3e', magma: '#ff8a22', glowstone: '#ffd27a', shroomlight: '#ffaa55', wartBlock: '#98161c', crimsonStem: '#7e2840',
 		endStone: '#dedfa6', obsidian: '#2a1d40', bedrock: '#555558',
 	};
+	BLOCK_COLOR.sand = '#e8d092';
 	if (NY) Object.assign(BLOCK_COLOR, {grass: '#eef6ff', leaves: '#2c6034'});
 
 	const setBlock = (b, s) => {
@@ -758,6 +799,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const {x, z} = b.pos;
 		if (Math.hypot(x - HOME.x, z - HOME.z) < 1.4) continue;
 		if (Math.hypot(x - CHEST.x, z - CHEST.z) < 1.2) continue;
+		if (GTA && (Math.hypot(x - CAR.x, z - CAR.z) < 3.4 || Math.hypot(x - LOUNGE.x, z - LOUNGE.z) < 2.2 || Math.hypot(x - UMBRELLA.x, z - UMBRELLA.z) < 1.2)) continue;
 		if (portalDist(PORTAL_O, x, z) < 1.0 || Math.hypot(x - END_O.x, z - END_O.z) < 1.8) continue;
 		if (blockAt.has(`${x},0.5,${z}`)) continue;
 		const roll = rand();
@@ -814,7 +856,11 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 
 	// препятствия на верхушке острова: персонаж их обходит
 	// препятствия; портал добавляется ниже (в Незер или в Энд — смотря что стоит)
-	const OVER_BASE_OBSTACLES = [{x: TREE.x, z: TREE.z, r: NY ? 1.4 : 0.8}, {x: CHEST.x, z: CHEST.z, r: 0.85}, ...BUSHES.map((b) => ({x: b.x, z: b.z, r: 0.75}))];
+	const carAxis = (k) => ({x: CAR.x + Math.sin(CAR.rot) * k, z: CAR.z + Math.cos(CAR.rot) * k});
+	const GTA_OBSTACLES = GTA
+		? [...[-1.8, 0, 1.8].map((k) => ({...carAxis(k), r: 1.35})), {x: LOUNGE.x, z: LOUNGE.z, r: 1.15}, {x: UMBRELLA.x, z: UMBRELLA.z, r: 0.35}]
+		: [];
+	const OVER_BASE_OBSTACLES = [...GTA_OBSTACLES, {x: TREE.x, z: TREE.z, r: NY ? 1.4 : 0.8}, {x: CHEST.x, z: CHEST.z, r: 0.85}, ...BUSHES.map((b) => ({x: b.x, z: b.z, r: 0.75}))];
 	const OBSTACLES = [...OVER_BASE_OBSTACLES];
 
 	// ================= ПЕРСОНАЖ =================
@@ -1002,6 +1048,98 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		}
 	};
 
+	// ================= К ВЫХОДУ GTA 6: МАШИНА И ЛЕЖАК =================
+	// Открытый спорткар нормального размера (персонаж садится за руль) и пляжный лежак под
+	// зонтиком. Модели — из простых цветных блоков; соседние блоки чуть заходят друг в друга,
+	// совпадающих граней нет. Всё в группе острова: в Незере и Энде их нет.
+	let car = null; // {group, meshes, lights: [], glows: [], body}
+	let lounger = null; // {group}
+	if (GTA) {
+		try {
+			const flat = (color, extra = {}) => new THREE.MeshLambertMaterial({color, ...extra});
+			const boxIn = (parent, w, h, d, mat, x, y, z, rx = 0) => {
+				const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+				m.position.set(x, y, z);
+				m.rotation.x = rx;
+				parent.add(m);
+				return m;
+			};
+			// --- машина: смотрит вдоль своей оси z ---
+			const g = new THREE.Group();
+			g.position.set(CAR.x, 0, CAR.z);
+			g.rotation.y = CAR.rot;
+			const body = new THREE.Group();
+			g.add(body);
+			const paint = flat('#e3263d');
+			const dark = flat('#1c1820');
+			const chrome = flat('#d9dde6');
+			const white = flat('#f4f2ee');
+			boxIn(body, 2.5, 0.72, 5.4, paint, 0, 0.74, 0); // кузов
+			boxIn(body, 2.3, 0.3, 1.9, paint, 0, 1.2, 1.75); // капот чуть выше
+			boxIn(body, 2.3, 0.3, 1.5, paint, 0, 1.2, -2.0); // багажник
+			for (const x of [-0.42, 0.42]) boxIn(body, 0.22, 0.05, 1.86, white, x, 1.375, 1.75); // полосы на капоте
+			boxIn(body, 2.56, 0.18, 0.14, chrome, 0, 0.5, 2.72); // бампер спереди
+			boxIn(body, 2.56, 0.18, 0.14, chrome, 0, 0.5, -2.72); // и сзади
+			boxIn(body, 0.9, 0.3, 0.06, white, 0, 0.82, -2.73); // номер
+			// салон: два сиденья со спинками, руль, лобовое стекло
+			for (const x of [-0.55, 0.55]) {
+				boxIn(body, 0.86, 0.3, 0.9, dark, x, 1.25, -0.45);
+				boxIn(body, 0.86, 0.95, 0.22, dark, x, 1.62, -0.98, -0.12);
+			}
+			boxIn(body, 0.5, 0.5, 0.07, dark, -0.55, 1.62, 0.42, -0.5); // руль (водитель — слева по ходу, со стороны острова)
+			boxIn(body, 2.32, 0.08, 0.08, dark, 0, 1.98, 0.92, -0.35); // рамка стекла сверху
+			boxIn(body, 2.24, 0.62, 0.05, new THREE.MeshLambertMaterial({color: '#bfe9ff', transparent: true, opacity: 0.45, depthWrite: false}), 0, 1.68, 0.99, -0.35);
+			for (const x of [-1.32, 1.32]) boxIn(body, 0.16, 0.12, 0.26, chrome, x, 1.32, 0.75); // зеркала
+			// фары и задние огни: светятся, когда машина заведена
+			const lights = [];
+			const glows = [];
+			for (const x of [-0.78, 0.78]) {
+				const head = boxIn(body, 0.5, 0.22, 0.06, new THREE.MeshBasicMaterial({color: '#bfae7c'}), x, 0.9, 2.73);
+				lights.push({m: head, off: new THREE.Color('#bfae7c'), on: new THREE.Color('#fff7cf')});
+				const glowS = new THREE.Sprite(new THREE.SpriteMaterial({map: glow, color: '#fff2b0', transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending}));
+				glowS.position.set(x, 0.9, 2.95);
+				glowS.scale.setScalar(1.6);
+				body.add(glowS);
+				glows.push(glowS);
+				const tail = boxIn(body, 0.42, 0.16, 0.06, new THREE.MeshBasicMaterial({color: '#7a1420'}), x, 0.95, -2.73);
+				lights.push({m: tail, off: new THREE.Color('#7a1420'), on: new THREE.Color('#ff2b3c')});
+			}
+			// колёса с дисками
+			for (const x of [-1.32, 1.32]) {
+				for (const z of [-1.75, 1.75]) {
+					boxIn(g, 0.42, 0.82, 0.82, dark, x, 0.41, z);
+					boxIn(g, 0.06, 0.4, 0.4, chrome, x + Math.sign(x) * 0.235, 0.41, z);
+				}
+			}
+			island.add(g);
+			car = {group: g, body, lights, glows, on: 0, blink: 0};
+			// --- лежак: изголовье на -z, ноги на +z ---
+			const lg = new THREE.Group();
+			lg.position.set(LOUNGE.x, 0, LOUNGE.z);
+			lg.rotation.y = LOUNGE.rot;
+			const frame = flat('#f2f2ee');
+			const stripes = new THREE.MeshLambertMaterial({map: pixelTexture((x) => (Math.floor(x / 4) % 2 ? [244, 244, 236] : [40, 190, 186]))});
+			for (const x of [-0.5, 0.5]) for (const z of [-1.1, 1.1]) boxIn(lg, 0.1, 0.5, 0.1, frame, x, 0.25, z);
+			boxIn(lg, 1.15, 0.1, 2.6, frame, 0, 0.53, 0.15);
+			boxIn(lg, 1.02, 0.12, 2.0, stripes, 0, 0.64, 0.42); // матрас
+			boxIn(lg, 1.02, 0.12, 1.1, stripes, 0, 0.98, -1.02, 0.85); // спинка под наклоном
+			island.add(lg);
+			// зонтик: шест и полосатый купол
+			const ug = new THREE.Group();
+			ug.position.set(UMBRELLA.x, 0, UMBRELLA.z);
+			boxIn(ug, 0.12, 3.5, 0.12, frame, 0, 1.75, 0);
+			const canopy = new THREE.MeshLambertMaterial({map: pixelTexture((x, y) => ((Math.floor(x / 4) + Math.floor(y / 4)) % 2 ? [255, 92, 120] : [255, 244, 230]))});
+			const c1 = boxIn(ug, 2.8, 0.12, 2.8, canopy, 0, 3.3, 0);
+			c1.rotation.y = Math.PI / 4;
+			boxIn(ug, 1.6, 0.2, 1.6, canopy, 0, 3.46, 0);
+			boxIn(ug, 0.3, 0.3, 0.3, frame, 0, 3.66, 0);
+			island.add(ug);
+			lounger = {group: lg};
+		} catch (err) {
+			console.error('1DEX1: машина и лежак отключены', err);
+		}
+	}
+
 	// Новогодняя шапка с помпоном и полосатый шарф (в пикселях скина: голова 8×8×8 над шеей).
 	// Каждая следующая часть чуть заходит в предыдущую — нет совпадающих граней и мерцания.
 	const dressNY = (parts) => {
@@ -1035,6 +1173,39 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		parts.body.add(ring, tail);
 	};
 
+	// К выходу GTA 6: солнечные очки, белая майка с полосками, голые руки и золотая цепочка
+	// (в пикселях скина: голова 8×8×8 над шеей, тело 8×12×4, руки 3×12×4)
+	const dressGTA = (parts) => {
+		const mat = (color) => new THREE.MeshLambertMaterial({color});
+		const add = (parent, w, h, d, m, x, y, z) => {
+			const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+			b.position.set(x, y, z);
+			parent.add(b);
+			return b;
+		};
+		// очки: оправа, два тёмных стекла с бликом, дужки к ушам
+		const frame = mat('#141018');
+		add(parts.head, 9.0, 1.9, 0.4, frame, 0, 3.6, 4.72);
+		for (const x of [-2.05, 2.05]) {
+			add(parts.head, 3.3, 1.5, 0.14, new THREE.MeshLambertMaterial({color: '#2b1f3d', emissive: '#3a1030'}), x, 3.55, 4.98);
+			add(parts.head, 0.7, 0.35, 0.06, mat('#ffffff'), x - 0.9, 3.95, 5.07);
+		}
+		for (const x of [-4.62, 4.62]) add(parts.head, 0.3, 0.3, 4.6, frame, x, 3.8, 2.35);
+		// майка: белая с бирюзовой и розовой полосой, на лямках
+		const shirt = new THREE.MeshLambertMaterial({
+			map: pixelTexture((x, y) => (y >= 5 && y <= 6 ? [255, 92, 140] : y >= 8 && y <= 9 ? [40, 190, 186] : (x + y * 3) % 11 === 0 ? [232, 230, 222] : [246, 244, 238])),
+		});
+		add(parts.body, 8.8, 9.6, 4.8, shirt, 0, -1.2, 0);
+		for (const x of [-2.5, 2.5]) add(parts.body, 1.6, 2.8, 4.8, shirt, x, 4.95, 0);
+		// голые руки (поверх рукавов кофты) — цвета кожи
+		const skinTone = mat('#dab39c');
+		for (const arm of [parts.armR, parts.armL]) add(arm, 3.7, 12.7, 4.7, skinTone, 0, -4, 0);
+		// золотая цепочка на шее
+		const gold = new THREE.MeshLambertMaterial({color: '#ffcc3d', emissive: '#3a2600'});
+		add(parts.body, 4.6, 0.5, 0.4, gold, 0, 4.6, 2.5);
+		add(parts.body, 0.9, 0.9, 0.4, gold, 0, 4.0, 2.55);
+	};
+
 	// Персонаж-скелет. Два экземпляра: один стоит на острове, второй летает по сайту.
 	const makeRig = () => {
 		const rig = buildPlayer(skin);
@@ -1054,6 +1225,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		pick.visible = false;
 		rig.parts.armR.add(pick);
 		if (NY) nySafe('шапка и шарф', () => dressNY(rig.parts));
+		if (GTA) nySafe('очки и майка', () => dressGTA(rig.parts));
 		return {...rig, pivot, pick};
 	};
 	const rig = makeRig();
@@ -1061,7 +1233,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	island.add(rig.pivot); // стоит на острове и качается вместе с ним
 
 	// mode: idle | walk | chest | mine | land | portal | breakPortal — на острове; free — снят с острова и летает по сайту
-	const P = {mode: 'idle', pos: HOME.clone(), face: 0.15, path: [], queue: [], actT: 0, walkPhase: 0, holding: false, landT: 0};
+	const P = {mode: 'idle', pos: HOME.clone(), face: 0.15, path: [], queue: [], actT: 0, walkPhase: 0, holding: false, landT: 0, seatY: 0};
 
 	// всё, что стоит на обычном острове, — в своей группе: за порталом её сменяет другой мир
 	const overGround = new THREE.Group();
@@ -1707,7 +1879,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 
 	// ================= ПЕРЕХОД МЕЖДУ МИРАМИ =================
 	let worldId = 'over';
-	const worlds = {over: {id: 'over', ground: overGround, fx: null, blocks, meshes: islandMeshes, home: HOME.clone(), standR: 3.0, obstacles: overObstacles, view: [0.2, 0.2, 1], light: ['#bfb4ff', '#ffffff', '#9a6bff'], sky: null, css: ''}};
+	if (GTA) STAND_R = 6.0;
+	const worlds = {over: {id: 'over', ground: overGround, fx: null, blocks, meshes: islandMeshes, home: HOME.clone(), standR: GTA ? 6.0 : 3.0, obstacles: overObstacles, view: [0.2, 0.2, 1], light: GTA ? ['#ffe0cc', '#fff2d8', '#ff6fb0'] : ['#bfb4ff', '#ffffff', '#9a6bff'], sky: null, css: ''}};
 	const ensureWorld = (id) => {
 		if (!worlds[id]) worlds[id] = id === 'nether' ? buildNether() : buildEnd();
 		return worlds[id];
@@ -1751,7 +1924,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			w.ground.visible = w === W;
 			if (w.fx) w.fx.visible = w === W;
 		}
-		galaxy.visible = to === 'over';
+		galaxy.visible = to === 'over' && !GTA;
+		signGroup.visible = to === 'over'; // знак GTA 6 висит над Майами, в Аду и Энде его нет
 		if (NY) tintWordSnow();
 		HOME.copy(W.home);
 		STAND_R = W.standR;
@@ -2011,6 +2185,67 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		wordHat.rotation.z = 0.12;
 	};
 
+	// ================= ЗНАК «GTA 6» =================
+	// К выходу игры: большой знак из блоков (шрифт сайта, цвета заката) на заднем плане —
+	// дальше острова. Кликни — блоки разлетаются и вырастают снова, как у надписи 1DEX1 SHOP.
+	const signGroup = new THREE.Group();
+	camera.add(signGroup);
+	const signMesh = new THREE.InstancedMesh(box, new THREE.MeshLambertMaterial({map: tex.voxel, emissive: '#2a0a18'}), 900);
+	signMesh.count = 0;
+	signMesh.frustumCulled = false;
+	signGroup.add(signMesh);
+	// тёмная подложка чуть больше и позади букв — знак читается и на ярком закате
+	const shadeMesh = new THREE.InstancedMesh(box, new THREE.MeshBasicMaterial({color: '#2a0d3c'}), 900);
+	shadeMesh.count = 0;
+	shadeMesh.frustumCulled = false;
+	signGroup.add(shadeMesh);
+	let SIGN = {cells: [], width: 1, height: 1, cx: 0, cy: 0};
+	let signVoxels = [];
+	let signFind = () => -1;
+	let signCell = 0.3;
+	const signBase = new THREE.Vector3();
+	if (GTA) {
+		nySafe('знак GTA 6', () => {
+			SIGN = rasterize(['GTA 6'], 14, {glyphs: true}); // пиксель буквы — 2×2 блока
+			signFind = cellIndex(SIGN);
+			const top = new THREE.Color('#ffe14d');
+			const mid = new THREE.Color('#ff8a3d');
+			const bot = new THREE.Color('#ff3d8b');
+			signVoxels = SIGN.cells.slice(0, 900).map((c) => ({
+				...c,
+				color: (c.ty < 0.5 ? top.clone().lerp(mid, c.ty * 2) : mid.clone().lerp(bot, (c.ty - 0.5) * 2)).multiplyScalar(0.94 + c.seed * 0.1),
+				phase: c.x * 0.13,
+				hover: 0,
+				hoverTarget: 0,
+				brokenAt: -1,
+				regrowAt: 0,
+				scale: 1,
+			}));
+			signVoxels.forEach((v, i) => signMesh.setColorAt(i, v.color));
+			signMesh.count = signVoxels.length;
+			if (signMesh.instanceColor) signMesh.instanceColor.needsUpdate = true;
+			SETS.push({mesh: signMesh, list: signVoxels, unit: 1, z: 0, amp: 0.2, lift: 1.2, glint: false});
+			// у подложки свой блок на каждый блок знака: ломается и вырастает вместе с ним
+			const shade = signVoxels.map((v) => ({
+				get brokenAt() {
+					return v.brokenAt;
+				},
+				set brokenAt(_) {}, // состояние ведёт сам блок знака
+				get regrowAt() {
+					return v.regrowAt;
+				},
+				x: v.x + 0.15,
+				y: v.y - 0.3,
+				phase: v.phase,
+				hover: 0,
+				hoverTarget: 0,
+				scale: 1,
+			}));
+			shadeMesh.count = shade.length;
+			SETS.push({mesh: shadeMesh, list: shade, unit: 1.3, z: -0.8, amp: 0.2, lift: 1.2, glint: false});
+		});
+	}
+
 	// ================= ОСКОЛКИ =================
 	const DEBRIS = 260;
 	const debris = Array.from({length: DEBRIS}, () => ({life: 0, pos: new THREE.Vector3(), vel: new THREE.Vector3(), spin: 0, size: 0}));
@@ -2043,6 +2278,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	galaxy.position.set(-3, -2, -82);
 	galaxy.rotation.set(-1.18, 0.2, 0);
 	scene.add(galaxy);
+	galaxy.visible = !GTA; // к GTA 6 вместо звёздного неба — закат над Майами
 	const disk = new THREE.Group();
 	galaxy.add(disk);
 	{
@@ -2077,7 +2313,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	}
 
 	// ================= КАДРИРОВАНИЕ =================
-	const BOX = {w: 11.5, h: 14.6, cy: 0.5}; // от низа острова до макушки дерева
+	const BOX = GTA ? {w: 19.5, h: 19, cy: 1.4} : {w: 11.5, h: 14.6, cy: 0.5}; // от низа острова до макушки дерева
 	const viewDir = new THREE.Vector3(0.2, 0.2, 1).normalize();
 	let width = 1;
 	let height = 1;
@@ -2123,6 +2359,20 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		bigGroup.scale.setScalar(bigCell);
 		// передние грани кубиков повёрнуты прямо к камере, то есть к зрителю
 		bigGroup.rotation.set(Math.atan2(by, d), Math.atan2(-bx, d), 0);
+		if (GTA && signVoxels.length) {
+			// на телефоне — слева, между надписью и зонтиком, чтобы пальма острова его не закрывала
+			const L2 = wide ? {cx: 0.33, cy: 0.17, w: 0.3, h: 0.15} : {cx: 0.2, cy: 0.33, w: 0.37, h: 0.08};
+			const d2 = dist * 1.55; // дальше острова — на заднем плане
+			const vh2 = 2 * d2 * tan;
+			const vw2 = vh2 * aspect;
+			signCell = Math.min((L2.w * vw2) / SIGN.width, (L2.h * vh2) / SIGN.height);
+			const sx2 = (L2.cx - 0.5) * vw2;
+			const sy2 = (0.5 - L2.cy) * vh2;
+			signBase.set(sx2, sy2, -d2);
+			signGroup.position.copy(signBase);
+			signGroup.scale.setScalar(signCell);
+			signGroup.rotation.set(Math.atan2(sy2, d2), Math.atan2(-sx2, d2), 0);
+		}
 		camera.updateMatrixWorld(true);
 	};
 
@@ -2176,9 +2426,172 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			stars.groups[g].push(i);
 		}
 		skyStars = stars;
+		if (GTA) miami = paintMiami();
+	};
+	// К выходу GTA 6: закат над морем — небо, солнце у горизонта, город с огнями, пальмы,
+	// море с бликами. Неподвижное рисуем один раз, на каждом кадре — только блики и облака.
+	let miami = null; // {img, hz, sx, sy, R}
+	const paintMiami = () => {
+		const W = skyW;
+		const H = skyH;
+		const wide = W >= 900;
+		const c = document.createElement('canvas');
+		c.width = W;
+		c.height = H;
+		const g = c.getContext('2d');
+		const r = rng(2026);
+		const hz = Math.round(H * (wide ? 0.66 : 0.6)); // горизонт
+		// небо
+		const sk = g.createLinearGradient(0, 0, 0, hz);
+		sk.addColorStop(0, '#1e1046');
+		sk.addColorStop(0.35, '#55226f');
+		sk.addColorStop(0.62, '#b93f7d');
+		sk.addColorStop(0.84, '#ff7a6a');
+		sk.addColorStop(1, '#ffb46c');
+		g.fillStyle = sk;
+		g.fillRect(0, 0, W, hz);
+		// солнце: свечение, диск с градиентом, снизу — прорези-полосы
+		const R = Math.min(W, H) * (wide ? 0.16 : 0.2);
+		const sx = W * (wide ? 0.44 : 0.5);
+		const sy = hz - R * 0.32;
+		const halo = g.createRadialGradient(sx, sy, R * 0.4, sx, sy, R * 2.8);
+		halo.addColorStop(0, 'rgba(255,196,120,.55)');
+		halo.addColorStop(1, 'rgba(255,120,120,0)');
+		g.fillStyle = halo;
+		g.fillRect(0, 0, W, hz);
+		const sun = document.createElement('canvas');
+		sun.width = sun.height = Math.ceil(R * 2) + 2;
+		const sg = sun.getContext('2d');
+		const disc = sg.createLinearGradient(0, 0, 0, R * 2);
+		disc.addColorStop(0, '#fff4a8');
+		disc.addColorStop(0.5, '#ffb24a');
+		disc.addColorStop(1, '#ff5f8a');
+		sg.fillStyle = disc;
+		sg.beginPath();
+		sg.arc(R + 1, R + 1, R, 0, Math.PI * 2);
+		sg.fill();
+		sg.globalCompositeOperation = 'destination-out';
+		for (let i = 0; i < 6; i++) {
+			const y = R + 1 + R * 0.18 + i * R * 0.16;
+			sg.fillRect(0, y, R * 2 + 2, 2 + i * 1.6);
+		}
+		g.save();
+		g.beginPath();
+		g.rect(0, 0, W, hz);
+		g.clip();
+		g.drawImage(sun, sx - R - 1, sy - R - 1);
+		g.restore();
+		// облака: длинные, розовые, подсвеченные снизу
+		for (let i = 0; i < 5; i++) {
+			const cx = r() * W;
+			const cy = hz * (0.2 + r() * 0.45);
+			const cw = W * (0.12 + r() * 0.16);
+			g.fillStyle = `rgba(255,${150 + Math.floor(r() * 60)},${170 + Math.floor(r() * 50)},${(0.16 + r() * 0.14).toFixed(2)})`;
+			for (let k = 0; k < 5; k++) {
+				g.beginPath();
+				g.ellipse(cx + (k - 2) * cw * 0.22, cy + (r() - 0.5) * 6, cw * (0.22 + r() * 0.12), 5 + r() * 7, 0, 0, Math.PI * 2);
+				g.fill();
+			}
+		}
+		// город: дальний ряд светлее, ближний темнее и выше, в окнах огни
+		const city = (color, maxH, minW, maxW, windows) => {
+			let x = -10;
+			while (x < W + 10) {
+				const bw = minW + r() * (maxW - minW);
+				const bh = maxH * (0.25 + r() * 0.75) * (r() < 0.12 ? 1.5 : 1);
+				g.fillStyle = color;
+				g.fillRect(x, hz - bh, bw, bh + 1);
+				if (r() < 0.25) g.fillRect(x + bw / 2 - 1, hz - bh - bh * 0.18, 2, bh * 0.18); // антенна
+				if (windows) {
+					for (let wy = hz - bh + 5; wy < hz - 4; wy += 6) {
+						for (let wx = x + 3; wx < x + bw - 4; wx += 5) {
+							if (r() > 0.42) continue;
+							g.fillStyle = r() < 0.7 ? 'rgba(255,214,140,.85)' : r() < 0.5 ? 'rgba(120,230,255,.8)' : 'rgba(255,120,200,.8)';
+							g.fillRect(wx, wy, 2, 3);
+						}
+					}
+				}
+				x += bw + r() * 4;
+			}
+		};
+		city('#7a3c7c', H * 0.09, 14, 34, false);
+		city('#2e1745', H * 0.15, 18, 44, true);
+		// море
+		const sea = g.createLinearGradient(0, hz, 0, H);
+		sea.addColorStop(0, '#ff8f7c');
+		sea.addColorStop(0.12, '#a24b86');
+		sea.addColorStop(0.5, '#3b2172');
+		sea.addColorStop(1, '#140b30');
+		g.fillStyle = sea;
+		g.fillRect(0, hz, W, H - hz);
+		// пальмы по краям: изогнутые стволы и листья-веера
+		const palm = (x, h, lean) => {
+			g.strokeStyle = '#1a0c2c';
+			g.fillStyle = '#1a0c2c';
+			g.lineCap = 'round';
+			const tx = x + lean * h * 0.35;
+			const ty = hz - h;
+			for (let k = 0; k <= 12; k++) {
+				const t = k / 12;
+				const px = x + lean * h * 0.35 * t * t;
+				const py = hz + 4 - h * t;
+				g.lineWidth = Math.max(2, h * 0.045 * (1 - t * 0.6));
+				g.beginPath();
+				g.moveTo(px, py);
+				g.lineTo(x + lean * h * 0.35 * ((k + 1) / 12) ** 2, hz + 4 - h * ((k + 1) / 12));
+				g.stroke();
+			}
+			for (let k = 0; k < 7; k++) {
+				const a = -Math.PI / 2 + (k - 3) * 0.48 + lean * 0.2;
+				const len = h * (0.38 + r() * 0.12);
+				const ex = tx + Math.cos(a) * len;
+				const ey = ty + Math.sin(a) * len * 0.45 + len * 0.28;
+				g.beginPath();
+				g.moveTo(tx, ty);
+				g.quadraticCurveTo((tx + ex) / 2, ty - len * 0.2, ex, ey);
+				g.quadraticCurveTo((tx + ex) / 2, ty - len * 0.05, tx, ty + 3);
+				g.fill();
+			}
+		};
+		const ph = H * (wide ? 0.42 : 0.3);
+		palm(W * 0.03, ph, 0.5);
+		palm(W * 0.1, ph * 0.72, -0.2);
+		palm(W * 0.97, ph * 0.9, -0.5);
+		if (wide) palm(W * 0.9, ph * 0.62, 0.25);
+		return {img: c, hz, sx, sy, R};
+	};
+	const drawMiami = (t) => {
+		if (!miami) miami = paintMiami();
+		const g = skyCtx;
+		const {img, hz, sx, R} = miami;
+		g.globalAlpha = 1;
+		g.drawImage(img, 0, 0);
+		// дорожка солнца на воде: золотые штрихи, мерцают
+		for (let i = 0; i < 26; i++) {
+			const k = i / 26;
+			const y = hz + 3 + k * k * (skyH - hz) * 0.9;
+			const w = R * (1.25 - k * 0.7) * (0.55 + 0.45 * Math.sin(t * 2.4 + i * 1.7));
+			g.globalAlpha = (1 - k) * 0.75;
+			g.fillStyle = i % 3 ? '#ffd27a' : '#ff8fb0';
+			g.fillRect(sx - w / 2 + Math.sin(t * 1.3 + i) * 6, y, w, 2 + k * 2);
+		}
+		// волны: светлые черточки медленно бегут
+		g.fillStyle = '#ffb8c8';
+		for (let i = 0; i < 40; i++) {
+			const y = hz + 8 + ((i * 37) % 100) / 100 * (skyH - hz - 10);
+			const depth = (y - hz) / (skyH - hz);
+			const x = ((i * 173 + t * (12 + depth * 30)) % (skyW + 80)) - 40;
+			g.globalAlpha = 0.12 + (1 - depth) * 0.18;
+			g.fillRect(x, y, 14 + depth * 26, 1 + depth * 2);
+		}
+		g.globalAlpha = 1;
 	};
 	const drawSky = (t) => {
 		if (!skyStars) return;
+		if (GTA && worldId === 'over') {
+			drawMiami(reducedMotion ? 0 : t);
+			return;
+		}
 		const g = skyCtx;
 		g.clearRect(0, 0, skyW, skyH);
 		const th = reducedMotion ? 0 : t * SKY_SPIN;
@@ -2503,6 +2916,34 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const i = bigFind(bigVoxels, x, y, 1.15);
 		return i < 0 ? null : {set: SETS[0], i, x, y};
 	};
+	// знак «GTA 6»: так же, лучом по передней плоскости знака
+	const signInv = new THREE.Matrix4();
+	const pickSign = () => {
+		if (!signVoxels.length || !signGroup.visible) return null;
+		castRay();
+		signInv.copy(signGroup.matrixWorld).invert();
+		rayO.copy(raycaster.ray.origin).applyMatrix4(signInv);
+		rayD.copy(raycaster.ray.origin).add(raycaster.ray.direction).applyMatrix4(signInv).sub(rayO);
+		if (Math.abs(rayD.z) < 1e-6) return null;
+		const k = (WORD_DEPTH / 2 - rayO.z) / rayD.z;
+		if (k < 0) return null;
+		const x = rayO.x + rayD.x * k;
+		const y = rayO.y + rayD.y * k;
+		const i = signFind(signVoxels, x, y, 1.15);
+		return i < 0 ? null : {i, x, y};
+	};
+	const breakSign = ({x, y}) => {
+		const hit = burst(signVoxels, x, y, now, 2.6);
+		if (!hit.length) return;
+		const step = Math.max(1, Math.ceil(hit.length / 20));
+		hit.forEach((v, k) => {
+			v.hover = 0;
+			if (k % step) return;
+			const at = world.worldToLocal(signGroup.localToWorld(tmp.set(v.x, v.y, 0)));
+			spawnDebris(at, `#${v.color.getHexString()}`, 1, 0.6, signCell * 6);
+		});
+		on('wallHit');
+	};
 	const pickPlayer = () => {
 		if (P.mode === 'free' || P.mode === 'portal' || (warp && !warp.swapped)) return false; // в портале его не схватить
 		castRay();
@@ -2627,6 +3068,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		activeBlocks.add(b);
 	};
 	const finishMining = (b) => {
+		if (GTA) heat = Math.min(5.99, heat + 1);
 		b.minedAt = now;
 		activeBlocks.add(b);
 		spawnDebris(islandToWorldLocal(b.pos, tmp2), BLOCK_COLOR[b.type], 12, 0.8);
@@ -3527,6 +3969,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		if (pick[0] === 'dance') freshDance();
 		if (pick[0] === 'sitHappy' || pick[0] === 'dance') say(NY ? oneOf('icon:note', 'icon:gift', 'icon:tree') : 'icon:note', 1.8);
 		else if (NY && Math.random() < 0.18) say('say.ny', 2);
+		else if (GTA && Math.random() < 0.18) say(oneOf('say.gta1', 'say.gta3', 'say.gta5', 'say.gta7'), 2);
 		else if (pick[0] === 'look' && Math.random() < 0.5) say('?', 1.4);
 	};
 
@@ -3582,9 +4025,10 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	const ISLAND_PTS = [];
 	for (let i = 0; i < 16; i++) {
 		const a = (i / 16) * Math.PI * 2;
-		ISLAND_PTS.push(new THREE.Vector3(Math.cos(a) * 3.9, 0.05, Math.sin(a) * 3.9));
-		ISLAND_PTS.push(new THREE.Vector3(Math.cos(a) * 3.6, -2, Math.sin(a) * 3.6));
-		ISLAND_PTS.push(new THREE.Vector3(Math.cos(a) * 1.4, -6, Math.sin(a) * 1.4));
+		const k = GTA ? 1.75 : 1;
+		ISLAND_PTS.push(new THREE.Vector3(Math.cos(a) * 3.9 * k, 0.05, Math.sin(a) * 3.9 * k));
+		ISLAND_PTS.push(new THREE.Vector3(Math.cos(a) * 3.6 * k, -2, Math.sin(a) * 3.6 * k));
+		ISLAND_PTS.push(new THREE.Vector3(Math.cos(a) * 1.4 * k, -6, Math.sin(a) * 1.4 * k));
 	}
 	const islandPolyDoc = () => {
 		const o = docOffset();
@@ -3700,6 +4144,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 
 	// снять с острова
 	const leaveIsland = () => {
+		P.seatY = 0;
 		ensureOverlay();
 		const c = toPx(rig.pivot.getWorldPosition(new THREE.Vector3()));
 		const o = docOffset();
@@ -4011,11 +4456,18 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			if (nap.state === 'sleep' || nap.state === 'yawn') {
 				napWake(45); // разбудили — подскакивает
 				say('say.awake', 1.6);
-			} else if (Math.random() < 0.6) say(oneOf('say.giggle', 'icon:heart', 'say.hi'), 1.4);
+			} else if ((P.mode === 'drive' || P.mode === 'lounge') && P.queue[0]) P.queue[0].exit = true;
+			else if (Math.random() < 0.6) say(oneOf('say.giggle', 'icon:heart', 'say.hi'), 1.4);
 		} else if (pickPortal()) enterPortal();
+		else if (GTA && pickCar()) carClick();
+		else if (GTA && pickLounger()) loungeClick();
 		else {
 			const b = pickBlock();
 			if (b) startMining(b);
+			else if (GTA) {
+				const sg = pickSign();
+				if (sg) breakSign(sg);
+			}
 		}
 	});
 	addEventListener('pointerup', (e) => {
@@ -4129,6 +4581,90 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	});
 
 	// ================= ПЕРСОНАЖ НА ОСТРОВЕ: ОЧЕРЕДЬ ДЕЙСТВИЙ =================
+	// ---- к выходу GTA 6: машина, лежак, розыск ----
+	// точка в системе машины или лежака (lx — вбок, lz — вдоль) → координаты острова
+	const spotOf = (o, lx, lz) => new THREE.Vector3(o.x + lx * Math.cos(o.rot) + lz * Math.sin(o.rot), 0, o.z - lx * Math.sin(o.rot) + lz * Math.cos(o.rot));
+	const honk = () => {
+		if (!car) return;
+		car.blink = now + 1.1; // фары мигают
+		on('horn');
+	};
+	const pickCar = () => {
+		if (!car || worldId !== 'over' || P.mode === 'free') return false;
+		castRay();
+		return raycaster.intersectObject(car.group, true).length > 0;
+	};
+	const pickLounger = () => {
+		if (!lounger || worldId !== 'over' || P.mode === 'free') return false;
+		castRay();
+		return raycaster.intersectObject(lounger.group, true).length > 0;
+	};
+	const carClick = () => {
+		if (P.mode === 'drive') {
+			P.queue[0].exit = true; // второй клик — выходит
+			honk();
+			return;
+		}
+		honk();
+		if (busy()) return;
+		P.queue = [walkTo(spotOf(CAR, -2.2, -0.45)), {type: 'carIn', t: 10}, walkTo(HOME)];
+	};
+	const goLounge = (t = 14) => {
+		P.queue = [walkTo(spotOf(LOUNGE, 1.35, 0.1)), {type: 'lounge', t}, walkTo(HOME)];
+	};
+	const loungeClick = () => {
+		if (P.mode === 'lounge') P.queue[0].exit = true;
+		else if (!busy()) goLounge();
+	};
+	// розыск: каждый добытый блок острова «греет» (до 5 звёзд), потом звёзды по одной гаснут.
+	// Отстали — персонаж прячется за пальмой: «Тсс…» — «Оторвался!»
+	let heat = 0;
+	let stars = 0;
+	let peakStars = 0;
+	const escape = () => {
+		if (P.mode !== 'idle' || P.queue.length || worldId !== 'over') {
+			say('say.escaped', 1.6);
+			return;
+		}
+		// за пальму — с той стороны, что дальше от зрителя
+		const cam = island.worldToLocal(camera.position.clone());
+		const dx = cam.x - TREE.x;
+		const dz = cam.z - TREE.z;
+		const l = Math.hypot(dx, dz) || 1;
+		const spot = pushOutOfObstacles(new THREE.Vector3(TREE.x - (dx / l) * 1.9, 0, TREE.z - (dz / l) * 1.9));
+		P.queue = [walkTo(spot), {type: 'wait', t: 3.5, say: 'say.hide', then: 'say.escaped'}, walkTo(HOME)];
+	};
+	const stepWanted = (dt) => {
+		heat = Math.max(0, heat - dt * 0.05);
+		const n = Math.floor(heat);
+		if (n === stars) return;
+		const up = n > stars;
+		stars = n;
+		on('wanted', n);
+		if (up && n === 3) say('say.cops', 1.6);
+		peakStars = Math.max(peakStars, n);
+		if (n === 0 && peakStars >= 2) {
+			peakStars = 0;
+			escape();
+		}
+	};
+	const stepCar = () => {
+		if (!car) return;
+		const driving = P.mode === 'drive' && worldId === 'over';
+		const blinkOn = now < car.blink && Math.floor((car.blink - now) * 8) % 2 === 0;
+		const lit = driving || blinkOn;
+		car.on = lit ? 1 : 0;
+		for (const l of car.lights) l.m.material.color.copy(lit ? l.on : l.off);
+		for (const g of car.glows) g.material.opacity = lit ? 0.75 : 0;
+		// мотор работает — кузов мелко дрожит, из трубы — дымок
+		car.body.position.y = driving ? Math.sin(now * 42) * 0.012 : 0;
+		car.body.rotation.z = driving ? Math.sin(now * 23) * 0.004 : 0;
+		if (driving && Math.floor(now * 4) !== Math.floor((now - 1 / 60) * 4)) {
+			const at = world.worldToLocal(car.group.localToWorld(new THREE.Vector3(0.7, 0.42, -2.9)));
+			spawnDebris(at, '#d8d2e2', 1, 0.15, 0.5);
+		}
+	};
+
 	const stepIsland = (dt) => {
 		if (P.mode === 'land') {
 			P.landT += dt;
@@ -4160,6 +4696,28 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				P.mode = 'breakEgg';
 				P.actT = 0;
 				P.holding = true;
+			} else if (a.type === 'carIn') {
+				// сел за руль: мотор, фары, «Погнали!»
+				P.mode = 'drive';
+				P.actT = 0;
+				P.pos.copy(spotOf(CAR, -0.55, -0.45));
+				P.seatY = 1.32;
+				P.face = CAR.rot;
+				on('engine');
+				honk();
+				say('say.carIn', 1.6);
+			} else if (a.type === 'lounge') {
+				// лёг на лежак загорать
+				P.mode = 'lounge';
+				P.actT = 0;
+				P.pos.copy(spotOf(LOUNGE, 0, -0.35));
+				P.seatY = 0.66;
+				P.face = LOUNGE.rot;
+				say('say.lounge', 1.8);
+			} else if (a.type === 'wait') {
+				P.mode = 'wait';
+				P.actT = 0;
+				if (a.say) say(a.say, 1.6);
 			} else if (a.type === 'leap') {
 				// прыжок с острова к стене — с алмазной киркой в руке
 				P.queue = [];
@@ -4281,6 +4839,40 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 					breakNetherPortal();
 					P.mode = 'idle';
 					P.queue.shift();
+				}
+				break;
+			}
+			case 'drive': {
+				// за рулём: посидел — и выходит (или раньше, если кликнули)
+				P.actT += dt;
+				const a = P.queue[0];
+				if (P.actT > (a.t || 10) || a.exit) {
+					P.pos.copy(spotOf(CAR, -2.2, -0.45));
+					P.seatY = 0;
+					P.mode = 'idle';
+					P.queue.shift();
+					say('say.carOut', 1.4);
+				}
+				break;
+			}
+			case 'lounge': {
+				P.actT += dt;
+				const a = P.queue[0];
+				if (P.actT > (a.t || 12) || a.exit) {
+					P.pos.copy(spotOf(LOUNGE, 1.35, 0.1));
+					P.seatY = 0;
+					P.mode = 'idle';
+					P.queue.shift();
+				}
+				break;
+			}
+			case 'wait': {
+				P.actT += dt;
+				const a = P.queue[0];
+				if (P.actT > a.t) {
+					P.mode = 'idle';
+					P.queue.shift();
+					if (a.then) say(a.then, 1.6);
 				}
 				break;
 			}
@@ -4690,6 +5282,18 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				// радуется: упёрся руками сзади, быстро болтает ногами и качает головой
 				Object.assign(target, {armRx: 0.55, armLx: 0.55, armRz: 0.25, armLz: -0.25, legR: -1.3 + Math.sin(t * 7) * 0.5, legL: -1.3 - Math.sin(t * 7) * 0.5, drop: 1.01, headPitch: -0.15 + Math.sin(t * 3.5) * 0.1});
 				break;
+			case 'drive':
+				// за рулём: сидит, руки на руле
+				Object.assign(target, {legR: -1.45, legL: -1.45, drop: 1.01, armRx: -1.25, armLx: -1.25, armRz: 0.12, armLz: -0.12, headPitch: -0.05});
+				break;
+			case 'lounge':
+				// загорает: откинулся на спинку, ноги вытянуты, руки за головой
+				Object.assign(target, {legR: -1.5, legL: -1.5, drop: 1.01, sneak: -1.15, armRx: -2.7, armRz: 0.55, armLx: -2.7, armLz: -0.55, headPitch: -0.2});
+				break;
+			case 'wait':
+				// спрятался за пальмой: присел
+				Object.assign(target, {armRx: 0.45, armLx: 0.45, sneak: 1, drop: 0.13});
+				break;
 			case 'yawn':
 				Object.assign(target, yawnTarget(napK));
 				break;
@@ -5017,6 +5621,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	let heroVisible = true;
 	let portalHintAt = 9;
 	let nyHiAt = 6; // «С Новым годом!» на острове — первый раз через несколько секунд
+	let loungeAt = 30; // к GTA 6: первый раз сам ляжет загорать не раньше чем через полминуты
 	let hopPx = 0;
 	let closeup = null; // только для проверки: камера крупно у персонажа
 	const pointerOverlay = new THREE.Vector2();
@@ -5120,9 +5725,17 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			// подсказка: что там, в портале?
 			portalHintAt = now + 32 + Math.random() * 20;
 			say('say.portal', 2.4);
-		} else if (NY && P.mode === 'idle' && !P.queue.length && heroVisible && now > nyHiAt && !nap.state && !dancingOnIsland() && now > party.until) {
+		} else if ((NY || GTA) && P.mode === 'idle' && !P.queue.length && heroVisible && now > nyHiAt && !nap.state && !dancingOnIsland() && now > party.until) {
 			nyHiAt = now + 38 + Math.random() * 30;
-			say(oneOf('say.ny', 'icon:gift', 'icon:tree'), 2);
+			say(NY ? oneOf('say.ny', 'icon:gift', 'icon:tree') : oneOf('say.gta1', 'say.gta2', 'say.gta3', 'say.gta4', 'say.gta5', 'say.gta6', 'say.gta7', 'say.gta8'), 2.2);
+		} else if (GTA && worldId === 'over' && P.mode === 'idle' && !P.queue.length && heroVisible && now > loungeAt && !nap.state && !dancingOnIsland() && now > party.until) {
+			// иногда сам идёт загорать
+			loungeAt = now + 50 + Math.random() * 40;
+			if (Math.random() < 0.55) goLounge(12);
+		}
+		if (GTA) {
+			stepWanted(dt);
+			stepCar();
 		}
 		world.position.y = Math.sin(idle * 0.8) * 0.18;
 		// остров сам очень медленно качается на ±60°, мышь на это не влияет
@@ -5131,6 +5744,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		disk.rotation.z = idle * 0.035; // галактика вращается
 		// большая надпись плавно покачивается вверх-вниз
 		bigGroup.position.set(bigBase.x, bigBase.y + Math.sin(idle * 0.9) * 0.3 * bigCell, bigBase.z);
+		if (GTA) signGroup.position.set(signBase.x, signBase.y + Math.sin(idle * 0.7 + 1) * 0.25 * signCell, signBase.z);
 		world.updateMatrixWorld(true);
 
 		const homeWorld = island.localToWorld(tmp.copy(HOME).add(tmp2.set(0, BODY, 0)));
@@ -5187,7 +5801,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			const onGround = P.mode !== 'free';
 			const hop = onGround ? Math.sin(jump * Math.PI) * 0.55 + (P.mode === 'walk' ? Math.abs(Math.sin(P.walkPhase)) * 0.06 : 0) : 0;
 			const lieK = Math.min(1, Math.abs(pose.roll) / (Math.PI / 2)); // спит на траве — опускается
-			rig.pivot.position.set(P.pos.x, lerp(BODY, 0.62, lieK) + hop, P.pos.z);
+			const seat = P.mode === 'drive' || P.mode === 'lounge' ? P.seatY : 0; // сидит в машине или на лежаке
+			rig.pivot.position.set(P.pos.x, lerp(BODY, 0.62, lieK) + hop + seat, P.pos.z);
 			rig.pivot.rotation.set(0, lerpAngle(rig.pivot.rotation.y, P.face, 1 - Math.exp(-dt * 10)), pose.roll + pose.tiltZ);
 		} else {
 			pointerOverlay.set(((pointerDoc.x - scrollX) / vw) * 2 - 1, -(((pointerDoc.y - scrollY) / vh) * 2 - 1));
@@ -5243,16 +5858,23 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		if (heroVisible && pointerInHero && !drag) {
 			const hovered = pickVoxel();
 			let cur = '';
+			let signHover = null;
 			if (hovered) cur = CROSSHAIR;
 			else if (pickPlayer()) cur = 'grab';
 			else if (pickPortal()) cur = 'pointer';
-			else if (!busy()) {
+			else if (GTA && (pickCar() || pickLounger())) cur = 'pointer';
+			else {
 				const b = pickBlock();
-				if (b && canReach(b, standFor(b))) cur = CROSSHAIR;
+				if (b) {
+					if (!busy() && canReach(b, standFor(b))) cur = CROSSHAIR;
+				} else if (GTA && (signHover = pickSign())) cur = CROSSHAIR;
 			}
 			setCursor(cur);
-			// блоки вокруг курсора приподнимаются бугорком
-			for (const set of SETS) set.list.forEach((v) => (v.hoverTarget = hovered ? Math.max(0, 1 - Math.hypot(v.x - hovered.x, v.y - hovered.y) / 2.6) : 0));
+			// блоки вокруг курсора приподнимаются бугорком (у надписи и у знака — свой)
+			SETS.forEach((set, k) => {
+				const h = k === 0 ? hovered : signHover;
+				set.list.forEach((v) => (v.hoverTarget = h ? Math.max(0, 1 - Math.hypot(v.x - h.x, v.y - h.y) / 2.6) : 0));
+			});
 		} else for (const set of SETS) set.list.forEach((v) => (v.hoverTarget = 0));
 
 		// блик: раз в 5 секунд за 2,2 секунды пробегает по надписи слева направо, чуть наискосок
@@ -5394,6 +6016,16 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			return hitFree() || hitCreeper();
 		},
 		debug: {
+			// GTA 6: где машина, лежак и знак на экране, уровень розыска; heat(n) — выставить розыск
+			gta: () => {
+				const at = (o, y = 0.6) => (o ? page(toPx(o.localToWorld(new THREE.Vector3(0, y, 0.3)))) : null);
+				const sign = signVoxels.length && signGroup.visible ? page(toPx(signGroup.localToWorld(new THREE.Vector3(0, 0, 0)))) : null;
+				return {heat: +heat.toFixed(2), stars, car: at(car?.group), lounger: at(lounger?.group), sign, signBroken: signVoxels.filter((v) => v.brokenAt >= 0).length, seatY: P.seatY, lights: car ? +car.on.toFixed(2) : null};
+			},
+			heat: (n) => {
+				heat = n;
+				return n;
+			},
 			// подменить час (ночь/утро); null — снова настоящие часы
 			clock: (h = null) => {
 				fakeHour = h;
@@ -5424,7 +6056,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			frames: () => frameNo,
 			pick: (x, y) => {
 				updatePointer(x, y);
-				return {voxel: !!pickVoxel(), player: pickPlayer(), portal: pickPortal(), busy: busy(), mode: P.mode, warp: !!warp};
+				return {voxel: !!pickVoxel(), player: pickPlayer(), portal: pickPortal(), busy: busy(), mode: P.mode, warp: !!warp, car: GTA && pickCar(), lounger: GTA && pickLounger(), sign: GTA && !!pickSign(), block: !!pickBlock()};
 			},
 			// блоки, до которых персонаж сейчас не дотянется (для проверки)
 			unreachable: () => worlds[worldId].blocks.filter((b) => b.minedAt < 0 && !canReach(b, standFor(b))).map((b) => ({type: b.type, pos: b.pos.toArray(), stand: standFor(b).toArray().map((v) => +v.toFixed(2))})),
