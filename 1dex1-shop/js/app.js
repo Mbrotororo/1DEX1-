@@ -271,7 +271,10 @@ $('#co-apply').addEventListener('click', async () => {
 		paintCheckout();
 		return coMsg(t('err.promo_empty'), true);
 	}
+	const id = coId;
 	const res = await auth.promo(code, coId);
+	// ответ опоздал: окно уже про другой товар или код в поле поменяли — его не применяем
+	if (id !== coId || !checkout.open || auth.promoCodeOf($('#co-promo').value) !== auth.promoCodeOf(code)) return;
 	if (!res.error) coPromo = {code: res.code, percent: res.percent};
 	coMsg(res.error ? errText(res.error) : t('co.promoOk', {p: res.percent}), Boolean(res.error));
 	paintCheckout();
@@ -301,6 +304,12 @@ coForm.addEventListener('submit', async (e) => {
 	const res = method === 'card' || method === 'sbp' ? await auth.pay(p.id, method, promo) : await auth.buy(p.id, {coupon: method === 'coupon', promo});
 	btn.disabled = false;
 	if (res.error === 'login') return openAuth('login');
+	if (res.error === 'promo_used') {
+		// одноразовый код уже потрачен на другой товар — снимаем скидку, цена снова полная
+		coPromo = null;
+		coMsg(errText(res.error), true);
+		return paintCheckout();
+	}
 	if (res.error) return ($('#co-error').textContent = errText(res.error));
 	if (res.url) return location.assign(res.url); // страница платёжного сервиса (когда он будет подключён)
 	closeDialog(checkout);
@@ -352,6 +361,15 @@ document.addEventListener('click', async (e) => {
 renderShop();
 onLang(renderShop);
 auth.onAuth(renderShop);
+// вошёл или сменил аккаунт при открытом окне покупки — введённый код проверяем заново
+// (одноразовый код у одного аккаунта может быть уже потрачен, у другого — нет)
+let coUser = auth.current()?.id ?? null;
+auth.onAuth(() => {
+	const id = auth.current()?.id ?? null;
+	if (id === coUser) return;
+	coUser = id;
+	if (checkout.open && $('#co-promo').value.trim()) $('#co-apply').click();
+});
 
 // ---------- сотрудничество: личный профиль и визуалы вокруг аватарки ----------
 {

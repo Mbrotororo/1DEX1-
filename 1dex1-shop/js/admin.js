@@ -147,7 +147,7 @@ const promos = async () => {
 			</div>
 			<p class="form__error adm__err" role="alert"></p>
 			<div class="adm__actions"><button class="btn btn--lime btn--sm" type="submit">Создать промокод</button></div>
-			<p class="adm__note">Коды нигде на сайте не показываются — их знают те, кому ты скажешь. Тот же код, созданный здесь, главнее кода из js/data.js: его можно выключить, ограничить сроком и числом применений.</p>
+			<p class="adm__note">Коды нигде на сайте не показываются — их знают те, кому ты скажешь. Тот же код, созданный здесь, главнее кода из js/data.js: его можно выключить, ограничить сроком и числом применений. Правило «один раз на аккаунт» (у GTA6) остаётся из js/data.js.</p>
 		</form>
 		<h3 class="adm__h">Промокоды из админки</h3>
 		${r.promos.length ? `<div class="adm__table"><table><thead><tr><th>Код</th><th>Скидка</th><th>Применили</th><th>Срок</th><th></th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="adm__empty">Здесь ещё ничего не создано</p>'}

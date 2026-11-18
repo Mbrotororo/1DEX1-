@@ -377,12 +377,24 @@ const findPromo = async (code) => {
 	const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`1dex1-promo:${c}`));
 	const hash = [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
 	const p = PROMOS.find((x) => x.hash === hash);
-	return p ? {code: c, percent: p.percent} : null;
+	return p ? {code: c, percent: p.percent, once: Boolean(p.once)} : null;
+};
+// уже покупал с этим кодом (коды «один раз на аккаунт»)
+const promoSpentLocal = (hit, user) => {
+	if (!hit?.once || !user) return false;
+	return (user.orders || []).some((o) => {
+		if ('promo' in o) return o.promo === hit.code;
+		// покупки, сделанные до того, как код стал одноразовым, без пометки — узнаём по цене со скидкой
+		const full = localProducts().find((x) => x.id === o.productId)?.price;
+		return typeof full === 'number' && o.price > 0 && o.price < full && o.price === discounted(full, hit.percent);
+	});
 };
 export const promo = async (code, productId) => {
 	if (!promoCodeOf(code)) return {error: 'promo_empty'};
 	if (serverMode) return api('promo', {code, productId});
-	return (await findPromo(code)) || {error: 'promo_bad'};
+	const hit = await findPromo(code);
+	if (!hit) return {error: 'promo_bad'};
+	return promoSpentLocal(hit, localSession().user) ? {error: 'promo_used'} : hit;
 };
 // Цена со скидкой, до копеек (так же считает сервер)
 export const discounted = (price, percent) => Math.round(price * (100 - percent)) / 100;
@@ -400,12 +412,17 @@ export const buy = async (productId, {coupon = false, promo: promoCode = ''} = {
 	if (user.orders.some((o) => o.productId === productId)) return {error: 'owned'};
 	const at = new Date().toISOString();
 	let price = p.price;
+	let usedPromo = null; // код, со скидкой по которому куплено (для «один раз на аккаунт»)
 	const free = (user.coupons || []).find((c) => !c.used && c.kind === 'rp');
 	if (coupon && p.kind === 'rp' && free) {
 		free.used = productId;
 		price = 0;
 	} else if (price > 0) {
-		if (promoHit) price = discounted(price, promoHit.percent);
+		if (promoSpentLocal(promoHit, user)) return {error: 'promo_used'};
+		if (promoHit) {
+			price = discounted(price, promoHit.percent);
+			usedPromo = promoHit.code;
+		}
 		if ((user.balance || 0) < price) return {error: 'balance'};
 		const cashback = Math.round((Math.round(price * 100) * CASHBACK) / 100) / 100; // кэшбэк в копейках, как на сервере
 		user.balance = money(user.balance - price + cashback);
@@ -413,7 +430,7 @@ export const buy = async (productId, {coupon = false, promo: promoCode = ''} = {
 		user.history.unshift({id: `buy-${Date.now()}`, amount: -price, kind: 'purchase', title: p.title, at});
 		if (cashback) user.history.unshift({id: `cb-${Date.now()}`, amount: cashback, kind: 'cashback', title: p.title, at});
 	}
-	user.orders.unshift({id: `o-${Date.now()}`, productId, title: p.title, titleEn: p.titleEn, price: p.price && price, link: p.link, at});
+	user.orders.unshift({id: `o-${Date.now()}`, productId, title: p.title, titleEn: p.titleEn, price: p.price && price, link: p.link, at, ...(usedPromo ? {promo: usedPromo} : {})});
 	return localSave(users) ? {user: cached} : {error: 'save'};
 };
 

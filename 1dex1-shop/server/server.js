@@ -528,18 +528,21 @@ route('GET', 'products', () => [
 const promoOf = (code) => {
 	const c = String(code || '').replace(/\s+/g, '').toUpperCase(); // пробелы и регистр не важны: «gta 6» = «GTA6»
 	if (!c) return null;
+	const file = PROMOS.find((x) => x.hash === sha(`1dex1-promo:${c}`));
+	const once = Boolean(file?.once); // «один раз на аккаунт» — из js/data.js, даже если код правят в админке
 	const row = q('SELECT * FROM promos WHERE code = ?').get(c);
 	if (row) {
 		// код из админки главнее: можно выключить, ограничить сроком и числом применений
 		if (!row.active) return null;
 		if (row.until && Date.now() > Date.parse(`${row.until}T23:59:59.999+03:00`)) return null;
 		if (row.max_uses && q('SELECT COUNT(*) AS n FROM orders WHERE promo = ?').get(c).n >= row.max_uses) return null;
-		return {code: c, percent: row.percent};
+		return {code: c, percent: row.percent, once};
 	}
-	const hash = sha(`1dex1-promo:${c}`);
-	const p = PROMOS.find((x) => x.hash === hash);
-	return p ? {code: c, percent: p.percent} : null;
+	return file ? {code: c, percent: file.percent, once} : null;
 };
+// уже покупал с этим кодом (для кодов «один раз на аккаунт»)
+const promoUsedBy = (userId, code) => Boolean(q("SELECT 1 FROM orders WHERE user_id = ? AND REPLACE(UPPER(promo), ' ', '') = ?").get(userId, code));
+const promoSpent = (promo, user) => Boolean(promo?.once && user && promoUsedBy(user.id, promo.code));
 // Сообщение владельцу в Telegram о покупке (если бот настроен — см. server/telegram.js)
 const PAID_WITH = {balance: 'с баланса', coupon: 'купоном из кейса', card: 'картой', sbp: 'по СБП'};
 const tellPurchase = (user, s) => {
@@ -570,6 +573,7 @@ route(
 			const usePromo = Boolean(body.promo) && !coupon && p.price > 0;
 			const promo = usePromo ? promoOf(body.promo) : null;
 			if (usePromo && !promo) return [404, {error: 'promo_bad'}];
+			if (promoSpent(promo, user)) return [409, {error: 'promo_used'}];
 			const now = Date.now();
 			let paidWith = 'balance';
 			let price = p.price;
@@ -603,20 +607,25 @@ route('POST', 'topup', () => [501, {error: 'payments_soon'}], {auth: true});
 route(
 	'POST',
 	'pay',
-	({body}) => {
+	({body, user}) => {
 		const p = q('SELECT * FROM products WHERE id = ? AND active = 1').get(String(body.productId || ''));
 		if (!p || p.price === null || p.status !== 'ready') return [404, {error: 'server'}];
 		if (saleOver(p)) return [410, {error: 'ended'}];
-		if (body.promo && !promoOf(body.promo)) return [404, {error: 'promo_bad'}];
+		const promo = body.promo ? promoOf(body.promo) : null;
+		if (body.promo && !promo) return [404, {error: 'promo_bad'}];
+		if (promoSpent(promo, user)) return [409, {error: 'promo_used'}];
 		return [501, {error: 'card_soon'}];
 	},
 	{auth: true},
 );
 // Промокод: проверить и сказать скидку (саму скидку сервер считает при покупке)
-route('POST', 'promo', ({body}) => {
+route('POST', 'promo', ({body, user}) => {
 	if (!String(body.code || '').trim()) return [400, {error: 'promo_empty'}];
 	const promo = promoOf(body.code);
-	return promo ? [200, promo] : [404, {error: 'promo_bad'}];
+	if (!promo) return [404, {error: 'promo_bad'}];
+	// вошёл и уже покупал с одноразовым кодом — сразу говорим (покупку всё равно проверит buy)
+	if (promoSpent(promo, user)) return [409, {error: 'promo_used'}];
+	return [200, promo];
 });
 
 // =====================================================================
