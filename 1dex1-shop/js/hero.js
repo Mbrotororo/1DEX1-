@@ -1099,6 +1099,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				const glowS = new THREE.Sprite(new THREE.SpriteMaterial({map: glow, color: '#fff2b0', transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending}));
 				glowS.position.set(x, 0.9, 2.95);
 				glowS.scale.setScalar(1.6);
+				glowS.raycast = () => {}; // свечение не кликается — иначе машина «ловит» клики по блокам перед ней
 				body.add(glowS);
 				glows.push(glowS);
 				const tail = boxIn(body, 0.42, 0.16, 0.06, new THREE.MeshBasicMaterial({color: '#7a1420'}), x, 0.95, -2.73);
@@ -2024,6 +2025,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			PB.auto = {x: c.x, y: c.y, then: 'portal'};
 			return;
 		}
+		dropSoft();
 		if (busy()) return warn('busy');
 		if (breaking) {
 			P.queue = [walkTo(CHEST_SPOT), {type: 'chest', take: true}, walkTo(portalOver.spot), {type: 'breakPortal'}, walkTo(CHEST_SPOT), {type: 'chest', take: false}, walkTo(HOME)];
@@ -2234,7 +2236,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				get regrowAt() {
 					return v.regrowAt;
 				},
-				x: v.x + 0.15,
+				x: v.x + 0.2, // левая грань подложки внутри блока — не совпадает с его гранью
 				y: v.y - 0.3,
 				phase: v.phase,
 				hover: 0,
@@ -2318,6 +2320,11 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	let width = 1;
 	let height = 1;
 	let focal = 600;
+	// К GTA остров крупнее, камера дальше, и персонаж на острове мельче. Когда он летает по
+	// сайту, его размер (и крипера, и «хитбокс») плавно возвращается к обычному: flyBoost.
+	let flyBoost = 1;
+	let flyK = 1;
+	let flyNearIsland = true;
 
 	const frame = () => {
 		const wide = width >= 900;
@@ -2346,6 +2353,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		camera.updateProjectionMatrix();
 		camera.updateMatrixWorld();
 		focal = height / 2 / tan;
+		const REF = {w: 11.5, h: 14.6}; // кадр обычного острова
+		flyBoost = GTA && worldId === 'over' ? Math.max(1, dist / (Math.max(REF.w / (rw * aspect), REF.h / rh) / (2 * tan))) : 1;
 		// большая надпись: на компьютере посередине слева от острова, на телефоне — сверху
 		const L = wide ? {cx: 0.35, cy: 0.42, w: 0.58, h: 0.2} : {cx: 0.5, cy: 0.14, w: 0.68, h: 0.22};
 		const d = dist * 0.8;
@@ -2944,15 +2953,29 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		});
 		on('wallHit');
 	};
-	const pickPlayer = () => {
-		if (P.mode === 'free' || P.mode === 'portal' || (warp && !warp.swapped)) return false; // в портале его не схватить
+	// Что из «предметов» острова под курсором ближе всех к камере: персонаж, портал, машина или
+	// лежак. Машина стоит перед порталом — клик по ней не должен уводить в портал (и наоборот).
+	const nearest = (hits) => (hits.length ? hits[0].distance : Infinity);
+	const pickFront = () => {
 		castRay();
-		return raycaster.intersectObject(rig.root, true).length > 0;
+		let best = null;
+		let bestD = Infinity;
+		const test = (kind, d) => {
+			if (d < bestD) {
+				best = kind;
+				bestD = d;
+			}
+		};
+		if (!(P.mode === 'free' || P.mode === 'portal' || (warp && !warp.swapped))) test('player', nearest(raycaster.intersectObject(rig.root, true))); // в портале его не схватить
+		test('portal', nearest(raycaster.intersectObjects(portalHere().pick, false)));
+		if (GTA && worldId === 'over' && P.mode !== 'free') {
+			if (car) test('car', nearest(raycaster.intersectObject(car.group, true)));
+			if (lounger) test('lounger', nearest(raycaster.intersectObject(lounger.group, true)));
+		}
+		return best;
 	};
-	const pickPortal = () => {
-		castRay();
-		return raycaster.intersectObjects(portalHere().pick, false).length > 0;
-	};
+	const pickPlayer = () => pickFront() === 'player';
+	const pickPortal = () => pickFront() === 'portal';
 	const pickBlock = () => {
 		castRay();
 		const hit = raycaster.intersectObjects(worlds[worldId].meshes, false)[0];
@@ -2961,6 +2984,19 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		return b && b.minedAt < 0 && b.type !== 'lava' ? b : null; // лаву не добыть
 	};
 	const busy = () => P.mode !== 'idle' || P.queue.length > 0;
+	// Машина, лежак и прятки за пальмой — не важные дела (soft): новый клик по блоку, порталу или
+	// стене их прерывает — персонаж выходит из машины / встаёт с лежака и идёт делать новое.
+	const softBusy = () => P.mode !== 'free' && P.queue.length > 0 && P.queue.every((a) => a.soft);
+	const dropSoft = () => {
+		if (!softBusy()) return;
+		if (P.mode === 'drive') P.pos.copy(spotOf(CAR, -2.2, -0.45));
+		else if (P.mode === 'lounge') P.pos.copy(spotOf(LOUNGE, 1.35, 0.1));
+		P.seatY = 0;
+		P.queue = [];
+		P.path = [];
+		P.mode = 'idle';
+	};
+	const soft = (list) => list.map((a) => ({...a, soft: true}));
 
 	let now = 0;
 	let jumpAt = -10;
@@ -3056,6 +3092,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 	};
 	const startMining = (b) => {
 		if (P.mode === 'free') return warn('away');
+		dropSoft();
 		if (busy()) return warn('busy');
 		const stand = standFor(b);
 		if (!canReach(b, stand)) return warn('far');
@@ -4249,6 +4286,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				say('say.break', 1.4);
 				return;
 			}
+			dropSoft();
 			if (P.mode !== 'idle' && P.mode !== 'walk') return warn('busy');
 			// идёт к сундуку за алмазной киркой и летит ломать стену
 			P.queue = [walkTo(CHEST_SPOT), {type: 'chest', take: true}, {type: 'leap', x: e.clientX + scrollX}];
@@ -4449,8 +4487,9 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		if (e.target.closest('a, button')) return;
 		updatePointer(e.clientX, e.clientY);
 		const hit = pickVoxel();
+		const front = hit ? null : pickFront();
 		if (hit) breakVoxel(hit);
-		else if (pickPlayer()) {
+		else if (front === 'player') {
 			if (P.mode === 'idle') jumpAt = now;
 			if (++tickles === 5) on('tickle');
 			if (nap.state === 'sleep' || nap.state === 'yawn') {
@@ -4458,9 +4497,9 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				say('say.awake', 1.6);
 			} else if ((P.mode === 'drive' || P.mode === 'lounge') && P.queue[0]) P.queue[0].exit = true;
 			else if (Math.random() < 0.6) say(oneOf('say.giggle', 'icon:heart', 'say.hi'), 1.4);
-		} else if (pickPortal()) enterPortal();
-		else if (GTA && pickCar()) carClick();
-		else if (GTA && pickLounger()) loungeClick();
+		} else if (front === 'portal') enterPortal();
+		else if (front === 'car') carClick();
+		else if (front === 'lounger') loungeClick();
 		else {
 			const b = pickBlock();
 			if (b) startMining(b);
@@ -4589,16 +4628,8 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		car.blink = now + 1.1; // фары мигают
 		on('horn');
 	};
-	const pickCar = () => {
-		if (!car || worldId !== 'over' || P.mode === 'free') return false;
-		castRay();
-		return raycaster.intersectObject(car.group, true).length > 0;
-	};
-	const pickLounger = () => {
-		if (!lounger || worldId !== 'over' || P.mode === 'free') return false;
-		castRay();
-		return raycaster.intersectObject(lounger.group, true).length > 0;
-	};
+	const pickCar = () => pickFront() === 'car';
+	const pickLounger = () => pickFront() === 'lounger';
 	const carClick = () => {
 		if (P.mode === 'drive') {
 			P.queue[0].exit = true; // второй клик — выходит
@@ -4606,15 +4637,19 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			return;
 		}
 		honk();
+		dropSoft(); // загорал или прятался — встаёт и идёт к машине
 		if (busy()) return;
-		P.queue = [walkTo(spotOf(CAR, -2.2, -0.45)), {type: 'carIn', t: 10}, walkTo(HOME)];
+		P.queue = soft([walkTo(spotOf(CAR, -2.2, -0.45)), {type: 'carIn', t: 10}, walkTo(HOME)]);
 	};
 	const goLounge = (t = 14) => {
-		P.queue = [walkTo(spotOf(LOUNGE, 1.35, 0.1)), {type: 'lounge', t}, walkTo(HOME)];
+		P.queue = soft([walkTo(spotOf(LOUNGE, 1.35, 0.1)), {type: 'lounge', t}, walkTo(HOME)]);
 	};
 	const loungeClick = () => {
 		if (P.mode === 'lounge') P.queue[0].exit = true;
-		else if (!busy()) goLounge();
+		else {
+			dropSoft(); // сидел в машине — выходит и идёт к лежаку
+			if (!busy()) goLounge();
+		}
 	};
 	// розыск: каждый добытый блок острова «греет» (до 5 звёзд), потом звёзды по одной гаснут.
 	// Отстали — персонаж прячется за пальмой: «Тсс…» — «Оторвался!»
@@ -4632,7 +4667,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const dz = cam.z - TREE.z;
 		const l = Math.hypot(dx, dz) || 1;
 		const spot = pushOutOfObstacles(new THREE.Vector3(TREE.x - (dx / l) * 1.9, 0, TREE.z - (dz / l) * 1.9));
-		P.queue = [walkTo(spot), {type: 'wait', t: 3.5, say: 'say.hide', then: 'say.escaped'}, walkTo(HOME)];
+		P.queue = soft([walkTo(spot), {type: 'wait', t: 3.5, say: 'say.hide', then: 'say.escaped'}, walkTo(HOME)]);
 	};
 	const stepWanted = (dt) => {
 		heat = Math.max(0, heat - dt * 0.05);
@@ -4641,11 +4676,11 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const up = n > stars;
 		stars = n;
 		on('wanted', n);
-		if (up && n === 3) say('say.cops', 1.6);
+		if (up && n === 3 && heroVisible) say('say.cops', 1.6);
 		peakStars = Math.max(peakStars, n);
 		if (n === 0 && peakStars >= 2) {
 			peakStars = 0;
-			escape();
+			if (heroVisible) escape(); // прятаться есть смысл, только когда на него смотрят
 		}
 	};
 	const stepCar = () => {
@@ -4919,6 +4954,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		// остров тоже «хочет» принять персонажа: насколько ноги над травой
 		const islandTopY = hullTopAt(islandPoly, PB.x);
 		const islandGap = islandTopY === null ? null : islandTopY - (PB.y + PB.hh);
+		flyNearIsland = islandGap !== null && islandGap < 160 && islandGap > -PB.hh * 3;
 		if (Math.hypot(PB.x - PB.pickX, PB.y - PB.pickY) > 80 && (islandGap === null || islandGap > 30)) PB.clearOfIsland = true;
 		PB.idleT += dt;
 		PB.hop = Math.max(0, PB.hop - dt);
@@ -5733,10 +5769,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			loungeAt = now + 50 + Math.random() * 40;
 			if (Math.random() < 0.55) goLounge(12);
 		}
-		if (GTA) {
-			stepWanted(dt);
-			stepCar();
-		}
+		if (GTA) stepCar();
 		world.position.y = Math.sin(idle * 0.8) * 0.18;
 		// остров сам очень медленно качается на ±60°, мышь на это не влияет
 		if (!reducedMotion) swayPhase += dt * SWAY_SPEED;
@@ -5748,7 +5781,9 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		world.updateMatrixWorld(true);
 
 		const homeWorld = island.localToWorld(tmp.copy(HOME).add(tmp2.set(0, BODY, 0)));
-		playerK = focal / camera.position.distanceTo(homeWorld);
+		// у острова — размер как на острове (без скачка при взлёте и посадке), вдали — обычный
+		flyK = P.mode === 'free' ? lerp(flyK, flyNearIsland ? 1 : flyBoost, 1 - Math.exp(-dt * 4)) : 1;
+		playerK = (focal / camera.position.distanceTo(homeWorld)) * flyK;
 
 		if (P.mode !== 'free') stepIsland(dt);
 		else stepFree(dt);
@@ -5859,14 +5894,14 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 			const hovered = pickVoxel();
 			let cur = '';
 			let signHover = null;
+			const front = hovered ? null : pickFront();
 			if (hovered) cur = CROSSHAIR;
-			else if (pickPlayer()) cur = 'grab';
-			else if (pickPortal()) cur = 'pointer';
-			else if (GTA && (pickCar() || pickLounger())) cur = 'pointer';
+			else if (front === 'player') cur = 'grab';
+			else if (front) cur = 'pointer'; // портал, машина, лежак
 			else {
 				const b = pickBlock();
 				if (b) {
-					if (!busy() && canReach(b, standFor(b))) cur = CROSSHAIR;
+					if ((!busy() || softBusy()) && canReach(b, standFor(b))) cur = CROSSHAIR;
 				} else if (GTA && (signHover = pickSign())) cur = CROSSHAIR;
 			}
 			setCursor(cur);
@@ -5960,6 +5995,7 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 		const raw = (t - last) / 1000;
 		const dt = Math.min(0.05, Math.max(0.001, raw));
 		last = t;
+		if (GTA) stepWanted(dt); // звёзды розыска гаснут, даже если первый экран прокручен
 		// пока персонаж летает по сайту, сцена считается, даже если первый экран прокручен
 		if (!heroVisible && P.mode !== 'free') return;
 		frameNo++;
@@ -6026,6 +6062,14 @@ export const initHero = (canvas, {on = () => {}, reducedMotion = false, wall = n
 				heat = n;
 				return n;
 			},
+			// что под точкой экрана и на каком расстоянии (для проверки выбора ближайшего)
+			hits: (x, y) => {
+				updatePointer(x, y);
+				castRay();
+				const d = (h) => (h.length ? +h[0].distance.toFixed(2) : null);
+				return {front: pickFront(), player: d(raycaster.intersectObject(rig.root, true)), portal: d(raycaster.intersectObjects(portalHere().pick, false)), car: car ? d(raycaster.intersectObject(car.group, true)) : null, lounger: lounger ? d(raycaster.intersectObject(lounger.group, true)) : null};
+			},
+			fly: () => ({k: +playerK.toFixed(2), flyK: +flyK.toFixed(2), flyBoost: +flyBoost.toFixed(2), near: flyNearIsland, mode: P.mode}),
 			// подменить час (ночь/утро); null — снова настоящие часы
 			clock: (h = null) => {
 				fakeHour = h;

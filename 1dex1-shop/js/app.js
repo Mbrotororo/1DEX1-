@@ -278,7 +278,7 @@ $('#co-apply').addEventListener('click', async () => {
 });
 // поменял код после «Применить» — скидка снимается, пока не применишь снова
 $('#co-promo').addEventListener('input', () => {
-	if (!coPromo || $('#co-promo').value.trim().toUpperCase() === coPromo.code) return;
+	if (!coPromo || auth.promoCodeOf($('#co-promo').value) === coPromo.code) return;
 	coPromo = null;
 	coMsg();
 	paintCheckout();

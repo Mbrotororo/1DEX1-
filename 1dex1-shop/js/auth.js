@@ -369,7 +369,8 @@ export const pay = async (productId, method, promoCode) => (serverMode ? api('pa
 
 // Промокод: ответ {code, percent} или ошибка promo_bad. Коды в data.js хранятся отпечатком
 // (sha-256 от «1dex1-promo:КОД»), сервер проверяет так же — и сам считает скидку при покупке.
-const promoCodeOf = (code) => String(code || '').trim().toUpperCase();
+// Пробелы и регистр не важны: «gta 6» = «GTA6».
+export const promoCodeOf = (code) => String(code || '').replace(/\s+/g, '').toUpperCase();
 const findPromo = async (code) => {
 	const c = promoCodeOf(code);
 	if (!c || !window.crypto?.subtle) return null;

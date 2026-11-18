@@ -1,12 +1,19 @@
 // В честь выхода GTA 6: полоска розыска (звёзды загораются, пока ломаешь остров), деньги из
 // кейса-кейса и надпись «Миссия выполнена!». Остров, машина, лежак, Майами на фоне и знак
 // «GTA 6» из блоков — в js/hero.js (флаг GTA). Включается в js/data.js: SEASON = 'gta'.
-import {t} from './i18n.js';
+import {onLang, t} from './i18n.js';
 import {icon} from './pixel.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 let hud = null;
 let shown = 0;
+let heroOn = true; // первый экран с островом виден — розыск про него, без острова звёзды прячутся
+
+const paint = () => {
+	const on = shown > 0 && heroOn;
+	hud.classList.toggle('is-on', on);
+	document.documentElement.classList.toggle('gta-hud', on); // всплывашки на ПК опускаются под звёзды
+};
 
 export const initGta = () => {
 	document.documentElement.classList.add('gta');
@@ -15,16 +22,24 @@ export const initGta = () => {
 	hud.setAttribute('aria-hidden', 'true');
 	document.body.append(hud);
 	setWanted(0);
+	onLang(() => setWanted(shown)); // «Розыск» / «Wanted» — сразу на новом языке
+	const hero = document.querySelector('.hero');
+	if (hero && 'IntersectionObserver' in window) {
+		new IntersectionObserver(([e]) => {
+			heroOn = e.isIntersecting;
+			paint();
+		}).observe(hero);
+	}
 };
 
-// сколько звёзд розыска горит (0–5)
+// сколько звёзд розыска горит (0–5); только что загоревшаяся звезда быстро мигает
 export const setWanted = (n) => {
 	if (!hud) return;
 	n = Math.max(0, Math.min(5, n | 0));
-	hud.innerHTML = `<span class="gta-wanted__t px">${t('gta.wanted')}</span>${Array.from({length: 5}, (_, i) => icon('star', i < n ? 'pxi is-lit' : 'pxi')).join('')}`;
-	hud.classList.toggle('is-on', n > 0);
-	hud.classList.toggle('is-new', n > shown);
+	const fresh = n > shown ? n - 1 : -1;
+	hud.innerHTML = `<span class="gta-wanted__t px">${t('gta.wanted')}</span>${Array.from({length: 5}, (_, i) => icon('star', i < n ? (i === fresh ? 'pxi is-lit is-fresh' : 'pxi is-lit') : 'pxi')).join('')}`;
 	shown = n;
+	paint();
 };
 
 // из открытого кейса разлетаются купюры

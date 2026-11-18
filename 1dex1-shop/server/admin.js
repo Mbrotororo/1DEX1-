@@ -140,7 +140,7 @@ if (what === 'product' && action === 'add') {
 	});
 	console.log(`Готово: ${PRODUCTS.length} товар(ов) из js/data.js в базе.`);
 } else if (what === 'promo' && action === 'hash') {
-	const code = String(args[0] || '').trim().toUpperCase();
+	const code = args.join('').replace(/\s+/g, '').toUpperCase(); // пробелы не важны — как на сайте
 	if (!code) fail('укажи код: promo hash КОД');
 	const hash = createHash('sha256').update(`1dex1-promo:${code}`).digest('hex');
 	console.log(`Добавь в PROMOS (js/data.js), percent — скидка в процентах:\n\t{hash: '${hash}', percent: 10},`);

@@ -14,8 +14,10 @@
 .gta-wanted__t{margin-right:4px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#ffd9a8}
 .gta-wanted .pxi{font-size:22px;filter:grayscale(1) brightness(.35);transition:filter .3s}
 .gta-wanted .pxi.is-lit{filter:none;animation:gta-star 1s steps(2,jump-none) infinite}
-.gta-wanted.is-new .pxi.is-lit:last-of-type{animation:gta-star .25s steps(2,jump-none) 6}
+.gta-wanted .pxi.is-fresh{animation:gta-star .25s steps(2,jump-none) 6}
 @keyframes gta-star{50%{filter:brightness(.55)}}
+/* на ПК звёзды справа сверху, как в игре, — всплывашки, пока звёзды горят, встают под ними */
+@media (min-width:701px){html.gta-hud .toasts{top:calc(var(--topbar) + var(--safe-top) + 66px)}}
 /* на телефоне сверху надпись 1DEX1 SHOP — звёзды внизу по центру, над хотбаром */
 @media (max-width:700px){
 	.gta-wanted{top:auto;right:50%;bottom:calc(84px + env(safe-area-inset-bottom,0px));transform:translate(50%,8px)}
@@ -54,5 +56,7 @@
 }
 
 @media (prefers-reduced-motion:reduce){
-	.gta-wanted .pxi.is-lit,.gta-wanted.is-new .pxi.is-lit:last-of-type{animation:none}
+	.gta-wanted .pxi.is-lit,.gta-wanted .pxi.is-fresh{animation:none}
+	/* без анимации надпись просто стоит ~3 секунды и исчезает */
+	.gta-mission{animation:none}
 }

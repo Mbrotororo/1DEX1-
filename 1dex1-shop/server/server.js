@@ -526,7 +526,7 @@ route('GET', 'products', () => [
 ]);
 // Промокод из data.js (там он хранится отпечатком): {code, percent} или null
 const promoOf = (code) => {
-	const c = String(code || '').trim().toUpperCase();
+	const c = String(code || '').replace(/\s+/g, '').toUpperCase(); // пробелы и регистр не важны: «gta 6» = «GTA6»
 	if (!c) return null;
 	const row = q('SELECT * FROM promos WHERE code = ?').get(c);
 	if (row) {
