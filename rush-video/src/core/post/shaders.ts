@@ -1,10 +1,22 @@
 // Шейдеры постобработки (GLSL ES 3.0 через ShaderMaterial three: texture2D/gl_FragColor работают, texelFetch тоже).
+// Кадр мира лежит в 8-битном буфере уже в sRGB (как на экране, смешивание прозрачного — как без постобработки);
+// внутри проходов цвет переводится в линейный, в конце — обратно в sRGB.
 
 export const VERT = /* glsl */ `
 varying vec2 vUv;
 void main() {
 	vUv = uv;
 	gl_Position = vec4(position.xy, 0.0, 1.0);
+}
+`;
+
+// sRGB <-> линейный
+const SRGB = /* glsl */ `
+vec3 toLinear(vec3 c) {
+	return mix(pow((c + 0.055) / 1.055, vec3(2.4)), c / 12.92, vec3(lessThanEqual(c, vec3(0.04045))));
+}
+vec3 toSRGB(vec3 v) {
+	return mix(pow(v, vec3(0.41666)) * 1.055 - vec3(0.055), v * 12.92, vec3(lessThanEqual(v, vec3(0.0031308))));
 }
 `;
 
@@ -29,12 +41,13 @@ float coc(float z) {
 }
 `;
 
-// 1. Полный кадр -> половина: цвет + линейная глубина (самая дальняя из 2x2).
+// 1. Полный кадр -> половина: линейный цвет + глубина (самая дальняя из 2x2).
 // Пиксели переднего плана на границе отбрасываются — фон за силуэтом размывается без ореола.
 export const DOF_DOWN = /* glsl */ `
 uniform sampler2D tColor;
 uniform sampler2D tDepth;
 uniform vec2 uSrcSize;
+${SRGB}
 ${LIN_DEPTH}
 varying vec2 vUv;
 void main() {
@@ -55,7 +68,7 @@ void main() {
 	float w2 = step(zf - z2, tol);
 	float w3 = step(zf - z3, tol);
 	vec3 c = texelFetch(tColor, p0, 0).rgb * w0 + texelFetch(tColor, p1, 0).rgb * w1 + texelFetch(tColor, p2, 0).rgb * w2 + texelFetch(tColor, p3, 0).rgb * w3;
-	gl_FragColor = vec4(c / max(1.0, w0 + w1 + w2 + w3), zf);
+	gl_FragColor = vec4(toLinear(c / max(1.0, w0 + w1 + w2 + w3)), zf);
 }
 `;
 
@@ -97,16 +110,27 @@ void main() {
 }
 `;
 
+// Ядро сбора: точки золотой спирали в единичном круге (x, y, расстояние от центра) — считаются один раз
+const TAPS = 18;
+const KERNEL = Array.from({length: TAPS}, (_, i) => {
+	const fi = i + 0.5;
+	const r = Math.sqrt(fi / TAPS);
+	const a = fi * 2.3999632;
+	return `vec3(${(Math.cos(a) * r).toFixed(5)}, ${(Math.sin(a) * r).toFixed(5)}, ${r.toFixed(5)})`;
+}).join(', ');
+
 // 2. Размытие на половинном разрешении: «рассеяние через сбор» по золотой спирали.
 // Образец участвует, только если его собственный кружок дотягивается до центра; дальние
 // образцы не налезают на ближние (резкий герой не размывается фоном, фон не тянет героя).
+// Спираль поворачивается от положения пикселя (без времени): шум вместо «копий».
 export const DOF_GATHER = /* glsl */ `
 uniform sampler2D tHalf;
 uniform sampler2D tNear;
 uniform vec2 uHalfSize;
 ${COC}
 varying vec2 vUv;
-#define TAPS 20
+#define TAPS ${TAPS}
+const vec3 K[TAPS] = vec3[TAPS](${KERNEL});
 void main() {
 	vec4 c0 = texture2D(tHalf, vUv);
 	float z0 = c0.a;
@@ -119,16 +143,18 @@ void main() {
 	}
 	vec3 acc = c0.rgb;
 	float tot = 1.0;
-	// поворот спирали от положения пикселя (без времени): шум вместо «копий»
 	float a0 = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) * 6.2831853;
+	float ca = cos(a0);
+	float sa = sin(a0);
+	vec2 sx = vec2(ca, sa) * R / uHalfSize;
+	vec2 sy = vec2(-sa, ca) * R / uHalfSize;
 	for (int i = 0; i < TAPS; i++) {
-		float fi = float(i) + 0.5;
-		float rr = R * sqrt(fi / float(TAPS));
-		float a = a0 + fi * 2.3999632;
-		vec4 s = texture2D(tHalf, vUv + vec2(cos(a), sin(a)) * rr / uHalfSize);
+		vec3 k = K[i];
+		float rr = R * k.z;
+		vec4 s = texture2D(tHalf, vUv + sx * k.x + sy * k.y);
 		float sr = coc(s.a);
 		if (s.a > z0) sr = min(sr, r0 * 2.0);
-		float m = smoothstep(rr - 0.5, rr + 0.5, sr);
+		float m = clamp(sr - rr + 0.5, 0.0, 1.0);
 		acc += mix(acc / tot, s.rgb, m);
 		tot += 1.0;
 	}
@@ -136,18 +162,19 @@ void main() {
 }
 `;
 
-// Свечение: выделение ярких мест (половина разрешения, мягкое колено)
+// Свечение: выделение ярких мест сразу в четверть разрешения (4 билинейных образца = блок 4x4), мягкое колено
 export const BLOOM_PREFILTER = /* glsl */ `
 uniform sampler2D tSrc;
 uniform vec2 uTexel;
 uniform float uThreshold;
 uniform float uKnee;
+${SRGB}
 varying vec2 vUv;
 void main() {
-	vec3 c = texture2D(tSrc, vUv + vec2(-1.0, -1.0) * uTexel).rgb;
-	c += texture2D(tSrc, vUv + vec2(1.0, -1.0) * uTexel).rgb;
-	c += texture2D(tSrc, vUv + vec2(-1.0, 1.0) * uTexel).rgb;
-	c += texture2D(tSrc, vUv + vec2(1.0, 1.0) * uTexel).rgb;
+	vec3 c = toLinear(texture2D(tSrc, vUv + vec2(-1.0, -1.0) * uTexel).rgb);
+	c += toLinear(texture2D(tSrc, vUv + vec2(1.0, -1.0) * uTexel).rgb);
+	c += toLinear(texture2D(tSrc, vUv + vec2(-1.0, 1.0) * uTexel).rgb);
+	c += toLinear(texture2D(tSrc, vUv + vec2(1.0, 1.0) * uTexel).rgb);
 	c *= 0.25;
 	float br = max(c.r, max(c.g, c.b));
 	float rq = clamp(br - uThreshold + uKnee, 0.0, 2.0 * uKnee);
@@ -197,8 +224,9 @@ void main() {
 
 // Финал (один проход на полном разрешении): сведение резкого кадра с размытой половиной (апсемпл с учётом
 // глубины — без каймы у силуэта), свечение, экспозиция, баланс белого, sRGB, контраст, LGG, насыщенность,
-// тил-оранж, виньетка, аберрация, смаз, зерно, вспышка, сглаживание. Тяжёлые части включаются #define
-// (FXAA, DOF, BLOOM, CHROMA, SMEAR, GRAIN, VIGNETTE, GAMMA), без них шейдер их не считает вовсе.
+// тил-оранж, виньетка, аберрация, смаз, зерно, вспышка, сглаживание. Части включаются #define
+// (FXAA, DOF, BLOOM, CHROMA, SMEAR, GRAIN, VIGNETTE, GAMMA, GRADE): без них шейдер их не считает вовсе.
+// Дорогие выборки пропускаются там, где не нужны: FXAA — в полностью размытом, аберрация — в центре кадра.
 export const FINAL = /* glsl */ `
 uniform sampler2D tBase;
 uniform sampler2D tDepth;
@@ -224,31 +252,28 @@ uniform float uFlash;
 uniform vec3 uFlashColor;
 uniform float uChroma;
 uniform vec2 uSmear;
+${SRGB}
 ${LIN_DEPTH}
 ${COC}
 varying vec2 vUv;
 
-vec3 toSRGB(vec3 v) {
-	return mix(pow(v, vec3(0.41666)) * 1.055 - vec3(0.055), v * 12.92, vec3(lessThanEqual(v, vec3(0.0031308))));
-}
 float hash12(vec2 p) {
 	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
 	p3 += dot(p3, p3.yzx + 33.33);
 	return fract((p3.x + p3.y) * p3.z);
 }
 
-// сглаживание краёв (FXAA): мир рисуется в буфер без MSAA (в программном WebGL MSAA-буфер очень дорогой)
+// резкий кадр (sRGB) со сглаживанием краёв FXAA: мир рисуется в буфер без MSAA (в программном WebGL он дорогой)
 vec4 sharpAt(vec2 uv) {
 	vec4 m = texture2D(tBase, uv);
 #ifdef FXAA
 	vec2 px = 1.0 / uRes;
 	const vec3 LW = vec3(0.299, 0.587, 0.114);
-	// яркость по «экранной» шкале (буфер хранит линейный цвет)
-	float lM = sqrt(dot(m.rgb, LW));
-	float lNW = sqrt(dot(texture2D(tBase, uv + vec2(-1.0, -1.0) * px).rgb, LW));
-	float lNE = sqrt(dot(texture2D(tBase, uv + vec2(1.0, -1.0) * px).rgb, LW));
-	float lSW = sqrt(dot(texture2D(tBase, uv + vec2(-1.0, 1.0) * px).rgb, LW));
-	float lSE = sqrt(dot(texture2D(tBase, uv + vec2(1.0, 1.0) * px).rgb, LW));
+	float lM = dot(m.rgb, LW);
+	float lNW = dot(texture2D(tBase, uv + vec2(-1.0, -1.0) * px).rgb, LW);
+	float lNE = dot(texture2D(tBase, uv + vec2(1.0, -1.0) * px).rgb, LW);
+	float lSW = dot(texture2D(tBase, uv + vec2(-1.0, 1.0) * px).rgb, LW);
+	float lSE = dot(texture2D(tBase, uv + vec2(1.0, 1.0) * px).rgb, LW);
 	float lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE)));
 	float lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));
 	if (lMax - lMin < max(0.04, lMax * 0.125)) return m;
@@ -258,22 +283,19 @@ vec4 sharpAt(vec2 uv) {
 	dir = clamp(dir * rcpMin, vec2(-8.0), vec2(8.0)) * px;
 	vec3 a = 0.5 * (texture2D(tBase, uv + dir * (1.0 / 3.0 - 0.5)).rgb + texture2D(tBase, uv + dir * (2.0 / 3.0 - 0.5)).rgb);
 	vec3 b = a * 0.5 + 0.25 * (texture2D(tBase, uv - dir * 0.5).rgb + texture2D(tBase, uv + dir * 0.5).rgb);
-	float lB = sqrt(dot(b, LW));
+	float lB = dot(b, LW);
 	return vec4((lB < lMin || lB > lMax) ? a : b, m.a);
 #else
 	return m;
 #endif
 }
 
-// кадр мира в точке uv (с размытием по глубине, если оно включено); k — доля размытия
-vec4 scene(vec2 uv, out float k) {
-	k = 0.0;
-	vec4 sharp = sharpAt(uv);
 #ifdef DOF
-	float z = linDepth(texture2D(tDepth, uv).r);
-	// tNear хранит радиус в пикселях половинного буфера
-	float c = max(coc(z), texture2D(tNear, uv).r * 2.0);
-	if (c < 0.6) return sharp;
+// размытая половина -> полный размер с учётом глубины: берём только образцы своей глубины (нет каймы у силуэта)
+vec3 blurAt(vec2 uv, float z) {
+	float tol = z * 0.06 + 0.03;
+	vec4 c = texture2D(tBlur, uv);
+	if (abs(c.a - z) < tol * 0.25) return c.rgb;
 	vec2 hp = uv * uHalfSize - 0.5;
 	vec2 f = fract(hp);
 	vec2 b = (floor(hp) + 0.5) / uHalfSize;
@@ -282,62 +304,113 @@ vec4 scene(vec2 uv, out float k) {
 	vec4 s10 = texture2D(tBlur, b + vec2(tx.x, 0.0));
 	vec4 s01 = texture2D(tBlur, b + vec2(0.0, tx.y));
 	vec4 s11 = texture2D(tBlur, b + tx);
-	float tol = z * 0.06 + 0.03;
 	vec4 dz = abs(vec4(s00.a, s10.a, s01.a, s11.a) - z) / tol;
 	vec4 w = vec4((1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y) / (1.0 + 16.0 * dz * dz) + 1e-5;
-	vec3 blur = (s00.rgb * w.x + s10.rgb * w.y + s01.rgb * w.z + s11.rgb * w.w) / (w.x + w.y + w.z + w.w);
-	k = smoothstep(0.6, 2.4, c);
-	return vec4(mix(sharp.rgb, blur, k), sharp.a);
+	return (s00.rgb * w.x + s10.rgb * w.y + s01.rgb * w.z + s11.rgb * w.w) / (w.x + w.y + w.z + w.w);
+}
+#endif
+
+// доля размытия в точке uv (0 — резко)
+float blurK(vec2 uv, out float z) {
+	z = 0.0;
+#ifdef DOF
+	z = linDepth(texture2D(tDepth, uv).r);
+	// tNear хранит радиус в пикселях половинного буфера
+	float c = max(coc(z), texture2D(tNear, uv).r * 2.0);
+	return smoothstep(0.6, 2.4, c);
 #else
-	return sharp;
+	return 0.0;
 #endif
 }
 
-// дешёвый образец для сдвинутых каналов аберрации: резкий кадр + размытая половина с долей центра
-vec3 sceneCheap(vec2 uv, float k) {
-	vec3 c = texture2D(tBase, uv).rgb;
+// кадр мира в точке uv, линейный цвет; a — непрозрачность
+vec4 sceneAt(vec2 uv, out float k) {
+	float z;
+	k = blurK(uv, z);
 #ifdef DOF
-	c = mix(c, texture2D(tBlur, uv).rgb, k);
+	if (k > 0.985) return vec4(blurAt(uv, z), 1.0);
+	vec4 s = sharpAt(uv);
+	vec3 lin = toLinear(s.rgb);
+	if (k > 0.0) lin = mix(lin, blurAt(uv, z), k);
+	return vec4(lin, s.a);
+#else
+	vec4 s = sharpAt(uv);
+	return vec4(toLinear(s.rgb), s.a);
+#endif
+}
+
+// дешёвый образец (без FXAA и апсемпла с глубиной) — для сдвинутых каналов аберрации и смаза
+vec3 sceneCheap(vec2 uv, float k) {
+	vec3 c = toLinear(texture2D(tBase, uv).rgb);
+#ifdef DOF
+	if (k > 0.0) c = mix(c, texture2D(tBlur, uv).rgb, k);
 #endif
 	return c;
 }
 
-vec4 fetch(vec2 uv) {
-	float k;
-	vec4 g = scene(uv, k);
-#ifdef CHROMA
-	vec2 d = (uv - 0.5) * 2.0 * uChroma / uRes;
-	return vec4(sceneCheap(uv - d, k).r, g.g, sceneCheap(uv + d, k).b, g.a);
-#else
-	return g;
+// один канал дешёвого образца (ch: 0 — красный, 2 — синий) — для аберрации
+float channelCheap(vec2 uv, float k, int ch) {
+	float v = texture2D(tBase, uv)[ch];
+	v = v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4);
+#ifdef DOF
+	if (k > 0.0) v = mix(v, texture2D(tBlur, uv)[ch], k);
 #endif
+	return v;
 }
 
 void main() {
+	float k;
 #ifdef SMEAR
-	vec4 base = vec4(0.0);
-	for (int i = 0; i < 10; i++) {
-		float k = (float(i) + 0.5) / 10.0 - 0.5;
-		base += fetch(vUv + uSmear * k);
-	}
-	base /= 10.0;
+	// смаз «вжух»: 8 дешёвых образцов вдоль направления, со сдвигом от шума (без полос).
+	// Аберрация здесь — «спектральная»: красный тянется к началу смаза, синий — к концу (без лишних выборок)
+	float z;
+	k = blurK(vUv, z);
+	vec3 acc = vec3(0.0);
+	vec3 wsum = vec3(0.0);
+	float j = hash12(gl_FragCoord.xy) - 0.5;
+#ifdef CHROMA
+	float sp = clamp(uChroma * 0.25, 0.0, 0.8);
 #else
-	vec4 base = fetch(vUv);
+	float sp = 0.0;
+#endif
+	for (int i = 0; i < 8; i++) {
+		float f = (float(i) + 0.5 + j) / 8.0 - 0.5;
+		vec3 w = vec3(1.0 - sp * 2.0 * f, 1.0, 1.0 + sp * 2.0 * f);
+		acc += sceneCheap(vUv + uSmear * f, k) * w;
+		wsum += w;
+	}
+	vec4 base = vec4(acc / wsum, 1.0);
+#else
+	vec4 base = sceneAt(vUv, k);
+#endif
+#if defined(CHROMA) && !defined(SMEAR)
+	// аберрация растёт к краям; в центре кадра сдвиг меньше пикселя — не считаем
+	vec2 cd = (vUv - 0.5) * 2.0 * uChroma / uRes;
+	if (dot(cd * uRes, cd * uRes) > 0.09) {
+		base.r = channelCheap(vUv - cd, k, 0);
+		base.b = channelCheap(vUv + cd, k, 2);
+	}
 #endif
 	vec3 c = base.rgb + uBg * (1.0 - base.a);
 #ifdef BLOOM
 	c += texture2D(tBloom, vUv).rgb * uBloom;
 #endif
+#ifdef GRADE
 	c = max(c * uGainRgb, 0.0);
+#endif
 	vec3 d = toSRGB(c);
+#ifdef GRADE
 	d = (d - 0.5) * uContrast + 0.5;
 	d = d * uGain + uLift * (1.0 - d);
+#endif
 #ifdef GAMMA
 	d = pow(max(d, 0.0), vec3(1.0 / uGamma));
 #endif
 	float l = dot(d, vec3(0.2126, 0.7152, 0.0722));
+#ifdef GRADE
 	d = mix(vec3(l), d, uSaturation);
 	d += uSplit * ((1.0 - smoothstep(0.04, 0.5, l)) * vec3(-0.035, 0.012, 0.05) + smoothstep(0.42, 0.95, l) * vec3(0.055, 0.012, -0.05));
+#endif
 #ifdef VIGNETTE
 	vec2 q = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
 	float r = length(q) / length(vec2(uRes.x / uRes.y, 1.0) * 0.5);

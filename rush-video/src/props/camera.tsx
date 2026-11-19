@@ -69,8 +69,11 @@ export const CameraTripod: React.FC<CameraTripodProps> = ({position, rotationY =
 		() => ({
 			leg: new THREE.MeshLambertMaterial({color: '#2a2b31'}),
 			foot: new THREE.MeshLambertMaterial({color: '#111114'}),
-			glass: new THREE.MeshBasicMaterial({color: '#1a2a4a', toneMapped: false}),
-			glint: new THREE.MeshBasicMaterial({color: '#7a9ad8', toneMapped: false}),
+			ring: new THREE.MeshLambertMaterial({color: '#2c2e36'}),
+			glass: new THREE.MeshBasicMaterial({color: '#0c1220'}),
+			iris: new THREE.MeshBasicMaterial({color: '#1c2a48'}),
+			glint: new THREE.MeshBasicMaterial({color: '#c8d8ff', toneMapped: false}),
+			glint2: new THREE.MeshBasicMaterial({color: '#8aa0d8'}),
 			lamp: new THREE.MeshBasicMaterial({toneMapped: false}),
 			screen: new THREE.MeshBasicMaterial({color: '#2a3a5a', toneMapped: false}),
 		}),
@@ -106,12 +109,21 @@ export const CameraTripod: React.FC<CameraTripodProps> = ({position, rotationY =
 			<group position={[0, 22.3 * P16, 0]} rotation={[-tiltCam, pan, 0]}>
 				<group position={[0, -22.3 * P16, 0]}>
 					<mesh geometry={bodyGeo()} material={vcMat()} />
-					{/* стекло объектива с бликом */}
-					<mesh material={mats.glass} position={[0, 25.2 * P16, 9.02 * P16]}>
-						<planeGeometry args={[3.4 * P16, 3.4 * P16]} />
+					{/* объектив: тёмное стекло, кольцо и два блика */}
+					<mesh material={mats.ring} position={[0, 25.2 * P16, 9.02 * P16]}>
+						<planeGeometry args={[3.8 * P16, 3.8 * P16]} />
 					</mesh>
-					<mesh material={mats.glint} position={[0.7 * P16, 26.0 * P16, 9.05 * P16]}>
-						<planeGeometry args={[0.7 * P16, 0.7 * P16]} />
+					<mesh material={mats.glass} position={[0, 25.2 * P16, 9.04 * P16]}>
+						<planeGeometry args={[2.8 * P16, 2.8 * P16]} />
+					</mesh>
+					<mesh material={mats.iris} position={[0, 25.2 * P16, 9.05 * P16]}>
+						<planeGeometry args={[1.4 * P16, 1.4 * P16]} />
+					</mesh>
+					<mesh material={mats.glint} position={[0.75 * P16, 25.95 * P16, 9.07 * P16]}>
+						<planeGeometry args={[0.6 * P16, 0.6 * P16]} />
+					</mesh>
+					<mesh material={mats.glint2} position={[-0.6 * P16, 24.6 * P16, 9.07 * P16]}>
+						<planeGeometry args={[0.35 * P16, 0.35 * P16]} />
 					</mesh>
 					{/* лампа REC спереди сверху */}
 					<mesh material={mats.lamp} position={[1.6 * P16, 27.0 * P16, 4.05 * P16]}>

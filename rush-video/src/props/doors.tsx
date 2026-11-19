@@ -147,24 +147,24 @@ export const FrontDoor: React.FC<FrontDoorProps> = ({position, yaw = 0, open = 0
 	const k = clamp01(open);
 	const poolMat = useMemo(() => new THREE.MeshBasicMaterial({map: pool(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, fog: false}), []);
 	const leakMat = useMemo(() => new THREE.MeshBasicMaterial({toneMapped: false, fog: false}), []);
-	leakMat.color.set(daylightColor).multiplyScalar(0.55 + 0.45 * daylight);
+	leakMat.color.set(daylightColor).multiplyScalar((0.8 + 0.9 * daylight) * (1 - k * 0.6));
 	// пятно на полу: узкая полоска у закрытой двери -> вытянутый «ковёр» света в открытой
 	const spread = 0.12 + easeInQuad(k) * 0.88;
 	const len = 0.35 + spread * 2.6;
-	poolMat.color.set(daylightColor).multiplyScalar(daylight * (0.35 + 0.4 * spread) * (1 + Math.sin(t * 1.3) * 0.02));
+	poolMat.color.set(daylightColor).multiplyScalar(daylight * (0.55 + 0.35 * spread) * (1 + Math.sin(t * 1.3) * 0.02));
 	return (
 		<group position={position} rotation={[0, yaw, 0]}>
-			<SwingDoor position={[0, 0.03, 0]} open={k} angle={angle} style="front" />
+			<SwingDoor position={[0, 0.07, 0]} open={k} angle={angle} style="front" />
 			{/* щель под дверью */}
 			{daylight > 0.01 ? (
 				<>
-					<mesh material={leakMat} position={[0.5, 0.015, 0.06]}>
-						<boxGeometry args={[0.96, 0.03, 0.08]} />
+					<mesh material={leakMat} position={[0.5, 0.03, 0.08]}>
+						<boxGeometry args={[0.96, 0.05, 0.1]} />
 					</mesh>
 					<mesh material={poolMat} position={[0.5, 0.012, -len / 2]} rotation={[-Math.PI / 2, 0, Math.PI]} renderOrder={3}>
 						<planeGeometry args={[1.1 + spread * 0.5, len]} />
 					</mesh>
-					<Glow position={[0.5, 0.05, -0.05]} color={daylightColor} size={0.9 + spread * 1.6} opacity={0.22 * daylight} />
+					<Glow position={[0.5, 0.05, -0.08]} color={daylightColor} size={1.1 + spread * 1.6} opacity={0.32 * daylight} />
 					{/* свет в проёме, когда дверь открыта */}
 					{k > 0.02 ? (
 						<sprite position={[0.5, 1.0, 0.3]} scale={[1.6, 2.6, 1]} renderOrder={4}>

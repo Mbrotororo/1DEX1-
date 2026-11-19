@@ -66,6 +66,25 @@ export const HOUSE_ENV = {
 		clouds: 0.45,
 		cloudColor: '#ffb48c',
 	},
+	// комната, крупные планы у стола с включённым монитором: закат слабее, синий свет экрана читается на лице
+	desk: {
+		skyTop: '#46508e',
+		skyHorizon: '#ff9d66',
+		fogColor: '#e7a183',
+		fogNear: 30,
+		fogFar: 150,
+		tint: '#ffc9a8',
+		lightColor: '#ffbf8a',
+		ambient: 0.15,
+		sun: 0.2,
+		fill: 0.12,
+		sunDir: [0.94, 0.16, 0.3],
+		sunDisc: 1,
+		moonDisc: 0,
+		stars: 0,
+		clouds: 0.45,
+		cloudColor: '#ffb48c',
+	},
 } satisfies Record<string, EnvState>;
 
 export type HouseEnvName = keyof typeof HOUSE_ENV;

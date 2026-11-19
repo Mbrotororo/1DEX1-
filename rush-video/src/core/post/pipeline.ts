@@ -3,7 +3,7 @@ import {FullScreenQuad} from 'three/examples/jsm/postprocessing/Pass.js';
 import {hexToRgb} from '../anim';
 import {HUD_ORDER} from '../hud/VoxelText';
 import {BLOOM_DOWN, BLOOM_PREFILTER, BLOOM_UP, DOF_DILATE, DOF_DOWN, DOF_GATHER, DOF_TILE, FINAL, VERT} from './shaders';
-import type {PostSettings} from './settings';
+import {gradeOn, type PostSettings} from './settings';
 
 // Конвейер постобработки: мир -> буфер (цвет + глубина) -> [размытие по глубине на половинном разрешении]
 // -> [свечение] -> финальный проход прямо на экран -> экранный 3D-слой (HudLayer) поверх, резко.
@@ -19,11 +19,11 @@ const BLOOM_LEVELS = 6;
 
 type RT = THREE.WebGLRenderTarget;
 
-const makeRT = (w: number, h: number, opts: {samples?: number; depthTexture?: boolean; nearest?: boolean; srgb8?: boolean} = {}): RT => {
+const makeRT = (w: number, h: number, opts: {samples?: number; depthTexture?: boolean; nearest?: boolean; byte?: boolean} = {}): RT => {
 	const rt = new THREE.WebGLRenderTarget(Math.max(1, w), Math.max(1, h), {
-		type: opts.srgb8 ? THREE.UnsignedByteType : THREE.HalfFloatType,
+		type: opts.byte ? THREE.UnsignedByteType : THREE.HalfFloatType,
 		format: THREE.RGBAFormat,
-		colorSpace: opts.srgb8 ? THREE.SRGBColorSpace : THREE.NoColorSpace,
+		colorSpace: THREE.NoColorSpace,
 		minFilter: opts.nearest ? THREE.NearestFilter : THREE.LinearFilter,
 		magFilter: opts.nearest ? THREE.NearestFilter : THREE.LinearFilter,
 		depthBuffer: !!opts.depthTexture,
@@ -112,18 +112,26 @@ export class PostPipeline {
 		this.h = h;
 		const hw = Math.ceil(w / 2);
 		const hh = Math.ceil(h / 2);
-		// кадр мира: 8 бит в sRGB (точность как у экрана) и текстура глубины. Без MSAA: в программном
-		// WebGL MSAA-буфер стоит ~350 мс на кадр 1080p, края сглаживает FXAA в финальном проходе
-		this.sceneRT = makeRT(w, h, {depthTexture: true, srgb8: true});
-		this.halfA = makeRT(hw, hh);
-		this.halfB = makeRT(hw, hh, {nearest: true});
+		// кадр мира: 8 бит, текстура глубины. Без MSAA: в программном WebGL MSAA-буфер стоит ~350 мс
+		// на кадр 1080p, края сглаживает FXAA в финальном проходе
+		this.sceneRT = makeRT(w, h, {depthTexture: true, byte: true});
+		// Цвет в буфере — уже в sRGB, как на экране: обычный RGBA8, а шейдеры three кодируют выход в sRGB
+		// (так three рисует в буфер XR). Смешивание прозрачного (свечения, тени, частицы) идёт в тех же
+		// числах, что и на экране без постобработки, — нейтральные настройки дают ту же картинку.
+		this.renderer.initRenderTarget(this.sceneRT);
+		this.sceneRT.texture.colorSpace = THREE.SRGBColorSpace;
+		(this.sceneRT as unknown as {isXRRenderTarget: boolean}).isXRRenderTarget = true;
+		// halfA читается сбором без фильтрации (дешевле в программном WebGL), halfB — с билинейной (апсемпл)
+		this.halfA = makeRT(hw, hh, {nearest: true});
+		this.halfB = makeRT(hw, hh);
 		this.tileA = makeRT(Math.ceil(hw / 8), Math.ceil(hh / 8), {nearest: true});
 		this.tileB = makeRT(Math.ceil(hw / 8), Math.ceil(hh / 8));
 		this.down = [];
 		this.up = [];
+		// свечение — от четверти разрешения (1/4 ... 1/128)
 		for (let i = 0; i < BLOOM_LEVELS; i++) {
-			const lw = Math.max(1, Math.ceil(w / 2 ** (i + 1)));
-			const lh = Math.max(1, Math.ceil(h / 2 ** (i + 1)));
+			const lw = Math.max(1, Math.ceil(w / 2 ** (i + 2)));
+			const lh = Math.max(1, Math.ceil(h / 2 ** (i + 2)));
 			this.down.push(makeRT(lw, lh));
 			if (i < BLOOM_LEVELS - 1) this.up.push(makeRT(lw, lh));
 		}
@@ -240,7 +248,7 @@ export class PostPipeline {
 			this.pass(this.mGather, this.halfB);
 		}
 
-		// 3. свечение (из резкого кадра: ореол всё равно мягкий)
+		// 3. свечение (из резкого кадра: ореол всё равно мягкий); выделение ярких — сразу в четверть
 		const bloomOn = s.bloom > 0.001;
 		if (bloomOn) {
 			const p = this.mPre.uniforms;
@@ -274,11 +282,12 @@ export class PostPipeline {
 			FXAA: this.fxaa,
 			DOF: dofOn,
 			BLOOM: bloomOn,
-			CHROMA: chroma > 0.05,
+			CHROMA: chroma > 0.3,
 			SMEAR: smear > 0.5,
 			GRAIN: s.grain > 0.001,
 			VIGNETTE: s.vignette > 0.001,
 			GAMMA: Math.abs(s.gamma - 1) > 1e-4,
+			GRADE: gradeOn(s),
 		});
 		const f = this.mFinal.uniforms;
 		f.tBase.value = this.sceneRT.texture;

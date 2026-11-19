@@ -110,6 +110,8 @@ const WHITE = new THREE.Color('#ffffff');
 const HURT = new THREE.Color('#ff3b3b');
 const ICE = new THREE.Color('#9fd4ff');
 const tmp = new THREE.Color();
+// сила свечения белков (добавка к освещению)
+const EYE_GLOW = 0.42;
 
 export const Humanoid: React.FC<HumanoidProps> = ({
 	skin,
@@ -154,6 +156,12 @@ export const Humanoid: React.FC<HumanoidProps> = ({
 		faceMat.map = faceTex.face;
 		if (faceTex.hat) hatFace.map = faceTex.hat;
 	}
+	// свечение белков при шоке (при уроне/льде — обычное свечение материала)
+	const glow = faceTex?.glow && hurt < 0.01 && frozen < 0.01 ? faceTex.glow : null;
+	if (faceMat.emissiveMap !== glow) {
+		faceMat.emissiveMap = glow;
+		faceMat.needsUpdate = true;
+	}
 
 	// оттенки урона/льда и прозрачность — прямо в материалы (свои у каждого персонажа)
 	tmp.copy(WHITE);
@@ -176,6 +184,7 @@ export const Humanoid: React.FC<HumanoidProps> = ({
 		m.opacity = opacity;
 		m.depthWrite = !ghost;
 	}
+	if (glow) faceMat.emissive.setScalar(EYE_GLOW);
 
 	if (!visible || opacity <= 0.001 || scale <= 0.0001) return null;
 

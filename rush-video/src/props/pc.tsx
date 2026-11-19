@@ -111,7 +111,7 @@ export type MonitorProps = {
 	backlight?: number;
 };
 
-export const Monitor: React.FC<MonitorProps> = ({position, rotationY = 0, on = 1, screen = null, glowColor = '#9cc0ff', light = 1, backlight = 0}) => {
+export const Monitor: React.FC<MonitorProps> = ({position, rotationY = 0, on = 1, screen = null, glowColor = '#86b0ff', light = 1, backlight = 0}) => {
 	const mats = useMemo(
 		() => ({
 			screen: new THREE.MeshBasicMaterial({toneMapped: false}),
@@ -142,7 +142,7 @@ export const Monitor: React.FC<MonitorProps> = ({position, rotationY = 0, on = 1
 				<boxGeometry args={[0.025, 0.012, 0.012]} />
 			</mesh>
 			{k > 0.01 ? <Glow position={[0, SCREEN_Y, SCREEN_Z + 0.15]} color={glowColor} size={2.4} opacity={0.22 * k} /> : null}
-			{k > 0.01 && light > 0 ? <pointLight position={[0, SCREEN_Y, SCREEN_Z + 0.7]} color={glowColor} intensity={k * light * 2.2} distance={3.2} decay={1.4} /> : null}
+			{k > 0.01 && light > 0 ? <pointLight position={[0, SCREEN_Y, SCREEN_Z + 0.5]} color={glowColor} intensity={k * light * 4.5} distance={3.6} decay={1.3} /> : null}
 			{backlight > 0.01 ? <Glow position={[0, SCREEN_Y + 0.1, -0.25]} color="#8a4aff" size={2.6} opacity={0.4 * backlight} /> : null}
 		</group>
 	);

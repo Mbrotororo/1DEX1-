@@ -56,8 +56,8 @@ import {
 import {BEATS} from './beats';
 
 // Галерея риггинга героя (id 'rig', в ролик не входит):
-// 0–8 — мимика крупно и средним планом, 8–20 — новые позы (4 страницы по 3 с),
-// 20–28 — посадка за компьютер: прыжок в кресло → печатает → кнопка ПК → наушники → машет.
+// 0–9 — мимика крупно и средним планом, 9–21 — новые позы (4 страницы по 3 с),
+// 21–29 — посадка за компьютер: прыжок в кресло → печатает → кнопка ПК → наушники → машет.
 // Смотреть: npm run shots -- --scene=rig --sheet --step=0.5
 
 const FLOOR = 1;
@@ -68,9 +68,12 @@ const DESK = SEAT + 0.36; // верх стола над полом
 const getSet = once(() => {
 	const w = new VoxelWorld([-14, -1, -10], [13, 7, 9]);
 	for (let x = -14; x <= 13; x++) for (let z = -10; z <= 9; z++) w.set(x, 0, z, B.darkPlanks);
-	// задняя стена: книжные полки и доски
+	// задняя стена: книжные полки и доски; боковые стены — чтобы за героем не было пустоты
 	for (let x = -14; x <= 13; x++) {
 		for (let y = 1; y <= 6; y++) w.set(x, y, -5, y <= 3 && x % 5 !== 0 ? B.bookshelf : B.sprucePlanks);
+	}
+	for (const x of [-7, 7]) {
+		for (let z = -4; z <= 9; z++) for (let y = 1; y <= 6; y++) w.set(x, y, z, y <= 3 && z % 4 !== 0 ? B.bookshelf : B.sprucePlanks);
 	}
 	const lights = [
 		{pos: [-6, 4, -3] as Vec3, radius: 11, color: '#ffae5a'},
@@ -150,7 +153,7 @@ const Phones: React.FC = () => (
 	</group>
 );
 
-// ---------- 0–8: лицо ----------
+// ---------- 0–9: лицо ----------
 type FaceKey = {t: number; name: string; f: Partial<FaceState>};
 const FACES: FaceKey[] = [
 	{t: 0, name: 'обычное', f: {}},
@@ -178,13 +181,13 @@ const faceAt = (t: number): {f: FaceState; name: string} => {
 };
 // средний план: усталость → шок → решимость → радость по кругу
 const mediumFace = (t: number): Partial<FaceState> => {
-	const q = (t - BEATS.medium) / 0.35;
+	const q = (t - BEATS.medium) / BEATS.mediumStep;
 	const seq: Partial<FaceState>[] = [{tired: 1}, {shock: 1}, {focus: 1}, {joy: 1, mouth: 0.6}];
 	const i = Math.max(0, Math.min(seq.length - 1, Math.floor(q)));
 	return {...seq[i], blink: autoBlink(t, 3, 1.1)};
 };
 
-// ---------- 8–20: страницы поз ----------
+// ---------- 9–21: страницы поз ----------
 type Slot = {
 	name: string;
 	pose: (ts: number, k: number) => Pose;
@@ -208,9 +211,9 @@ const PAGES: Slot[][] = [
 	[
 		{name: 'flingHat', pose: (_ts, k) => flingHat(k), face: () => ({focus: 0.8})},
 		{name: 'hurlBackpack', pose: (_ts, k) => hurlBackpack(k), face: () => ({focus: 1})},
-		{name: 'sprintStairs', pose: (ts) => sprintStairs(ts * 12), face: () => ({focus: 0.6}), spin: true},
-		{name: 'doorShove', pose: (ts, k) => doorShove(k, sprint(ts * 12)), face: () => ({focus: 1})},
 		{name: 'diveIntoChair', pose: (_ts, k) => diveIntoChair(k), chair: true},
+		{name: 'doorShove', pose: (ts, k) => doorShove(k, sprint(ts * 12)), face: () => ({focus: 1})},
+		{name: 'sprintStairs', pose: (ts) => sprintStairs(ts * 12), face: () => ({focus: 0.6}), spin: true},
 	],
 	[
 		{name: 'sitIdle', pose: (ts) => sitIdle(ts), chair: true, spin: true},
@@ -227,7 +230,7 @@ const PAGES: Slot[][] = [
 		{name: 'joy (лицо)', pose: (ts) => sitIdle(ts), chair: true, face: () => ({joy: 1, mouth: 0.6})},
 	],
 ];
-const SLOT_X = [-3.6, -1.8, 0, 1.8, 3.6];
+const SLOT_X = [-3.2, -1.6, 0, 1.6, 3.2];
 const pageAt = (t: number) => {
 	const i = Math.min(PAGES.length - 1, Math.max(0, Math.floor((t - BEATS.posesFrom) / P)));
 	return {i, ts: t - BEATS.posesFrom - i * P};
@@ -236,7 +239,7 @@ const pageAt = (t: number) => {
 // шапка/рюкзак в позах броска: где они сейчас
 const throwState = (k: number, grab: number, release: number) => (k < grab ? 'body' : k < release ? 'hand' : 'free');
 
-// ---------- 20–28: посадка ----------
+// ---------- 21–29: посадка ----------
 const SEQ_FROM: Vec3 = [1.45, FLOOR, -0.15];
 const SEQ_SEAT: Vec3 = [0, FLOOR + SEAT, 0];
 const seqPose = (t: number): {pose: Pose; face: Partial<FaceState>; pos: Vec3; rot: number; name: string; phones: number} => {
@@ -260,12 +263,13 @@ const seqPose = (t: number): {pose: Pose; face: Partial<FaceState>; pos: Vec3; r
 		const k = prog(t, BEATS.phones, 1.2);
 		return {pose: headphonesOn(k, base), face: {joy: smooth((k - 0.6) * 3) * 0.6, blink}, pos: SEQ_SEAT, rot: 0, name: 'headphonesOn', phones: k};
 	}
+	// кресло доворачивается к камере, корпус — ещё немного (turn у sitWave)
 	const turn = smooth((t - BEATS.wave) / 0.6);
 	return {
 		pose: mixPose(base, sitWave(t, 0.5), turn),
 		face: {joy: 1, mouth: 0.5, blink},
 		pos: SEQ_SEAT,
-		rot: turn * 0.5,
+		rot: turn * 0.6,
 		name: 'sitWave',
 		phones: 1,
 	};
@@ -287,8 +291,8 @@ const camera = (t: number): CameraState => {
 		const {i, ts} = pageAt(t);
 		const seated = i === 2;
 		const az = (seated ? 14 : 0) + Math.sin(ts * 0.9) * 5;
-		const el = seated ? 18 : 8;
-		const d = 8.4;
+		const el = seated ? 16 : 7;
+		const d = 7.4;
 		const a = (az * Math.PI) / 180;
 		const e = (el * Math.PI) / 180;
 		const target: Vec3 = [0, FLOOR + 0.85, 0];
@@ -296,18 +300,19 @@ const camera = (t: number): CameraState => {
 	}
 	return seatCam(t);
 };
-// посадка: сбоку-спереди, мимо монитора
+// посадка: прыжок — спереди-справа; печатает — профиль справа; кнопка — профиль слева, ниже;
+// наушники — 3/4 слева (мимо монитора); машет — в камеру, к которой он развернулся
 const seatCam = flyCam([
-	{t: BEATS.seatFrom, pos: [4.6, FLOOR + 2.1, 2.4], look: [0.6, FLOOR + 1.1, 0], fov: 44},
-	{t: BEATS.dive + 0.9, pos: [4.2, FLOOR + 2.0, 2.0], look: [0.3, FLOOR + 1.1, 0.1], fov: 42},
-	{t: BEATS.typing, pos: [3.2, FLOOR + 1.95, 1.5], look: [0.1, FLOOR + 1.15, 0.15], fov: 40},
-	{t: BEATS.reach - 0.3, pos: [2.9, FLOOR + 1.9, 1.5], look: [0, FLOOR + 1.1, 0.2], fov: 40},
-	{t: BEATS.reach + 0.2, pos: [2.8, FLOOR + 1.3, 1.9], look: [-0.2, FLOOR + 0.8, 0.4], fov: 40},
-	{t: BEATS.phones - 0.15, pos: [2.8, FLOOR + 1.5, 1.7], look: [0, FLOOR + 1.0, 0.3], fov: 40},
-	{t: BEATS.phones + 0.3, pos: [1.7, FLOOR + 2.3, 1.7], look: [0, FLOOR + 1.55, 0], fov: 40},
-	{t: BEATS.wave, pos: [1.7, FLOOR + 2.3, 1.7], look: [0, FLOOR + 1.55, 0], fov: 40},
-	{t: BEATS.wave + 0.7, pos: [2.9, FLOOR + 1.8, 1.6], look: [0, FLOOR + 1.3, 0.1], fov: 40},
-	{t: BEATS.end, pos: [2.8, FLOOR + 1.8, 1.7], look: [0, FLOOR + 1.3, 0.1], fov: 40},
+	{t: BEATS.seatFrom, pos: [3.9, FLOOR + 2.0, 2.5], look: [0.6, FLOOR + 1.0, 0], fov: 44},
+	{t: BEATS.dive + 0.9, pos: [3.6, FLOOR + 1.9, 2.2], look: [0.3, FLOOR + 1.05, 0.1], fov: 42},
+	{t: BEATS.typing + 0.3, pos: [2.6, FLOOR + 1.75, 0.5], look: [0, FLOOR + 1.15, 0.4], fov: 42},
+	{t: BEATS.reach - 0.25, pos: [2.5, FLOOR + 1.7, 0.5], look: [0, FLOOR + 1.12, 0.4], fov: 42},
+	{t: BEATS.reach + 0.2, pos: [-2.5, FLOOR + 1.3, 0.22], look: [-0.2, FLOOR + 0.85, 0.42], fov: 44},
+	{t: BEATS.phones - 0.2, pos: [-2.5, FLOOR + 1.35, 0.22], look: [-0.2, FLOOR + 0.9, 0.42], fov: 44},
+	{t: BEATS.phones + 0.15, pos: [-1.9, FLOOR + 2.25, 2.0], look: [0, FLOOR + 1.55, 0], fov: 40},
+	{t: BEATS.wave, pos: [-1.8, FLOOR + 2.2, 1.9], look: [0, FLOOR + 1.55, 0], fov: 40},
+	{t: BEATS.wave + 0.6, pos: [1.95, FLOOR + 1.9, 1.45], look: [0, FLOOR + 1.4, 0.05], fov: 40},
+	{t: BEATS.end, pos: [1.85, FLOOR + 1.88, 1.4], look: [0, FLOOR + 1.4, 0.05], fov: 40},
 ]);
 
 // ---------- мир ----------
@@ -340,7 +345,8 @@ const World: React.FC<SceneProps> = ({t, cam, assets}) => {
 				{room}
 				{PAGES[i].map((slot, j) => {
 					const x = SLOT_X[j];
-					const rot = slot.turn ? (ts / P) * Math.PI * 2 : slot.spin ? Math.sin(ts * 1.4) * 0.8 : slot.chair ? 0.25 : 0.3;
+					// поворот: turn — полный оборот, spin — качается ±45°, остальные — 3/4 с лёгким покачиванием
+					const rot = slot.turn ? (ts / P) * Math.PI * 2 : slot.spin ? Math.sin(ts * 1.4) * 0.8 : 0.75 + Math.sin(ts * 1.2 + j) * 0.4;
 					let pose = slot.pose(ts, k);
 					let pos: Vec3 = [x, FLOOR + (slot.chair ? SEAT : 0), 0];
 					let rotY = rot;
@@ -362,8 +368,11 @@ const World: React.FC<SceneProps> = ({t, cam, assets}) => {
 					};
 					return (
 						<React.Fragment key={slot.name}>
-							{slot.chair ? <Chair p={[x, FLOOR, 0]} rot={0} /> : null}
-							{slot.desk ? <Desk p={[x, FLOOR, 0]} /> : null}
+							{/* кресло и стол поворачиваются вместе с сидящим */}
+							<group position={[x, FLOOR, 0]} rotation={[0, slot.name === 'diveIntoChair' ? 0.25 : rotY, 0]}>
+								{slot.chair ? <Chair p={[0, 0, 0]} /> : null}
+								{slot.desk ? <Desk p={[0, 0, 0]} /> : null}
+							</group>
 							<BlobShadow x={pos[0]} z={pos[2]} y={FLOOR} size={1.2} opacity={0.4} />
 							<Humanoid
 								skin={assets.skin}

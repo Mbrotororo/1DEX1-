@@ -3,16 +3,18 @@
 export const BEATS = {
 	// крупно лицо
 	faceFrom: 0,
+	// средний план: 4 выражения по 0.6 с
 	medium: 6.6,
+	mediumStep: 0.6,
 	// страницы поз (по 3 с)
-	posesFrom: 8,
+	posesFrom: 9,
 	page: 3,
 	// посадка за компьютер
-	seatFrom: 20,
-	dive: 20.2,
-	typing: 21.2,
-	reach: 22.8,
-	phones: 24.0,
-	wave: 25.4,
-	end: 28,
+	seatFrom: 21,
+	dive: 21.2,
+	typing: 22.2,
+	reach: 23.8,
+	phones: 25.0,
+	wave: 26.4,
+	end: 29,
 };

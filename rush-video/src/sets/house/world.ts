@@ -58,7 +58,7 @@ const buildInterior = () => {
 	// южная (входная) стена: кирпич вокруг двери, дальше доски с окнами
 	w.fill(-1, 0, 7, 4, 3, 7, HB.bricks);
 	w.fill(2, 0, 7, 2, 1, 7, 0); // дверной проём
-	w.fill(1, 2, 7, 3, 2, 7, B.darkLogX); // перемычка
+	w.fill(1, 2, 7, 3, 2, 7, HB.darkLogX); // перемычка
 	w.fill(5, 0, 7, 14, 0, 7, HB.panel);
 	w.fill(6, 1, 7, 7, 2, 7, HB.windowZ);
 	w.fill(10, 1, 7, 11, 2, 7, HB.windowZ);
@@ -92,13 +92,20 @@ const buildInterior = () => {
 		const top = 0.5 * (k + 1);
 		const full = Math.floor(top);
 		if (full > 0) w.fill(x, 0, 0, x, full - 1, 2, S);
-		if (top > full) w.fill(x, full, 0, x, full, 2, B.spruceSlab);
+		// верхняя клетка ступени: с подступенком, по середине (z = 1) — дорожка
+		if (top > full) {
+			w.fill(x, full, 0, x, full, 2, HB.stepSlab);
+			w.set(x, full, 1, HB.stepSlabRunner);
+		} else {
+			w.fill(x, full - 1, 0, x, full - 1, 2, HB.step);
+			w.set(x, full - 1, 1, HB.stepRunner);
+		}
 	}
 	// встроенные полки и сундук под лестницей (смотрят в прихожую)
 	w.fill(10, 0, 2, 13, 1, 2, HB.bookshelf);
 	w.set(8, 0, 2, B.chest);
 	// стены пролёта: северная — доски с балкой на уровне второго этажа, южная (над потолком прихожей) — штукатурка
-	w.fill(5, 4, -1, 19, 4, -1, B.darkLogX);
+	w.fill(5, 4, -1, 19, 4, -1, HB.darkLogX);
 	w.fill(5, 5, -1, 19, 8, -1, HB.plaster);
 	w.fill(5, 5, 3, 19, 8, 3, HB.plaster);
 	w.fill(14, 5, -1, 19, 5, -1, HB.panel);
@@ -125,10 +132,10 @@ const buildInterior = () => {
 	w.fill(20, 5, 2, 20, 5, 9, HB.panel);
 	w.fill(31, 5, 0, 31, 5, 10, HB.panel);
 	w.fill(21, 6, 0, 26, 8, 0, HB.plaster); // за постером
-	w.fill(20, 7, 0, 20, 7, 2, B.darkLogZ); // перемычка над дверью
+	w.fill(20, 7, 0, 20, 7, 2, HB.darkLogZ); // перемычка над дверью
 	// окно за столом с рамой из тёмного дуба
 	w.fill(31, 6, 4, 31, 7, 6, HB.windowX);
-	w.fill(31, 8, 3, 31, 8, 7, B.darkLogZ);
+	w.fill(31, 8, 3, 31, 8, 7, HB.darkLogZ);
 	for (const [x, z] of [
 		[20, 0],
 		[20, 10],
@@ -148,14 +155,11 @@ const buildInterior = () => {
 
 	// 9. Комната: мебель из блоков
 	w.fill(27, 5, 1, 30, 7, 1, HB.bookshelf); // северная стена
-	w.fill(30, 5, 2, 30, 7, 2, HB.bookshelf); // угол у окна
 	w.fill(30, 5, 8, 30, 6, 9, HB.bookshelf); // справа от стола
 	w.fill(27, 5, 9, 29, 6, 9, HB.bookshelf); // южная стена
 	w.fill(21, 5, 9, 21, 6, 9, HB.bookshelf); // угол у штатива
 	w.set(26, 5, 9, B.chestNz); // тумбочка у кровати
-	// кровать: изголовье у южной стены
-	w.fill(24, 5, 7, 25, 5, 8, HB.bed);
-	w.fill(24, 5, 9, 25, 5, 9, HB.bedHead);
+	// кровать — модель (props/decor Bed), место x = 24..26, z = 7.1..10
 	// ковёр
 	for (let x = 23; x <= 28; x++) {
 		for (let z = 3; z <= 6; z++) {
@@ -168,20 +172,21 @@ const buildInterior = () => {
 
 // Улица: снежная земля, тропинка, ели. Под домом пусто.
 const buildExterior = () => {
-	const w = new VoxelWorld([-44, -6, -38], [96, 34, 76]);
+	// севернее дома (z < −14) ничего не видно ни из одного окна — там мир не строим
+	const w = new VoxelWorld([-44, -6, -14], [96, 34, 76]);
 	// равнина у дома, дальше — пологие холмы
 	const height = (x: number, z: number) => {
 		const d = Math.max(0, Math.hypot((x - 15) * 0.8, z - 5) - 22);
 		const hills = fbm2(x * 0.035, z * 0.035, 3, 7) * Math.min(1, d / 20) * 12;
 		return -1 + Math.round(hills);
 	};
-	w.heightmap(height, {block: strata(B.snowyGrass), depth: 3});
+	w.heightmap(height, {block: strata(B.snowyGrass), depth: 2});
 	// под домом — пусто (там стоит интерьер)
 	w.fill(-1, -6, -1, 15, 34, 7, 0);
 	w.fill(15, -6, -1, 31, 34, 10, 0);
 	// сугробы-слои
-	for (let x = -40; x <= 92; x++) {
-		for (let z = -34; z <= 72; z++) {
+	for (let x = -30; x <= 70; x++) {
+		for (let z = -12; z <= 50; z++) {
 			if (hash3(x, 0, z, 41) < 0.06) {
 				const top = w.topAt(x, z);
 				if (top !== null && w.get(x, top, z) === B.snowyGrass) w.setIfAir(x, top + 1, z, B.snowLayer2);
@@ -233,7 +238,7 @@ export const getHouse = once((): HouseSet => {
 	const interior = buildInterior();
 	const exterior = buildExterior();
 	const meshes = buildVoxelMeshes(interior, {ambient: INTERIOR_AMBIENT, ambientColor: INTERIOR_AMBIENT_COLOR, lights: BAKED_LIGHTS, ao: 1, cull: {bottom: true, sides: true, top: true}});
-	const extMeshes = buildVoxelMeshes(exterior, {ambient: 1, cull: {bottom: true}});
+	const extMeshes = buildVoxelMeshes(exterior, {ambient: 1, cull: {bottom: true, sides: true}});
 	return {interior, exterior, meshes, extMeshes};
 });
 

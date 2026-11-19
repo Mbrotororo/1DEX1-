@@ -239,6 +239,32 @@ export const postTrack = (t: number, keys: [number, PostSettings][]): PostSettin
 	return keys[keys.length - 1][1];
 };
 
+// Цветокоррекция не нейтральна (нужен проход цвета)
+export const gradeOn = (s: PostSettings): boolean =>
+	Math.abs(s.exposure) > 1e-4 ||
+	Math.abs(s.contrast - 1) > 1e-4 ||
+	Math.abs(s.saturation - 1) > 1e-4 ||
+	Math.abs(s.warmth) > 1e-4 ||
+	Math.abs(s.tint) > 1e-4 ||
+	s.split > 1e-4 ||
+	Math.abs(s.lift) > 1e-4 ||
+	Math.abs(s.gain - 1) > 1e-4;
+
+// Настройки ничего не меняют: кадр рисуется напрямую, как без постобработки (тот же MSAA, те же пиксели)
+export const postIsNeutral = (s: PostSettings): boolean =>
+	s.dof <= 0.3 &&
+	s.bloom <= 0.001 &&
+	s.vignette <= 0.001 &&
+	s.grain <= 0.001 &&
+	s.chroma <= 0.3 &&
+	s.smear <= 0.5 &&
+	s.flash <= 0.001 &&
+	Math.abs(s.gamma - 1) <= 1e-4 &&
+	!gradeOn(s);
+
+// Те же настройки с фокусом на точке мира: {...withFocus(POST.closeUp, cam, HEAD)}
+export const withFocus = (s: PostSettings, cam: CameraState, p: Vec3): PostSettings => ({...s, focus: focusDist(cam, p)});
+
 // Расстояние от камеры до точки по оси взгляда (то, что нужно в focus)
 export const focusDist = (cam: CameraState, p: Vec3): number => {
 	const f = cam.forward;
@@ -258,3 +284,8 @@ export const cocAt = (s: PostSettings, z: number): number => {
 	const d = Math.max(0, Math.abs(z - s.focus) - s.focusRange * 0.5) / Math.max(0.05, z);
 	return s.dof * Math.min(1, d) * (z < s.focus ? s.nearBlur : 1);
 };
+
+// Длина смаза (пиксели при 1080p) для поворота камеры на dAngle радиан за один кадр (1/60 с).
+// shutter — доля кадра, когда «открыт затвор» (0.5 — киношные 180°). fov — вертикальный, градусы.
+export const whipSmear = (dAngle: number, fov: number, shutter = 0.5): number =>
+	(Math.abs(dAngle) * shutter * 540) / Math.tan(((fov * Math.PI) / 180) * 0.5);

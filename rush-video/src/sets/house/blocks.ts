@@ -112,14 +112,12 @@ defineTile('hs_window', (x, y) => {
 
 // ковёр: кайма и середина (каждый блок — свой узор, складываются в лоскутный ковёр)
 defineTile('hs_rug_border', (x, y) => {
-	const e = Math.min(x, y, 15 - x, 15 - y);
-	if (e === 0) return [60, 22, 20];
-	if (e === 1) return [196, 150, 70];
-	if (e === 2) return [120, 34, 30];
-	const d = Math.abs(x - 7.5) + Math.abs(y - 7.5);
-	if (d < 2) return [214, 176, 92];
-	if (d < 3) return [60, 30, 40];
-	return shade([132, 38, 34], 0.92 + hash3(x, y, 20, 520) * 0.12);
+	// бесшовная кайма: тёмно-красная основа, решётка маленьких золотых ромбиков с периодом 8 px
+	const d = Math.abs((x & 7) - 3.5) + Math.abs((y & 7) - 3.5);
+	if (d < 1.1) return [214, 170, 88];
+	if (d < 2.1) return [58, 26, 34];
+	if (d > 6.4) return [70, 22, 22];
+	return shade([116, 32, 28], 0.92 + hash3(x, y, 20, 520) * 0.12);
 });
 defineTile('hs_rug_center', (x, y) => {
 	const d = Math.abs(x - 7.5) + Math.abs(y - 7.5);
@@ -174,6 +172,25 @@ defineTile('hs_bed_head', (x, y) => {
 	return plaid(x, y);
 });
 
+// подступенок: тёмные доски, светлый кант носка ступени каждые 8 пикселей (видна то верхняя, то нижняя половина)
+defineTile('hs_riser', (x, y) => {
+	const r = y & 7;
+	if (r === 0) return shade([132, 96, 58], 0.95 + hash3(x, y, 28, 528) * 0.1);
+	if (r === 1) return [40, 27, 16];
+	if ((x & 7) === 7 && r > 1) return [46, 32, 20];
+	return shade([76, 52, 32], 0.9 + hash3(x >> 3, y >> 3, 29, 529) * 0.12 + hash3(x, y, 30, 530) * 0.05);
+});
+// подступенок под дорожкой: дорожка свисает с носка
+defineTile('hs_riser_runner', (x, y) => {
+	const r = y & 7;
+	if (x === 0 || x === 15) return shade([76, 52, 32], 0.95);
+	if (x === 1 || x === 14) return [70, 24, 22];
+	if (x === 2 || x === 13) return [190, 146, 70];
+	if (r === 0) return [150, 44, 38];
+	if (r === 7) return [72, 20, 18];
+	return shade([118, 34, 32], 0.9 + hash3(x, y, 31, 531) * 0.12);
+});
+
 // ---------- блоки ----------
 const carpet = (tile: string) => ({all: tile, shape: 'box' as const, box: [0, 0, 0, 1, 1 / 16, 1] as [number, number, number, number, number, number], snow: false});
 
@@ -194,6 +211,11 @@ export const HB = {
 	mat: defineBlock('hsMat', {all: 'hs_mat', shape: 'box', box: [0.06, 0, 0.1, 0.94, 1 / 16, 0.9], snow: false}),
 	bed: defineBlock('hsBed', {top: 'hs_quilt', side: 'hs_bed_side', bottom: 'dark_planks', shape: 'box', box: [0, 0, 0, 1, 9 / 16, 1], snow: false}),
 	bedHead: defineBlock('hsBedHead', {top: 'hs_bed_head', side: 'hs_bed_side', bottom: 'dark_planks', shape: 'box', box: [0, 0, 0, 1, 9 / 16, 1], snow: false}),
+	// ступени лестницы: целый блок и полублок, с подступенком (−x) и дорожкой по середине
+	step: defineBlock('hsStep', {all: 'spruce_planks', nx: 'hs_riser'}),
+	stepSlab: defineBlock('hsStepSlab', {all: 'spruce_planks', nx: 'hs_riser', shape: 'box', box: [0, 0, 0, 1, 0.5, 1]}),
+	stepRunner: defineBlock('hsStepRunner', {all: 'spruce_planks', top: 'hs_runner', nx: 'hs_riser_runner'}),
+	stepSlabRunner: defineBlock('hsStepSlabRunner', {all: 'spruce_planks', top: 'hs_runner', nx: 'hs_riser_runner', shape: 'box', box: [0, 0, 0, 1, 0.5, 1]}),
 	// подоконник/полка: полублок сверху клетки
 	shelf: defineBlock('hsShelf', {all: 'spruce_planks', shape: 'box', box: [0, 0.75, 0, 1, 0.875, 1], snow: false}),
 };

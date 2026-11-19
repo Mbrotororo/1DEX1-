@@ -87,11 +87,12 @@ export const Beanie: React.FC<BeanieProps> = ({mode = 'worn', position, rotation
 };
 
 // ---------- рюкзак ----------
-const BAG = '#2a2f3d';
-const BAG_D = '#1f2330';
-const ACC = '#6a50a8';
-const ZIP = '#c4c6d0';
-const STRAP = '#1b1e27';
+// синий рюкзак: читается и на фиолетовой рубашке, и на тёмном полу
+const BAG = '#2f5378';
+const BAG_D = '#22405e';
+const ACC = '#1c2c40';
+const ZIP = '#d8dce4';
+const STRAP = '#16202c';
 
 const bagGeo = () =>
 	cachedGeo('backpack', () => {

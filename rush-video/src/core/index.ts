@@ -47,3 +47,7 @@ export {BADGE_AREA} from './player';
 // --- rig: мимика героя и точки скелета (src/core/chars/README.md)
 export {FACE_NEUTRAL, mixFace, blinkAt, autoBlink, faceTextures, type FaceState, type FaceTextures} from './chars/face';
 export {handAnchor, backAnchor, headAnchor, worldPoint} from './chars/anchors';
+
+// --- look: постобработка («киношный» вид) и видоискатель камеры (src/core/post/README.md)
+export {POST, POST_NEUTRAL, post, mixPost, postTrack, focusDist, rackFocus, withFocus, cocAt, whipSmear, postIsNeutral, type PostSettings, type PostPresetName} from './post';
+export {Viewfinder, formatTimecode, useInterFont, UI_FONT, type ViewfinderProps} from './hud/rec';

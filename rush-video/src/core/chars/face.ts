@@ -100,10 +100,10 @@ const geoOf = (f: FaceState): Geo => {
 	const caret = j >= 0.5 && s < 0.3;
 	const white = !caret && s >= 0.3;
 	const mode = caret ? 2 : white ? 1 : 0;
-	// шок раздувает глаз: шире и выше (под чёлку)
-	const x0 = 4 - Math.round(s * 1.4);
-	const x1 = 12 + Math.round(s * 1.4);
-	const y0 = 20 - Math.round(s * 3.4);
+	// шок раздувает глаз: шире и выше (под чёлку), вытянутый прямоугольник ~11x7 субпикселей
+	const x0 = 4 - Math.round(s * 2);
+	const x1 = 12 + Math.round(s * 1.2);
+	const y0 = 20 - Math.round(s * 2.4);
 	const y1 = 24 + Math.round(s * 1.2);
 	// веки: усталость и прищур закрывают, шок открывает, моргание закрывает до конца
 	let close = clamp01(tr * 0.62 + fo * 0.3 - s * 0.6);
@@ -182,10 +182,10 @@ const mix = (a: Rgba, b: number[], k: number): Rgba => [
 ];
 const mul = (a: Rgba, f: number): Rgba => [Math.round(a[0] * f), Math.round(a[1] * f), Math.round(a[2] * f), a[3]];
 
-const WHITE: Rgba = [244, 242, 238, 255];
+// белок чуть холоднее белого: в тёплом свете интерьера остаётся белым, а не кремовым
+const WHITE: Rgba = [236, 242, 255, 255];
 const PUPIL: Rgba = [14, 10, 10, 255];
 const LASH: Rgba = [30, 18, 18, 255];
-const RIM: Rgba = [36, 22, 22, 255];
 const MOUTH: Rgba = [40, 16, 16, 255];
 const MOUTH_IN: Rgba = [118, 40, 44, 255];
 const TEETH: Rgba = [240, 236, 228, 255];
@@ -194,10 +194,12 @@ const BLUSH = [238, 104, 118];
 
 // ---------- рисование ----------
 
-type Painted = {face: Uint8Array; hat: Uint8Array | null};
+// glow — маска свечения белков (шок): белки читаются белыми и в тёплом тёмном свете
+type Painted = {face: Uint8Array; hat: Uint8Array | null; glow: Uint8Array | null};
 
 const paint = (px: Uint8ClampedArray, g: Geo): Painted => {
 	const face = new Uint8Array(N * N * 4);
+	const glow = g.mode === 1 ? new Uint8Array(N * N * 4) : null;
 	const put = (x: number, y: number, c: Rgba) => {
 		if (x < 0 || y < 0 || x >= N || y >= N) return;
 		const i = (y * N + x) * 4;
@@ -205,6 +207,13 @@ const paint = (px: Uint8ClampedArray, g: Geo): Painted => {
 		face[i + 1] = c[1];
 		face[i + 2] = c[2];
 		face[i + 3] = 255;
+		if (glow) {
+			const w = c === WHITE ? 255 : 0;
+			glow[i] = w;
+			glow[i + 1] = w;
+			glow[i + 2] = w;
+			glow[i + 3] = 255;
+		}
 	};
 	const get = (x: number, y: number): Rgba => {
 		const i = (y * N + x) * 4;
@@ -264,12 +273,17 @@ const paint = (px: Uint8ClampedArray, g: Geo): Painted => {
 				let c: Rgba;
 				if (lidY > g.y0 && row < lidY - 1) c = lid;
 				else if (lidY > g.y0 && row === lidY - 1) c = LASH;
-				else if (g.mode === 1) c = u === g.x0 || u === g.x1 - 1 || row === bottom - 1 ? RIM : WHITE;
+				else if (g.mode === 1) c = WHITE;
 				else c = u >= g.x1 - 4 ? eyeIn : eyeOut;
 				put(x, y, c);
 			}
 			// закрытый глаз — ресницы по нижнему краю
 			if (lidY >= bottom) put(x, bottom - 1 + shiftY + sh, LASH);
+			// под белым глазом — тень нижнего века (белок не сливается с бледной кожей)
+			else if (g.mode === 1) {
+				const y = bottom + shiftY + sh;
+				put(x, y, mul(get(x, y), 0.62));
+			}
 		}
 		if (g.mode === 1) {
 			// зрачок: по центру белка + взгляд, не вылезает за белок
@@ -348,12 +362,13 @@ const paint = (px: Uint8ClampedArray, g: Geo): Painted => {
 			}
 		}
 	}
-	return {face, hat};
+	return {face, hat, glow};
 };
 
 // ---------- кэш текстур ----------
 
-export type FaceTextures = {face: THREE.Texture; hat: THREE.Texture | null};
+// face — передняя грань головы, hat — чёлка с «окнами» (или null), glow — маска свечения белков (или null)
+export type FaceTextures = {face: THREE.Texture; hat: THREE.Texture | null; glow: THREE.Texture | null};
 const cache = new Map<string, FaceTextures>();
 const MAX_CACHED = 48;
 
@@ -379,7 +394,7 @@ export const faceTextures = (skin: Skin, state: Partial<FaceState>): FaceTexture
 		return hit;
 	}
 	const p = paint(px, g);
-	const made: FaceTextures = {face: toTexture(p.face, 8), hat: p.hat ? toTexture(p.hat, 40) : null};
+	const made: FaceTextures = {face: toTexture(p.face, 8), hat: p.hat ? toTexture(p.hat, 40) : null, glow: p.glow ? toTexture(p.glow, 8) : null};
 	cache.set(key, made);
 	while (cache.size > MAX_CACHED) {
 		const oldest = cache.keys().next().value as string;
@@ -387,6 +402,7 @@ export const faceTextures = (skin: Skin, state: Partial<FaceState>): FaceTexture
 		cache.delete(oldest);
 		old?.face.dispose();
 		old?.hat?.dispose();
+		old?.glow?.dispose();
 	}
 	return made;
 };
