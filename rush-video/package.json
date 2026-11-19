@@ -1,0 +1,35 @@
+{
+  "name": "rush-video",
+  "version": "1.0.0",
+  "private": true,
+  "description": "1DEX1 — «Опоздал на вайп»: 30-секундная Minecraft-анимация (Remotion + three.js)",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "sounds": "tsx scripts/fetch-sounds.ts",
+    "mix": "tsx scripts/mix-audio.ts",
+    "audio": "tsx scripts/fetch-sounds.ts && tsx scripts/mix-audio.ts",
+    "shots": "tsx scripts/shots.ts",
+    "preview": "tsx scripts/preview.ts",
+    "dev": "npm run audio && remotion studio",
+    "render": "npm run audio && remotion render RushVideo out/opozdal-na-vaip.mp4"
+  },
+  "dependencies": {
+    "@react-three/fiber": "^9.8.2",
+    "@remotion/bundler": "4.0.542",
+    "@remotion/cli": "4.0.542",
+    "@remotion/renderer": "4.0.542",
+    "@remotion/three": "4.0.542",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "remotion": "4.0.542",
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/three": "^0.187.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
