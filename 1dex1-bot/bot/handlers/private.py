@@ -55,7 +55,8 @@ async def on_start(message: Message, app: App) -> None:
         await message.answer(texts.NOT_ALLOWED + f"\n\nТвой ID: <code>{user.id}</code>")
         return
     connected = app.db.active_connection_of(user.id) is not None
-    await message.answer(texts.start_text(esc(user_full_name(user)), user.id, connected))
+    await message.answer(texts.start_text(esc(user_full_name(user)), user.id, connected,
+                                          app.config.cache_days))
 
 
 async def on_help(message: Message) -> None:
