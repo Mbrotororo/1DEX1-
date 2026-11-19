@@ -229,7 +229,7 @@ export const drawChat = (ctx: Ctx, t: number, st: ChatState) => {
 
 	// основная область: текстовый канал → голосовой вид
 	drawTextView(ctx, t);
-	if (j > 0) withAlpha(ctx, clamp01(j * 1.4), () => drawVoiceView(ctx, t, st));
+	if (j > 0) withAlpha(ctx, clamp01(j * 1.4), () => drawVoiceView(ctx, st));
 };
 
 // Текстовый канал «общий»: сообщения-заглушки
@@ -278,7 +278,7 @@ const drawTextView = (ctx: Ctx, _t: number) => {
 };
 
 // Голосовой канал «запись»: плитка с аватаром героя и кнопки внизу
-const drawVoiceView = (ctx: Ctx, t: number, st: ChatState) => {
+const drawVoiceView = (ctx: Ctx, st: ChatState) => {
 	fillRect(ctx, 350, 26, 930, 694, '#0f1012');
 	speaker(ctx, 374, 56, 20, COL.head);
 	text(ctx, 'запись', 394, 56, {size: 18, weight: 700, color: COL.head});
@@ -338,6 +338,4 @@ const drawVoiceView = (ctx: Ctx, t: number, st: ChatState) => {
 			ctx.lineCap = 'butt';
 		} else fillRR(ctx, x - 11, by - 8, 22, 16, 4, '#ffffff');
 	});
-	// мерцание уровня голоса под плиткой (детерминированно)
-	void t;
 };

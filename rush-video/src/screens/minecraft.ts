@@ -3,7 +3,7 @@ import {blitPixels, getDirt, getGrassIcon, getStone, getWallpaper, tile} from '.
 import {screenAssets} from './assets';
 import {fillRect, withAlpha, type Ctx} from './draw';
 import {drawGame} from './game';
-import {drawPixelText, pixelWidth} from './pixelfont';
+import {drawPixelText, pixelWidthOn} from './pixelfont';
 
 // Интерфейс Minecraft (масштаб интерфейса 3, как в игре при 720p): загрузка, главное меню,
 // «Сетевая игра» со строкой сервера HolyWorld, подключение. Шрифт — пиксельный шрифт ядра.
@@ -101,7 +101,7 @@ export const drawMcMenu = (ctx: Ctx, t: number, hoverMulti: boolean, press = 0) 
 	// заголовок: значок травы и «Minecraft» пиксельным шрифтом (не логотип игры)
 	const title = 'Minecraft';
 	const px = 9;
-	const tw = pixelWidth(title) * px;
+	const tw = pixelWidthOn(ctx, title, px);
 	const iw = 120;
 	const x0 = 640 - (tw + iw + 24) / 2;
 	ctx.drawImage(getGrassIcon(), x0, 92, iw, iw);
@@ -174,11 +174,11 @@ export const drawMcServers = (ctx: Ctx, t: number, st: McListState) => {
 	drawPixelText(ctx, 'HolyWorld', tx, ry + U * 2, {px: U, color: '#ffffff'});
 	const motd = 'Лайт Анархия · ';
 	drawPixelText(ctx, motd, tx, ry + U * 14, {px: U, color: '#ffaa00'});
-	drawPixelText(ctx, 'ВАЙП', tx + (pixelWidth(motd) + 1) * U, ry + U * 14, {px: U, color: '#ff5555'});
+	drawPixelText(ctx, 'ВАЙП', tx + pixelWidthOn(ctx, motd, U) + U, ry + U * 14, {px: U, color: '#ff5555'});
 	drawPixelText(ctx, 'mc.holyworld.ru', tx, ry + U * 24, {px: U, color: '#8f8f8f'});
 	// онлайн и пинг (онлайн чуть растёт со временем)
 	const online = `${2187 + Math.floor(t * 3) % 40}/5000`;
-	drawPixelText(ctx, online, rx + rw - U * 16, ry + U * 2, {px: U, color: '#aaaaaa', align: 'right'});
+	drawPixelText(ctx, online, rx + rw - U * 19, ry + U * 2, {px: U, color: '#aaaaaa', align: 'right'});
 	pingBars(ctx, rx + rw - U * 12, ry + U * 1);
 	// ещё два сервера — без читаемых надписей
 	for (let i = 0; i < 2; i++) {
@@ -203,8 +203,8 @@ export const drawMcConnecting = (ctx: Ctx, k: number) => {
 	tile(ctx, getDirt(), 0, 0, 1280, 720, U * 2, 0.55);
 	const a = screenAssets();
 	if (a) {
-		const s = 1 + easeOutCubic(clamp01(k / 0.25)) * 0.0;
-		const h = 200 * s;
+		// логотип чуть «выезжает» в начале
+		const h = 190 + 10 * easeOutCubic(clamp01(k / 0.25));
 		const w = (a.holyworld.width / a.holyworld.height) * h;
 		ctx.drawImage(a.holyworld, 640 - w / 2, 230 - h / 2 + 20, w, h);
 	}

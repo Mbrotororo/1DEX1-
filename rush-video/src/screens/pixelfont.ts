@@ -61,6 +61,13 @@ export const pixelWidth = (text: string) => {
 	return Math.max(0, w - 1);
 };
 
+// Ширина строки в логических px так, как она реально ляжет на этот холст (с округлением пикселя шрифта)
+export const pixelWidthOn = (ctx: CanvasRenderingContext2D, text: string, px: number) => {
+	const m = ctx.getTransform();
+	const s = Math.hypot(m.a, m.b);
+	return (pixelWidth(text) * Math.max(1, Math.round(px * s))) / s;
+};
+
 export type PixelTextOpts = {
 	// размер пикселя шрифта (логические px экрана)
 	px?: number;
@@ -75,13 +82,13 @@ export type PixelTextOpts = {
 export const drawPixelText = (ctx: CanvasRenderingContext2D, text: string, x: number, y: number, opts: PixelTextOpts = {}) => {
 	const {px = 2, color = '#ffffff', shadow = '#3f3f3f', align = 'left', alpha = 1} = opts;
 	if (alpha <= 0) return;
-	const w = pixelWidth(text) * px;
-	const x0 = align === 'center' ? x - w / 2 : align === 'right' ? x - w : x;
 	const m = ctx.getTransform();
 	const s = Math.hypot(m.a, m.b);
-	// рисуем в пикселях устройства: целый размер пикселя шрифта
+	// рисуем в пикселях устройства: целый размер пикселя шрифта, выравнивание — тоже по нему
 	const p = Math.max(1, Math.round(px * s));
-	const ox = Math.round(m.e + x0 * s);
+	const w = pixelWidth(text) * p;
+	const ax = m.e + x * s;
+	const ox = Math.round(align === 'center' ? ax - w / 2 : align === 'right' ? ax - w : ax);
 	const oy = Math.round(m.f + y * s);
 	ctx.save();
 	ctx.setTransform(1, 0, 0, 1, 0, 0);

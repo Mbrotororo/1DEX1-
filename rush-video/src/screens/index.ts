@@ -3,7 +3,7 @@
 
 export {UI_FONT, loadScreenAssets, screenAssets, useScreenAssets, type ScreenAssets} from './assets';
 export {SW, SH, paintScreen, cursorAt, pressAt, drawCursor, drawRipples, greek, text, windowIn, type Ctx, type ScreenDraw, type CursorKey, type Click} from './draw';
-export {drawPixelText, pixelWidth, type PixelTextOpts} from './pixelfont';
+export {drawPixelText, pixelWidth, pixelWidthOn, type PixelTextOpts} from './pixelfont';
 export {DESKTOP_ICONS, drawDesktop, drawTaskbar, drawAppIcon, type AppId, type DesktopState} from './desktop';
 export {MC_MENU, MC_LIST, mcButton, drawMcLoading, drawMcMenu, drawMcServers, drawMcConnecting, drawMcGame, loadingCurve, type McListState} from './minecraft';
 export {CHAT_VOICE_ROW, CHAT_TEXT_ROW, drawChat, speakingAt, type ChatState} from './discord';

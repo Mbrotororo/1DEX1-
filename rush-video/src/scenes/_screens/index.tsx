@@ -78,7 +78,7 @@ const monCam = flyCam([
 	{t: 4.8, pos: [0.55, 1.5, -0.3], look: [0.5, 1.42, -1.6], fov: 40},
 ]);
 // 12–16: камера на штативе сбоку-сзади
-const recCam = (ts: number) => shake(lookCam([2.7, 1.9, 2.9], [0.3, 1.25, -0.9], 42), 0.008, ts, 7, 1.3);
+const recCam = (ts: number) => shake(lookCam([3.3, 2.0, 3.6], [0.3, 1.25, -0.9], 42), 0.008, ts, 7, 1.3);
 
 const camera = shots([
 	{from: BEATS.pov, cam: () => lookCam([0.5, 1.5, 0.5], [0.5, 1.42, -1.6], 40)},
