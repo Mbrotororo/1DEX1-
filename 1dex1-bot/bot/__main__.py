@@ -96,7 +96,7 @@ async def main() -> None:
         log.info("Бот @%s (id %s) запускается", me.username, me.id)
         if not me.can_connect_to_business:
             log.warning(
-                "‼️  У бота выключен Secretary Mode (раньше назывался Business Mode). "
+                "‼️  У бота выключен Secretary Mode (он же Chat Access Mode, раньше Business Mode). "
                 "Открой @BotFather → /mybots → @%s → Bot Settings → Secretary Mode → Turn on. "
                 "Без этого бота нельзя подключить к аккаунту.", me.username,
             )

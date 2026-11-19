@@ -41,7 +41,9 @@
 
 ### 1. Включи Secretary Mode в @BotFather
 
-`@BotFather` → `/mybots` → `@my1dex1_bot` → **Bot Settings** → **Secretary Mode** (раньше «Business Mode») → включить.
+`@BotFather` → `/mybots` → `@my1dex1_bot` → **Bot Settings** → **Secretary Mode** → включить.
+(Этот режим ещё может называться **Chat Access Mode**, раньше — **Business Mode**. Если в меню чата
+BotFather его нет, открой BotFather Mini App → свой бот → настройки.)
 Без этого бота нельзя подключить к аккаунту. При запуске бот сам напишет в логе, если режим выключен.
 
 ### 2. Положи токен в `.env`
