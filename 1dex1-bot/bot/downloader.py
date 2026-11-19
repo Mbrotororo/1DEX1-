@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import shutil
+import sys
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -118,12 +120,26 @@ def _base_opts(cfg: Config, workdir: Path) -> dict:
     }
     if cfg.ytdlp_cookies and cfg.ytdlp_cookies.exists():
         opts["cookiefile"] = str(cfg.ytdlp_cookies)
+    runtimes = _js_runtimes(cfg)
+    if runtimes:
+        opts["js_runtimes"] = runtimes
+    return opts
+
+
+def _js_runtimes(cfg: Config) -> dict[str, dict[str, str | None]] | None:
+    """JS-движок, без которого yt-dlp не умеет YouTube (deno 2.3+ или node 22+)."""
     if cfg.ytdlp_js_runtime:
         name, _, path = cfg.ytdlp_js_runtime.partition(":")
-        opts["js_runtimes"] = {name.lower(): {"path": path or None}}
-    elif shutil.which("deno") is None and shutil.which("node"):
-        opts["js_runtimes"] = {"node": {"path": None}}
-    return opts
+        return {name.lower(): {"path": path or None}}
+    # deno из requirements.txt лежит рядом с python в venv — находим его, даже если venv не активирован
+    local = Path(sys.executable).parent / ("deno.exe" if os.name == "nt" else "deno")
+    if local.exists():
+        return {"deno": {"path": str(local)}}
+    if shutil.which("deno"):
+        return {"deno": {"path": None}}
+    if shutil.which("node"):
+        return {"node": {"path": None}}
+    return None
 
 
 def _friendly(err: Exception, site: str) -> str:

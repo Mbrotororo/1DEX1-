@@ -2,3 +2,5 @@ aiogram==3.33.0
 aiosqlite==0.22.1
 python-dotenv==1.2.4
 yt-dlp[default]==2026.10.26
+# JS-движок для YouTube (yt-dlp нужен deno 2.3+ или node 22+); ставится прямо в venv на любой ОС
+deno==2.9.8

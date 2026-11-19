@@ -73,6 +73,46 @@ docker compose logs -f
 
 Бот работает, пока запущен. Чтобы он был онлайн всегда, запусти его на VPS или на ПК, который не выключается.
 
+**Android-телефон (Termux):** см. раздел [«Запуск на телефоне»](#запуск-на-телефоне-android) ниже.
+
+### Запуск на телефоне (Android)
+
+Пользоваться командами можно с любого телефона, где есть Telegram. А *запустить* самого бота можно на
+Android через Termux. На iPhone так не выйдет: iOS не даёт программам работать в фоне.
+
+1. Поставь **Termux** из [F-Droid](https://f-droid.org/packages/com.termux/) или с GitHub.
+   Версия из Google Play устарела и не работает.
+2. В Termux выполни по очереди (внутри ставится Debian, поэтому ничего не надо компилировать):
+
+   ```bash
+   pkg update -y && pkg install -y proot-distro
+   proot-distro install debian
+   proot-distro login debian
+   ```
+
+3. Теперь ты внутри Debian. Ставим бота:
+
+   ```bash
+   apt update && apt install -y python3 python3-venv git ffmpeg nano
+   git clone -b ccr-f620085a-dcw2yg https://github.com/Mbrotororo/1DEX1-.git
+   cd 1DEX1-/1dex1-bot
+   cp .env.example .env
+   nano .env        # впиши BOT_TOKEN=..., сохрани: Ctrl+O, Enter, выйти: Ctrl+X
+   ./run.sh         # первый запуск ставит зависимости (несколько минут)
+   ```
+
+4. Чтобы Android не убивал бота: потяни шторку уведомлений → в уведомлении Termux нажми
+   **Acquire wakelock**, а в настройках телефона включи для Termux батарею
+   **«Без ограничений»**.
+
+Следующие запуски: открыть Termux → `proot-distro login debian` → `cd 1DEX1-/1dex1-bot && ./run.sh`.
+Обновить бота: `git pull` в той же папке.
+
+Важно: бот должен быть запущен **в одном месте**. Если он одновременно запущен на телефоне и на ПК,
+Telegram выдаст ошибку `Conflict: terminated by other getUpdates request`.
+Если телефон выключится или останется без интернета, бот тоже перестанет работать
+(муты не будут удалять сообщения). Для работы 24/7 надёжнее VPS.
+
 ### 4. Подключи бота к своему аккаунту
 
 Telegram → **Настройки** → **Автоматизация чатов** (в старых версиях: Telegram для бизнеса → Чат-боты) →
@@ -114,7 +154,7 @@ Telegram → **Настройки** → **Автоматизация чатов*
 | `MAX_VIDEO_MB` / `MAX_VIDEO_MINUTES` | 50 / 20 | ограничения `.link` |
 | `TIKTOK_HD` | 0 | 1 = TikTok в 1080p (HEVC), 0 = 540p H.264 (играет везде) |
 | `YTDLP_COOKIES` | пусто | файл cookies для YouTube |
-| `YTDLP_JS_RUNTIME` | авто | `node` или `deno`, нужен yt-dlp для YouTube |
+| `YTDLP_JS_RUNTIME` | авто | JS-движок для YouTube. По умолчанию берётся `deno` из `requirements.txt`; можно указать `node` (нужен 22+) или `deno:/путь/к/deno` |
 
 ## Для разработчика
 
