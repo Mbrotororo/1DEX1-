@@ -1,5 +1,6 @@
 import React, {useMemo} from 'react';
 import * as THREE from 'three';
+import {faceTextures, type FaceState} from './face';
 import {POSE_ZERO, type Pose} from './poses';
 import type {Skin, SkinBuild} from './skins';
 
@@ -84,6 +85,13 @@ export type HumanoidProps = {
 	handL?: React.ReactNode;
 	// то, что надето на голову / висит над ней (единицы — блоки, центр — центр головы)
 	headSlot?: React.ReactNode;
+	// то, что висит на спине (рюкзак): начало — центр задней поверхности туловища (по куртке),
+	// оси персонажа (x — к левому плечу, y — вверх, z — вперёд), единицы — блоки; рюкзак уходит в −z.
+	// Двигается с корпусом: lean, tumble, squash, bend/twist/tilt позы.
+	backSlot?: React.ReactNode;
+	// мимика 0..1 (можно смешивать): {tired, shock, joy, focus, blink, mouth, lookX, lookY} — см. face.ts.
+	// Не задано — лицо как в скине (старое поведение).
+	face?: Partial<FaceState>;
 	// красная вспышка урона 0..1
 	hurt?: number;
 	// ледяной оттенок 0..1
@@ -94,6 +102,9 @@ export type HumanoidProps = {
 	color?: THREE.ColorRepresentation;
 	visible?: boolean;
 };
+
+// задняя поверхность куртки: полтуловища (2 px) + толщина второго слоя
+const BACK_Z = 2 + 0.26;
 
 const WHITE = new THREE.Color('#ffffff');
 const HURT = new THREE.Color('#ff3b3b');
@@ -112,6 +123,8 @@ export const Humanoid: React.FC<HumanoidProps> = ({
 	handR,
 	handL,
 	headSlot,
+	backSlot,
+	face,
 	hurt = 0,
 	frozen = 0,
 	opacity = 1,
@@ -119,21 +132,34 @@ export const Humanoid: React.FC<HumanoidProps> = ({
 	visible = true,
 }) => {
 	const geo = geosFor(skin.build);
-	const {base, overlay} = useMemo(() => {
+	const {base, overlay, faceMat, hatFace, headMats, hatMats} = useMemo(() => {
 		const base = new THREE.MeshLambertMaterial({map: skin.map});
 		const overlay = new THREE.MeshLambertMaterial({map: skin.map, alphaTest: 0.5, side: THREE.DoubleSide});
 		if (skin.emissive) {
 			base.emissiveMap = skin.emissive;
 			overlay.emissiveMap = skin.emissive;
 		}
-		return {base, overlay};
+		// лицо и чёлка спереди — свои материалы (текстура меняется с выражением)
+		const faceMat = new THREE.MeshLambertMaterial({map: skin.map});
+		const hatFace = new THREE.MeshLambertMaterial({map: skin.map, alphaTest: 0.5, side: THREE.DoubleSide});
+		// порядок граней BoxGeometry: +x, −x, +y, −y, +z (лицо), −z
+		const headMats = [base, base, base, base, faceMat, base];
+		const hatMats = [overlay, overlay, overlay, overlay, hatFace, overlay];
+		return {base, overlay, faceMat, hatFace, headMats, hatMats};
 	}, [skin]);
+
+	// текстуры выражения (из кэша; у светящихся скинов мимики нет)
+	const faceTex = face && !skin.emissive ? faceTextures(skin, face) : null;
+	if (faceTex) {
+		faceMat.map = faceTex.face;
+		if (faceTex.hat) hatFace.map = faceTex.hat;
+	}
 
 	// оттенки урона/льда и прозрачность — прямо в материалы (свои у каждого персонажа)
 	tmp.copy(WHITE);
 	if (color !== undefined) tmp.set(color);
 	tmp.lerp(ICE, frozen * 0.75).lerp(HURT, hurt * 0.7);
-	for (const m of [base, overlay]) {
+	for (const m of faceTex ? [base, overlay, faceMat, hatFace] : [base, overlay]) {
 		m.color.copy(tmp);
 		if (skin.emissive) {
 			m.emissive.setRGB(1, 1, 1);
@@ -161,44 +187,55 @@ export const Humanoid: React.FC<HumanoidProps> = ({
 	const leanX = lean[0] + (pose.lean ?? 0);
 	const hat = skin.overlay;
 	const inv = 1 / PX;
+	const shrug = pose.shrug ?? 0;
+	const headMat = faceTex ? headMats : base;
+	const hatMat = faceTex?.hat ? hatMats : overlay;
 
 	return (
 		<group position={[position[0], position[1] + dy * scale, position[2]]} rotation={[0, rotationY, 0]}>
 			<group rotation={[leanX, 0, lean[1]]}>
 				<group position={[0, 16 * k, 0]} rotation={[tumble[0], 0, tumble[1]]}>
 					<group position={[0, -16 * k, 0]} scale={[k, k * squash, k]}>
-						{/* голова */}
-						<group position={[0, 24, 0]} rotation={[pose.headPitch, pose.headYaw, 0, 'YXZ']}>
-							<mesh geometry={geo.head} material={base} position={[0, 4, 0]} />
-							{hat ? <mesh geometry={geo.hat} material={overlay} position={[0, 4, 0]} /> : null}
-							{headSlot ? (
-								<group position={[0, 4, 0]} scale={inv}>
-									{headSlot}
+						{/* корпус: поворачивается вокруг бёдер (y = 12 px) */}
+						<group position={[0, 12, 0]} rotation={[pose.bend ?? 0, pose.twist ?? 0, pose.tilt ?? 0, 'YXZ']}>
+							{/* голова */}
+							<group position={[0, 12, 0]} rotation={[pose.headPitch, pose.headYaw, 0, 'YXZ']}>
+								<mesh geometry={geo.head} material={headMat} position={[0, 4, 0]} />
+								{hat ? <mesh geometry={geo.hat} material={hatMat} position={[0, 4, 0]} /> : null}
+								{headSlot ? (
+									<group position={[0, 4, 0]} scale={inv}>
+										{headSlot}
+									</group>
+								) : null}
+							</group>
+							{/* тело */}
+							<mesh geometry={geo.body} material={base} position={[0, 6, 0]} />
+							{hat ? <mesh geometry={geo.jacket} material={overlay} position={[0, 6, 0]} /> : null}
+							{backSlot ? (
+								<group position={[0, 6, -BACK_Z]} scale={inv}>
+									{backSlot}
 								</group>
 							) : null}
-						</group>
-						{/* тело */}
-						<mesh geometry={geo.body} material={base} position={[0, 18, 0]} />
-						{hat ? <mesh geometry={geo.jacket} material={overlay} position={[0, 18, 0]} /> : null}
-						{/* правая рука */}
-						<group position={[-armX, 22, 0]} rotation={[pose.armR[0], 0, pose.armR[1]]}>
-							<mesh geometry={geo.armR} material={base} position={[0, -4, 0]} />
-							{hat ? <mesh geometry={geo.sleeveR} material={overlay} position={[0, -4, 0]} /> : null}
-							{handR ? (
-								<group position={[0, -9, 0]} scale={inv}>
-									{handR}
-								</group>
-							) : null}
-						</group>
-						{/* левая рука */}
-						<group position={[armX, 22, 0]} rotation={[pose.armL[0], 0, pose.armL[1]]}>
-							<mesh geometry={geo.armL} material={base} position={[0, -4, 0]} />
-							{hat ? <mesh geometry={geo.sleeveL} material={overlay} position={[0, -4, 0]} /> : null}
-							{handL ? (
-								<group position={[0, -9, 0]} scale={inv}>
-									{handL}
-								</group>
-							) : null}
+							{/* правая рука */}
+							<group position={[-armX, 10 + shrug, 0]} rotation={[pose.armR[0], 0, pose.armR[1]]}>
+								<mesh geometry={geo.armR} material={base} position={[0, -4, 0]} />
+								{hat ? <mesh geometry={geo.sleeveR} material={overlay} position={[0, -4, 0]} /> : null}
+								{handR ? (
+									<group position={[0, -9, 0]} scale={inv}>
+										{handR}
+									</group>
+								) : null}
+							</group>
+							{/* левая рука */}
+							<group position={[armX, 10 + shrug, 0]} rotation={[pose.armL[0], 0, pose.armL[1]]}>
+								<mesh geometry={geo.armL} material={base} position={[0, -4, 0]} />
+								{hat ? <mesh geometry={geo.sleeveL} material={overlay} position={[0, -4, 0]} /> : null}
+								{handL ? (
+									<group position={[0, -9, 0]} scale={inv}>
+										{handL}
+									</group>
+								) : null}
+							</group>
 						</group>
 						{/* правая нога */}
 						<group position={[-legX, 12, 0]} rotation={[pose.legR[0], pose.legR[1], 0, 'YXZ']}>

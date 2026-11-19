@@ -43,3 +43,7 @@ export {HudLayer, ExtrudedLogo} from './hud/HudLayer';
 export {layoutText, textWidth, hasGlyph, FONT_CAP} from './hud/font';
 export * from './hud/dom';
 export {BADGE_AREA} from './player';
+
+// --- rig: мимика героя и точки скелета (src/core/chars/README.md)
+export {FACE_NEUTRAL, mixFace, blinkAt, autoBlink, faceTextures, type FaceState, type FaceTextures} from './chars/face';
+export {handAnchor, backAnchor, headAnchor, worldPoint} from './chars/anchors';

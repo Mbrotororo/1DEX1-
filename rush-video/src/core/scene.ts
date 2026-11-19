@@ -2,6 +2,7 @@ import type React from 'react';
 import type * as THREE from 'three';
 import type {CameraState} from './camera';
 import type {Skin} from './chars/skins';
+import type {PostSettings} from './post/settings';
 
 // Каркас сцены. Сцена — это камера (чистая функция времени), 3D-мир и плоский слой интерфейса.
 
@@ -34,6 +35,9 @@ export type SceneDef = {
 	World: React.FC<SceneProps>;
 	// плоский слой поверх 3D (DOM, координаты 1920x1080)
 	Overlay?: React.FC<SceneProps>;
+	// постобработка 3D-кадра (глубина резкости, свечение, цвет...): чистая функция времени.
+	// Нет поля (или вернула null) — кадр рисуется как раньше, без постобработки. См. src/core/post/README.md
+	post?: (t: number, cam: CameraState) => PostSettings | null;
 };
 
 // Построить тяжёлое один раз при первом обращении (мир, геометрии): const getWorld = once(() => build());

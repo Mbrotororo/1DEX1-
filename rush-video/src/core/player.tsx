@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import {useAssets} from './assets';
 import type {CameraState} from './camera';
 import {PixelText} from './hud/dom';
+import {PostFX} from './post/PostFX';
 import type {Assets, SceneDef} from './scene';
 import {BADGE_FROM, BADGE_TO, DURATION_S, FPS, HEIGHT, SCENES, WIDTH, sceneAt} from '../timeline';
 
@@ -21,6 +22,8 @@ export type VideoProps = {
 	stamp?: boolean;
 	// сглаживание краёв (по умолчанию включено)
 	antialias?: boolean;
+	// постобработка сцен (по умолчанию включена; false — быстрые черновики)
+	post?: boolean;
 };
 
 export const sceneLength = (scene: SceneDef): number => {
@@ -89,7 +92,7 @@ type PlayerProps = VideoProps & {
 	mode: 'timeline' | 'single';
 };
 
-export const ScenePlayer: React.FC<PlayerProps> = ({scenes, mode, audio = true, stamp = false, antialias = true}) => {
+export const ScenePlayer: React.FC<PlayerProps> = ({scenes, mode, audio = true, stamp = false, antialias = true, post = true}) => {
 	const assets = useAssets();
 	const frame = useCurrentFrame();
 	const {fps} = useVideoConfig();
@@ -118,6 +121,7 @@ export const ScenePlayer: React.FC<PlayerProps> = ({scenes, mode, audio = true, 
 	const dpr = typeof window === 'undefined' ? 1 : getRemotionEnvironment().isRendering ? window.devicePixelRatio : Math.min(1, window.devicePixelRatio);
 	const World = scene.World;
 	const Overlay = scene.Overlay;
+	const postSettings = post && scene.post ? scene.post(t, cam) : null;
 
 	return (
 		<AbsoluteFill style={{backgroundColor: '#05081e', overflow: 'hidden'}}>
@@ -126,6 +130,7 @@ export const ScenePlayer: React.FC<PlayerProps> = ({scenes, mode, audio = true, 
 					<ThreeCanvas width={WIDTH} height={HEIGHT} flat dpr={dpr} camera={CANVAS_CAMERA} gl={{antialias}}>
 						<CameraRig cam={cam} />
 						<World key={scene.id} t={t} cam={cam} assets={assets} duration={duration} />
+						{postSettings ? <PostFX settings={postSettings} time={time} antialias={antialias} /> : null}
 					</ThreeCanvas>
 					<AbsoluteFill style={{overflow: 'hidden'}}>
 						<ServerBadge assets={assets} opacity={badge} />
