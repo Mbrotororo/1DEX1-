@@ -4,6 +4,7 @@
 //   npm run mix                      весь ролик
 //   npm run mix -- --scene=s3-wipe   только одна сцена -> out/audio/s3-wipe.wav
 //   npm run mix -- --lenient         не падать, если каких-то звуков нет (вместо них тишина)
+//   npm run mix -- --out=/tmp/x.wav  записать в другой файл (проверка громкости, не трогая soundtrack.wav)
 import {spawnSync} from 'node:child_process';
 import {existsSync, mkdirSync, writeFileSync} from 'node:fs';
 import {dirname, join, relative} from 'node:path';
@@ -15,6 +16,12 @@ import {collect, soundFile, type Collected} from './sounds-lib';
 const SR = 48000;
 // потолок пиков: -1 дБ
 const CEILING = Math.pow(10, -1 / 20);
+// Общее усиление перед ограничителем, дБ. YouTube не поднимает тихие ролики: без него мастер был −20.4 LUFS
+// (на ~6 дБ тише соседних видео); с ним — около −16 LUFS. Сцены и музыка сводятся как раньше, громче — только итог.
+const MASTER_GAIN_DB = 4.85;
+// Конец ролика: звук гаснет за последние END_FADE с (картинка — 29.65–30.0, SPEC §3 B7) по равномощной кривой,
+// чтобы финальный аккорд на 29.6 вступал в полную силу
+const END_FADE = 0.36;
 
 type Pcm = {l: Float32Array; r: Float32Array};
 const cache = new Map<string, Pcm | null>();
@@ -226,7 +233,7 @@ const loudness = (file: string): string | null => {
 export type MixResult = {file: string; missing: string[]; events: number};
 
 // Свести дорожку. only — id одной сцены (тогда время локальное и файл out/audio/<id>.wav)
-export const mix = async (opts: {only?: string; lenient?: boolean; quiet?: boolean} = {}): Promise<MixResult> => {
+export const mix = async (opts: {only?: string; lenient?: boolean; quiet?: boolean; out?: string} = {}): Promise<MixResult> => {
 	const log = (s: string) => {
 		if (!opts.quiet) console.log(s);
 	};
@@ -283,26 +290,34 @@ export const mix = async (opts: {only?: string; lenient?: boolean; quiet?: boole
 		}
 	}
 
-	// в самом конце ролика звук плавно затухает (последние 0.6 с)
+	// в самом конце ролика звук плавно затухает (последние END_FADE с, равномощно: cos)
 	if (!single) {
-		const fade = Math.round(0.6 * SR);
+		const fade = Math.round(END_FADE * SR);
 		for (let i = 0; i < fade; i++) {
-			const k = i / fade;
+			const g = Math.cos(((i + 1) / fade) * (Math.PI / 2));
 			const o = dry.l.length - fade + i;
-			dry.l[o] *= 1 - k;
-			dry.r[o] *= 1 - k;
+			dry.l[o] *= g;
+			dry.r[o] *= g;
 		}
+	}
+
+	// общее усиление мастера (и в дорожке сцены — чтобы превью сцены звучало как итог)
+	const master = Math.pow(10, MASTER_GAIN_DB / 20);
+	for (let i = 0; i < dry.l.length; i++) {
+		dry.l[i] *= master;
+		dry.r[i] *= master;
 	}
 
 	const before = stats(dry, 0, total);
 	const reduction = limiter(dry);
 	const after = stats(dry, 0, total);
 
-	const file = single ? join(OUT, 'audio', `${collected.scenes[0].id.replace(/^_/, '')}.wav`) : join(PUBLIC, 'audio', 'soundtrack.wav');
+	const file = opts.out ?? (single ? join(OUT, 'audio', `${collected.scenes[0].id.replace(/^_/, '')}.wav`) : join(PUBLIC, 'audio', 'soundtrack.wav'));
 	writeWav(file, dry);
 
 	log(`\nДорожка: ${relative(ROOT, file)}  (${total.toFixed(1)} с, 48 кГц, стерео, 16 бит)`);
 	log(`Событий: ${count}${notes ? ` + нот: ${notes}` : ''}; разных звуков: ${cache.size}; не найдено файлов: ${missing.size}`);
+	log(`Усиление мастера: +${MASTER_GAIN_DB.toFixed(2)} дБ`);
 	log(`Пик до ограничителя: ${db(before.peak)} дБ; после: ${db(after.peak)} дБ (потолок -1.0); макс. снижение: ${db(reduction)} дБ`);
 	log(`RMS: ${db(after.rms)} дБ${reduction < 0.5 ? '   ВНИМАНИЕ: ограничитель давит больше 6 дБ — убавь громкости' : ''}`);
 	const lufs = loudness(file);
@@ -319,7 +334,7 @@ export const mix = async (opts: {only?: string; lenient?: boolean; quiet?: boole
 // запуск из командной строки
 if (process.argv[1] && /mix-audio\.ts$/.test(process.argv[1])) {
 	const {flags} = parseArgs(process.argv.slice(2));
-	mix({only: typeof flags.scene === 'string' ? flags.scene : undefined, lenient: flags.lenient === true}).catch((err) => {
+	mix({only: typeof flags.scene === 'string' ? flags.scene : undefined, lenient: flags.lenient === true, out: typeof flags.out === 'string' ? flags.out : undefined}).catch((err) => {
 		console.error(err instanceof Error ? err.message : err);
 		process.exit(1);
 	});

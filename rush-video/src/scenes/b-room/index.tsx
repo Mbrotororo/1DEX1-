@@ -66,7 +66,8 @@ const envFor = (name: ShotName, t: number): EnvState => {
 	if (name === 'b7') return HOUSE_ENV.bedroom;
 	return t < BEATS.monitorOn ? HOUSE_ENV.bedroom : HOUSE_ENV.desk;
 };
-const windowFor = (name: ShotName) => (name === 'b1' ? 1 : name === 'b7' ? 0.55 : name === 'b2btn' || name === 'b2pc' ? 0.7 : name === 'b5' ? 0.6 : 0.3);
+// (на кнопке окно приглушено: закат за кнопкой не перетягивает взгляд)
+const windowFor = (name: ShotName) => (name === 'b1' ? 1 : name === 'b7' ? 0.55 : name === 'b2btn' ? 0.45 : name === 'b2pc' ? 0.7 : name === 'b5' ? 0.6 : 0.3);
 // что прячем в плане: на крупном плане кнопки — кресло (тело тоже не рисуем: в кадре только рука),
 // на лицах у монитора — кресло (его фиолетовое «крыло» у уха читалось как наушник);
 // у подставки — настоящую подставку (на этих планах она стоит ближе, см. HP_STAND)
@@ -84,9 +85,9 @@ const Room: React.FC<SceneProps & {name: ShotName}> = ({t, cam, assets, name}) =
 	const env = envFor(name, t);
 	const hero = heroAt(name, t);
 	const chair = name === 'b1' || name === 'b5' || name === 'b5face' || name === 'b7' ? chairAt(t) : {offset: [0, 0, 0] as Vec3, spin: 0, tilt: 0};
-	// картинка на мониторе нужна только там, где он в кадре (B7); в остальных планах экран либо выключен,
-	// либо за камерой — время замораживаем, чтобы не перерисовывать холст
-	const screen = useScreenTexture(drawDim, name === 'b7' ? t : 0, {width: 960, height: 540});
+	// картинка на мониторе нужна только там, где он в кадре (B5 у подставки — Discord, B7); в остальных планах
+	// экран либо выключен, либо за камерой — время замораживаем, чтобы не перерисовывать холст
+	const screen = useScreenTexture(drawDim, name === 'b7' || name === 'b5' ? t : 0, {width: 960, height: 540});
 	const monitorOn = monitorOnAt(t);
 	// на крупных планах лица свет экрана — холоднее и сильнее; в загрузке Minecraft — красный
 	const face = name === 'b2face' || name === 'b3face' || name === 'b5face';
@@ -127,7 +128,8 @@ const Room: React.FC<SceneProps & {name: ShotName}> = ({t, cam, assets, name}) =
 					<HeroArm skin={assets.skin} {...btnArmAt(t)} />
 					{/* тёплая подсветка руки и рёбер корпуса (от лампы), голубой отсвет кнопки снизу */}
 					<pointLight position={[BUTTON_CENTER[0] + 0.3, BUTTON_CENTER[1] + 0.45, BUTTON_CENTER[2] + 0.35]} color="#ffb070" intensity={1.6} distance={1.6} decay={1.2} />
-					<pointLight position={[BUTTON_CENTER[0], BUTTON_CENTER[1] + 0.06, BUTTON_CENTER[2]]} color="#5fe8ff" intensity={1.4 * power} distance={0.7} decay={1.5} />
+					{/* до питания — слабое дежурное пятно вокруг кнопки (крышка корпуса не сливается с фоном) */}
+					<pointLight position={[BUTTON_CENTER[0], BUTTON_CENTER[1] + 0.06, BUTTON_CENTER[2]]} color="#5fe8ff" intensity={0.35 + 1.05 * power} distance={0.7} decay={1.5} />
 				</>
 			) : null}
 			{name === 'b2pc' ? <TowerGlow t={t} rgb={rgb} /> : null}
@@ -136,6 +138,14 @@ const Room: React.FC<SceneProps & {name: ShotName}> = ({t, cam, assets, name}) =
 				<pointLight position={[29.0, 6.75, 5.55]} color="#ff9a52" intensity={1.1 * (1 - smooth(prog(t, BEATS.monitorOn, 0.15)))} distance={1.6} decay={1.3} />
 			) : null}
 			{name === 'b5' || name === 'b5face' ? <HeadphoneStand position={HP_STAND} rotationY={HEADPHONE_STAND.rotationY} headphones={hero.hp === 'stand'} glow={0.85} /> : null}
+			{name === 'b5' ? (
+				<>
+					{/* у подставки: тёплый ключ спереди-сверху (чашки и рука отделяются от тёмного стола),
+					    холодный контровой со стороны монитора (кромка волос, шапки и наушников) */}
+					<pointLight position={[HP_STAND[0] - 0.2, HP_STAND[1] + 0.6, HP_STAND[2] - 0.3]} color="#ffb070" intensity={1.6} distance={1.6} decay={1.3} />
+					<pointLight position={[HP_STAND[0] + 0.45, HP_STAND[1] + 0.75, HP_STAND[2] + 0.75]} color="#8aa4ff" intensity={1.3} distance={1.5} decay={1.3} />
+				</>
+			) : null}
 			{hero.visible ? (
 				<>
 					{name === 'b1' ? <BlobShadow x={hero.pos[0]} z={hero.pos[2]} y={5.01} size={1.1} opacity={0.4 * clamp01(1 - (hero.pos[1] - 5) / 2)} /> : null}
@@ -188,7 +198,8 @@ const post = (t: number, cam: CameraState): PostSettings | null => {
 			// фокус на кулаке, пока он над кнопкой; передний план не размываем сильнее фона
 			const arm = btnArmAt(t).fist;
 			const f = t < BEATS.release ? arm : BUTTON_CENTER;
-			return {...POST.closeUp, ...NO_CHROMA, dof: 10, focusRange: 0.12, nearBlur: 0, focus: focusDist(cam, f), bloom: 1.1, bloomThreshold: 0.55};
+			// виньетка сильнее и чуть светлее: взгляд — на кнопку в центре
+			return {...POST.closeUp, ...NO_CHROMA, dof: 10, focusRange: 0.12, nearBlur: 0, focus: focusDist(cam, f), bloom: 1.1, bloomThreshold: 0.55, vignette: 0.7, vignetteSoft: 0.7, exposure: 0.4};
 		}
 		case 'b2pc':
 			return {...POST.closeUp, ...NO_CHROMA, dof: 12, focusRange: 0.4, focus: focusDist(cam, [30.1, 6.3, 6.95]), bloom: 1.4, bloomThreshold: 0.35};

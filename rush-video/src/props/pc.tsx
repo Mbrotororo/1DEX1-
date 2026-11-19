@@ -227,6 +227,15 @@ const rgbModel = (): RgbModel => {
 	return {geo: boxGeometry(b, P16), count: b.length, level, phase};
 };
 
+// радиусы вентиляторов, px: передние — внутри своих RGB-колец (r = 2.2), задний — в ширину корпуса
+const FRONT_FAN_R = 2.05;
+const REAR_FAN_R = 3.0;
+// вентилятор башенного кулера (смотрит в стекло): размером с сам кулер
+const COOLER_FAN_R = 2.0;
+// быстрее этого лопасти не рисуем — только «размытый» диск (иначе сквозь стекло, с ребра,
+// крутящиеся коробки выглядят кучей пересекающихся палок)
+const FAN_BLUR_SPEED = 0.3;
+
 // лопасти вентилятора (в плоскости XY), вращаются вокруг z
 const bladesGeo = (r: number) =>
 	cachedGeo(`blades-${r}`, () => {
@@ -242,6 +251,77 @@ const bladesGeo = (r: number) =>
 		}
 		return boxGeometry(b, P16);
 	});
+
+// «Размытый» крутящийся вентилятор: гладкий тонкий диск (0.16 px) с призраками лопастей на обеих гранях
+// и ступицей. С ребра — одна чистая линия, под углом — ровный эллипс, анфас — тёмный круг,
+// по которому бегут едва заметные светлые лопасти (так выглядит настоящий вентилятор на ходу).
+const fanBlurGeo = (r: number) =>
+	cachedGeo(`fan-blur-${r}`, () => {
+		const pos: number[] = [];
+		const nor: number[] = [];
+		const col: number[] = [];
+		const c = new THREE.Color();
+		const tri = (p: number[][], n: number[], hex: string) => {
+			c.set(hex);
+			for (const v of p) {
+				pos.push(v[0] * P16, v[1] * P16, v[2] * P16);
+				nor.push(...n);
+				col.push(c.r, c.g, c.b);
+			}
+		};
+		const h = 0.08;
+		const N = 28;
+		const at = (rr: number, a: number, z: number) => [Math.cos(a) * rr, Math.sin(a) * rr, z];
+		for (let i = 0; i < N; i++) {
+			const a0 = (i / N) * Math.PI * 2;
+			const a1 = ((i + 1) / N) * Math.PI * 2;
+			// грани (+z и −z) и обод
+			tri([[0, 0, h], at(r, a0, h), at(r, a1, h)], [0, 0, 1], DISC);
+			tri([[0, 0, -h], at(r, a1, -h), at(r, a0, -h)], [0, 0, -1], DISC);
+			const m = (a0 + a1) / 2;
+			const rn = [Math.cos(m), Math.sin(m), 0];
+			tri([at(r, a0, h), at(r, a0, -h), at(r, a1, h)], rn, DISC);
+			tri([at(r, a0, -h), at(r, a1, -h), at(r, a1, h)], rn, DISC);
+		}
+		// призраки лопастей: изогнутые светлые полосы (закручены по ходу вращения)
+		const n = 5;
+		for (let i = 0; i < n; i++) {
+			const a = (i / n) * Math.PI * 2;
+			const q = [at(0.55, a, 0), at(r * 0.9, a + 0.35, 0), at(r * 0.9, a + 0.8, 0), at(0.55, a + 0.42, 0)];
+			for (const f of [1, -1]) {
+				const z = f * (h + 0.012);
+				const v = q.map((p) => [p[0], p[1], z]);
+				if (f > 0) {
+					tri([v[0], v[1], v[2]], [0, 0, 1], GHOST);
+					tri([v[0], v[2], v[3]], [0, 0, 1], GHOST);
+				} else {
+					tri([v[0], v[2], v[1]], [0, 0, -1], GHOST);
+					tri([v[0], v[3], v[2]], [0, 0, -1], GHOST);
+				}
+			}
+		}
+		// ступица
+		const hub = boxGeometry([[-0.5, -0.5, -0.14, 0.5, 0.5, 0.14, '#18181c']], P16);
+		const hp = hub.getAttribute('position');
+		const hn = hub.getAttribute('normal');
+		const hc = hub.getAttribute('color');
+		const idx = hub.getIndex()!;
+		for (let k = 0; k < idx.count; k++) {
+			const j = idx.getX(k);
+			pos.push(hp.getX(j), hp.getY(j), hp.getZ(j));
+			nor.push(hn.getX(j), hn.getY(j), hn.getZ(j));
+			col.push(hc.getX(j), hc.getY(j), hc.getZ(j));
+		}
+		hub.dispose();
+		const geo = new THREE.BufferGeometry();
+		geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+		geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+		geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+		geo.computeBoundingSphere();
+		return geo;
+	});
+const DISC = '#25262d';
+const GHOST = '#3b3c48';
 
 export type PcTowerProps = {
 	position: [number, number, number];
@@ -284,6 +364,7 @@ export const PcTower: React.FC<PcTowerProps> = ({position, rotationY = 0, t, pow
 	mats.ring.color.set('#0a0a0e').lerp(new THREE.Color('#e8f4ff'), p);
 	const speed = fans ?? p;
 	const spin = t * speed * 7.5;
+	const blur = speed > FAN_BLUR_SPEED;
 	const D = PC_D / 2;
 	const W = PC_W / 2;
 	const glowHue = hueColor(rgbHue(t, 0.4), 1, 0.6);
@@ -293,10 +374,10 @@ export const PcTower: React.FC<PcTowerProps> = ({position, rotationY = 0, t, pow
 			<mesh geometry={model.geo} material={mats.rgb} />
 			{/* вентиляторы: три спереди, на кулере и сзади */}
 			{RGB_FAN_Y.map((fy, i) => (
-				<mesh key={i} geometry={bladesGeo(4.2)} material={vcMat()} position={[0, fy * P16, (D - 1.3) * P16]} rotation={[0, 0, spin + i]} />
+				<mesh key={i} geometry={blur ? fanBlurGeo(FRONT_FAN_R) : bladesGeo(FRONT_FAN_R)} material={vcMat()} position={[0, fy * P16, (D - 1.3) * P16]} rotation={[0, 0, spin + i]} />
 			))}
-			<mesh geometry={bladesGeo(3.2)} material={vcMat()} position={[(-W + 2.4) * P16, 10.7 * P16, 0]} rotation={[0, Math.PI / 2, spin * 1.1]} />
-			<mesh geometry={bladesGeo(3.6)} material={vcMat()} position={[0, 11 * P16, (-D + 0.8) * P16]} rotation={[0, 0, -spin]} />
+			<mesh geometry={blur ? fanBlurGeo(COOLER_FAN_R) : bladesGeo(COOLER_FAN_R)} material={vcMat()} position={[(-W + 2.4) * P16, 10.7 * P16, 0]} rotation={[0, Math.PI / 2, spin * 1.1]} />
+			<mesh geometry={blur ? fanBlurGeo(REAR_FAN_R) : bladesGeo(REAR_FAN_R)} material={vcMat()} position={[0, 11 * P16, (-D + 0.8) * P16]} rotation={[0, 0, -spin]} />
 			{/* стекло */}
 			<mesh material={mats.glass} position={[(-W + 0.2) * P16, (PC_H / 2) * P16, 0]} rotation={[0, -Math.PI / 2, 0]} renderOrder={5}>
 				<planeGeometry args={[(PC_D - 1.2) * P16, (PC_H - 1.4) * P16]} />

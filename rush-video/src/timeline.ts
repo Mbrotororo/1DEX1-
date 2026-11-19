@@ -45,7 +45,9 @@ export const sceneAt = (tGlobal: number): {slot: SceneSlot; index: number; t: nu
 		}
 	}
 	const slot = SCENES[index];
-	return {slot, index, t: tGlobal - slot.start};
+	// Убираем хвосты двоичной арифметики: 1104/60 − 16 = 2.3999999999999986 < 2.4,
+	// и склейка на долю попадала на кадр позже. Время кадра кратно 1/60 — округление без потерь.
+	return {slot, index, t: Math.round((tGlobal - slot.start) * 1e6) / 1e6};
 };
 
 // Угловой значок сервера в этом ролике не показывается (FROM = TO = конец ролика)

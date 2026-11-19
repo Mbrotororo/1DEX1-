@@ -42,7 +42,7 @@ const CENTER: [number, number, number] = [PC.position[0], TOP + CAP, PC.position
 export const PowerDecal: React.FC<{press: number; power: number}> = ({press, power}) => {
 	const mats = useMemo(
 		() => ({
-			cap: new THREE.MeshLambertMaterial({color: '#1c1d24'}),
+			cap: new THREE.MeshLambertMaterial({color: '#262833'}),
 			button: new THREE.MeshLambertMaterial({color: '#2e3038'}),
 			glyph: new THREE.MeshBasicMaterial({map: glyph(), transparent: true, alphaTest: 0.5, toneMapped: false}),
 			ring: new THREE.MeshBasicMaterial({toneMapped: false}),
@@ -50,9 +50,10 @@ export const PowerDecal: React.FC<{press: number; power: number}> = ({press, pow
 		[],
 	);
 	const p = clamp01(power);
-	// до питания значок серый, потом — ярко-голубой
-	mats.glyph.color.set(mixHex('#9aa2b4', '#8ff6ff', p));
-	mats.ring.color.set(mixHex('#14161c', '#3fe0ff', p));
+	// до питания — дежурная подсветка: светлый значок и тускло-бирюзовое кольцо (кнопка — самое яркое
+	// в кадре до нажатия, а не чёрное на чёрном); с питанием — ярко-голубые
+	mats.glyph.color.set(mixHex('#c8d2e6', '#8ff6ff', p));
+	mats.ring.color.set(mixHex('#1f5f70', '#3fe0ff', p));
 	// кнопка 1.3 px, высота 0.5 px, утапливается на 0.25 px
 	const h = (0.5 - 0.25 * clamp01(press)) * P16;
 	const r = 1.0 * P16;
@@ -80,6 +81,8 @@ export const PowerDecal: React.FC<{press: number; power: number}> = ({press, pow
 						<planeGeometry args={[sx, sz]} />
 					</mesh>
 				))}
+				{/* дежурное свечение (гаснет в полном) */}
+				{p < 0.98 ? <Glow position={[0, 0.02, 0]} color="#5fe8ff" size={0.12} opacity={0.25 * (1 - p)} /> : null}
 				{p > 0.02 ? (
 					<>
 						<Glow position={[0, 0.03, 0]} color="#5fe8ff" size={0.34 * (0.6 + 0.4 * p)} opacity={0.75 * p} />

@@ -51,7 +51,8 @@ export const PC_TIMING: PcTiming = {
 	menuClick: 4.78,
 	rowClick: 5.0,
 	connectClick: 5.2,
-	connected: 5.44,
+	// мир целиком на экране с 5.48 (+0.12 растворение) — держится до окна Discord (b4), не мелькает одним кадром
+	connected: 5.36,
 	b4: 5.6,
 	voiceClick: 6.0,
 	b6: 8.4,
@@ -73,9 +74,12 @@ export type PcScript = {
 export const makePcScript = (T: PcTiming = PC_TIMING): PcScript => {
 	const [mx, my] = DESKTOP_ICONS.mc;
 	const multi = center(MC_MENU.multi);
-	const row = [MC_LIST.row[0] + 420, MC_LIST.row[1] + 52] as [number, number];
+	// клик по строке сервера — в пустом месте между «Лайт Анархия · ВАЙП» и онлайном: курсор и волна не закрывают «ВАЙП»
+	const row = [MC_LIST.row[0] + 600, MC_LIST.row[1] + 52] as [number, number];
 	const conn = center(MC_LIST.connect);
 	const [vx, vy] = CHAT_VOICE_ROW;
+	// клик по кнопке записи — справа внизу, за концом надписи, и уход курсора вправо-вверх:
+	// курсор и волна не закрывают «Остановить запись» во время наезда
 	const rec = center(OBS_REC_BUTTON);
 	const keys: CursorKey[] = [
 		{t: T.screenOn, x: 760, y: 440},
@@ -98,9 +102,9 @@ export const makePcScript = (T: PcTiming = PC_TIMING): PcScript => {
 		// OBS
 		{t: T.b6, x: 700, y: 330},
 		{t: T.b6 + 0.25, x: 760, y: 360},
-		{t: T.recClick - 0.04, x: rec[0] + 30, y: rec[1] + 5},
-		{t: T.recClick + 0.1, x: rec[0] + 30, y: rec[1] + 5},
-		{t: T.recClick + 0.8, x: rec[0] - 60, y: rec[1] - 110},
+		{t: T.recClick - 0.04, x: rec[0] + 70, y: rec[1] + 13},
+		{t: T.recClick + 0.1, x: rec[0] + 70, y: rec[1] + 13},
+		{t: T.recClick + 0.8, x: rec[0] + 110, y: rec[1] - 95},
 	];
 	const clicks: Click[] = [
 		{t: T.mcClick - 0.05, x: mx + 4, y: my + 2},
@@ -109,7 +113,7 @@ export const makePcScript = (T: PcTiming = PC_TIMING): PcScript => {
 		{t: T.rowClick, x: row[0], y: row[1]},
 		{t: T.connectClick, x: conn[0] + 20, y: conn[1] + 6},
 		{t: T.voiceClick, x: vx + 10, y: vy + 4},
-		{t: T.recClick, x: rec[0] + 30, y: rec[1] + 5},
+		{t: T.recClick, x: rec[0] + 70, y: rec[1] + 13},
 	];
 	const cursorVisible = (t: number) => {
 		if (t < T.screenOn + 0.2) return 0;
@@ -273,14 +277,8 @@ export const pcPOV = (t: number, script: PcScript = PC_SCRIPT): PovCamera => {
 	let z1 = 1.1;
 	let anchor: [number, number] = [640, 360];
 	let follow = 0.35;
-	if (t >= T.b6) {
-		from = T.b6;
-		to = T.b7;
-		z0 = 1.08;
-		z1 = 1.5;
-		anchor = [1010, 560];
-		follow = 0.25;
-	} else if (t >= T.b4) {
+	if (t >= T.b6) return obsPOV(t, T, ax, ay);
+	if (t >= T.b4) {
 		from = T.b4;
 		to = T.b6;
 		z0 = 1.06;
@@ -289,8 +287,48 @@ export const pcPOV = (t: number, script: PcScript = PC_SCRIPT): PovCamera => {
 		follow = 0.3;
 	}
 	const k = easeInOutCubic(clamp01((t - from) / (to - from)));
-	const zoom = lerp(z0, z1, k);
-	const focus: [number, number] = [lerp(anchor[0], ax, follow), lerp(anchor[1], ay, follow)];
-	const tilt: [number, number] = [lerp(4, 1.5, k) + noise1(t * 0.3, 140) * 0.6, 1.8 + noise1(t * 0.27, 141) * 0.4];
-	return {zoom, focus, tilt};
+	let zoom = lerp(z0, z1, k);
+	let focus: [number, number] = [lerp(anchor[0], ax, follow), lerp(anchor[1], ay, follow)];
+	if (t >= T.b4) {
+		// B4: вошёл в голосовой — за 0.9 с наезжаем на плитку с аватаром (зелёное кольцо «говорит»),
+		// чтобы конец плана не стоял на месте
+		const push = easeInOutCubic(clamp01((t - T.voiceClick - 0.3) / 0.9));
+		zoom = lerp(zoom, VOICE_ZOOM, push);
+		focus = [lerp(focus[0], VOICE_FOCUS[0], push), lerp(focus[1], VOICE_FOCUS[1], push)];
+	}
+	return {zoom, focus, tilt: povTilt(t, k)};
+};
+
+// плитка аватара в Discord — центр (815, 340); при zoom 1.6 камера доводит фокус до центра кадра лишь на 0.6
+// (см. pull в ScreenPOV), поэтому фокус вынесен дальше: центр плитки оказывается в центре кадра
+const VOICE_ZOOM = 1.6;
+const VOICE_FOCUS: [number, number] = [640 + (815 - 640) / 0.6, 360 + (345 - 360) / 0.6];
+
+const povTilt = (t: number, k: number): [number, number] => [lerp(4, 1.5, k) + noise1(t * 0.3, 140) * 0.6, 1.8 + noise1(t * 0.27, 141) * 0.4];
+
+// B6 (OBS) — наезд в две фазы, кульминация ролика:
+//  1) от b6 до клика: плавно 1.08 → OBS_Z1 к кнопке записи, камера чуть следит за курсором;
+//  2) на клике «Начать запись» — рывок OBS_Z1 → OBS_Z2 за OBS_SNAP с: в кадре крупно «Остановить запись»
+//     и счётчик «REC 00:00:00»; правый нижний угол экрана прижат к углу кадра (без пустой рамки монитора).
+//     Дальше до b7 — медленный дрейф OBS_Z2 → OBS_Z3.
+const OBS_Z1 = 1.75;
+const OBS_Z2 = 2.75;
+const OBS_Z3 = 2.9;
+const OBS_SNAP = 0.08;
+// доля ширины кадра под экран при zoom = 1 (как SCREEN_FRAC в react.tsx): 1 логический px экрана = 1.26 px кадра
+const POV_PX = (1920 * 0.84) / 1280;
+// фокус, при котором правый нижний угол экрана (1280, 720) — у правого нижнего угла кадра
+const cornerFocus = (zoom: number): [number, number] => [1280 - 960 / (POV_PX * zoom) - 2, 720 - 540 / (POV_PX * zoom) + 8];
+const obsPOV = (t: number, T: PcTiming, ax: number, ay: number): PovCamera => {
+	const k1 = easeInOutCubic(clamp01((t - T.b6) / (T.recClick - 0.05 - T.b6)));
+	const tilt = povTilt(t, k1);
+	// фаза 1 (её последнее положение — начало рывка)
+	const zoom1 = lerp(1.08, OBS_Z1, k1);
+	const focus1: [number, number] = [lerp(1010, ax, 0.25), lerp(560, ay, 0.25)];
+	if (t < T.recClick) return {zoom: zoom1, focus: focus1, tilt};
+	const snap = easeOutCubic(clamp01((t - T.recClick) / OBS_SNAP));
+	const drift = easeInOutCubic(clamp01((t - T.recClick - OBS_SNAP) / (T.b7 - T.recClick - OBS_SNAP)));
+	const zoom = lerp(lerp(OBS_Z1, OBS_Z2, snap), OBS_Z3, drift);
+	const [cx, cy] = cornerFocus(zoom);
+	return {zoom, focus: [lerp(focus1[0], cx, snap), lerp(focus1[1], cy, snap)], tilt};
 };

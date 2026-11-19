@@ -177,45 +177,87 @@ export const Backpack: React.FC<BackpackProps> = ({mode = 'worn', position, rota
 
 // ---------- наушники ----------
 const HP = '#1c1c24';
-const HP_L = '#2e2e3a';
+const HP_L = '#34303e';
 const HP_ACC = '#7a52c8';
+// оголовье светлее волос, иначе анфас оно пропадает в чёрной причёске
+const HP_BAND = '#4a4458';
+// светящаяся отделка (материал колец, вершинные цвета)
+const HP_GLOW = '#b088ff';
+// чашки: x от CUP_IN до CUP_OUT (для s > 0, зеркально для s < 0), y и z — габарит
+const CUP_IN = 4.55;
+const CUP_OUT = 7.1;
+const CUP_Y0 = -2.8;
+const CUP_Y1 = 1.8;
+const CUP_Z = 2.1;
+// оголовье спускается к чашкам между волосами (±4.5) и краем чашки
+const SLIDE_IN = 5.0;
+const SLIDE_OUT = 5.8;
+
+// зеркало коробки по x (для чашки с s < 0)
+const mirrorX = (b: Bx, s: number): Bx => (s > 0 ? b : [-b[3], b[1], b[2], -b[0], b[4], b[5], b[6], b[7]]);
 
 const headphonesGeo = () =>
-	cachedGeo('headphones', () => {
+	cachedGeo('headphones-v2', () => {
 		const b: Bx[] = [
-			// оголовье над головой (поверх волос-шляпы ±4.5)
-			[-3.6, 4.65, -0.9, 3.6, 5.45, 0.9, HP],
+			// оголовье над головой (поверх волос-шляпы ±4.5) с приподнятой дугой: анфас и чуть снизу
+			// её видно над линией волос
+			[-3.6, 4.65, -0.9, 3.6, 5.55, 0.9, HP_BAND, 0.04],
+			[-2.6, 5.5, -0.8, 2.6, 6.05, 0.8, HP_BAND, 0.04],
 			[-3.4, 4.6, -0.6, 3.4, 4.7, 0.6, '#3a3a48'],
-			[-4.8, 4.25, -0.9, -3.4, 5.25, 0.9, HP],
-			[3.4, 4.25, -0.9, 4.8, 5.25, 0.9, HP],
-			[-5.3, 1.6, -0.8, -4.55, 4.6, 0.8, HP_L],
-			[4.55, 1.6, -0.8, 5.3, 4.6, 0.8, HP_L],
+			[-SLIDE_OUT, 4.25, -0.9, -3.4, 5.35, 0.9, HP_BAND],
+			[3.4, 4.25, -0.9, SLIDE_OUT, 5.35, 0.9, HP_BAND],
+			[-SLIDE_OUT, 1.6, -0.8, -SLIDE_IN, 4.6, 0.8, HP_L],
+			[SLIDE_IN, 1.6, -0.8, SLIDE_OUT, 4.6, 0.8, HP_L],
 		];
 		for (const s of [-1, 1]) {
-			const x0 = s > 0 ? 4.55 : -6.3;
-			const x1 = s > 0 ? 6.3 : -4.55;
-			// чашка, амбушюра, фиолетовая накладка
-			b.push([x0, -2.8, -2.1, x1, 1.8, 2.1, HP, 0.04]);
-			b.push([s > 0 ? 4.5 : -4.75, -2.5, -1.8, s > 0 ? 4.75 : -4.5, 1.5, 1.8, '#2a2a30']);
-			b.push([s > 0 ? 6.3 : -6.7, -2.2, -1.6, s > 0 ? 6.7 : -6.3, 1.2, 1.6, HP_ACC]);
+			// чашка, амбушюра, фиолетовая накладка снаружи
+			b.push(mirrorX([CUP_IN, CUP_Y0, -CUP_Z, CUP_OUT, CUP_Y1, CUP_Z, HP, 0.04], s));
+			b.push(mirrorX([4.5, -2.5, -1.8, 4.75, 1.5, 1.8, '#2a2a30'], s));
+			b.push(mirrorX([CUP_OUT, -2.2, -1.6, CUP_OUT + 0.4, 1.2, 1.6, HP_ACC], s));
 		}
-		// микрофон слева
-		b.push([4.9, -2.6, 1.9, 5.5, -2.0, 4.8, HP_L]);
-		b.push([4.6, -2.9, 4.6, 5.6, -1.8, 5.4, HP]);
+		// микрофон слева: штанга от чашки к губам, наконечник фиолетовый (светящаяся точка — в ringGeo)
+		b.push([5.15, -2.6, CUP_Z - 0.05, 5.75, -2.0, 4.8, HP_L]);
+		b.push([4.85, -2.9, 4.6, 5.85, -1.8, 5.4, HP_ACC]);
 		return boxGeometry(b, 1, 31);
 	});
-// светящиеся кольца на чашках
+// светящаяся отделка: кольца на внешних сторонах чашек, рамки на передней и задней гранях
+// (видны анфас), ребро чашки, полоска по оголовью и огонёк микрофона
 const ringGeo = () =>
-	cachedGeo('headphones-ring', () => {
+	cachedGeo('headphones-ring-v2', () => {
 		const b: Bx[] = [];
+		const g = HP_GLOW;
 		for (const s of [-1, 1]) {
-			const x0 = s > 0 ? 6.68 : -6.78;
-			const x1 = s > 0 ? 6.78 : -6.68;
-			b.push([x0, 0.8, -1.4, x1, 1.1, 1.4, '#b088ff']);
-			b.push([x0, -2.1, -1.4, x1, -1.8, 1.4, '#b088ff']);
-			b.push([x0, -1.8, -1.4, x1, 0.8, -1.1, '#b088ff']);
-			b.push([x0, -1.8, 1.1, x1, 0.8, 1.4, '#b088ff']);
+			const x0 = CUP_OUT + 0.38;
+			const x1 = CUP_OUT + 0.48;
+			b.push(mirrorX([x0, 0.8, -1.4, x1, 1.1, 1.4, g], s));
+			b.push(mirrorX([x0, -2.1, -1.4, x1, -1.8, 1.4, g], s));
+			b.push(mirrorX([x0, -1.8, -1.4, x1, 0.8, -1.1, g], s));
+			b.push(mirrorX([x0, -1.8, 1.1, x1, 0.8, 1.4, g], s));
+			// рамка ~0.35 px на передней (z > 0) и задней грани чашки
+			const fx0 = CUP_IN + 0.25;
+			const fy0 = CUP_Y0 + 0.2;
+			const fy1 = CUP_Y1 - 0.2;
+			const w = 0.35;
+			const edge = CUP_OUT - 0.38;
+			for (const f of [-1, 1]) {
+				const z0 = f > 0 ? CUP_Z - 0.02 : -CUP_Z - 0.15;
+				const z1 = f > 0 ? CUP_Z + 0.15 : -CUP_Z + 0.02;
+				b.push(mirrorX([fx0, fy1 - w, z0, edge, fy1, z1, g], s));
+				b.push(mirrorX([fx0, fy0, z0, edge, fy0 + w, z1, g], s));
+				b.push(mirrorX([fx0, fy0 + w, z0, fx0 + w, fy1 - w, z1, g], s));
+				// внешняя вертикаль — уголок через ребро чашки: виден анфас, сбоку и в три четверти
+				const e0 = f > 0 ? CUP_Z - 0.4 : z0;
+				const e1 = f > 0 ? z1 : -CUP_Z + 0.4;
+				b.push(mirrorX([edge, fy0, e0, CUP_OUT + 0.06, fy1, e1, g], s));
+			}
 		}
+		// полоска по оголовью: сверху по дуге и на передних гранях дуги и перекладины
+		b.push([-2.2, 6.03, -0.25, 2.2, 6.11, 0.25, g]);
+		b.push([-2.2, 5.63, 0.78, 2.2, 5.9, 0.86, g]);
+		b.push([-3.2, 4.92, 0.88, 3.2, 5.17, 0.96, g]);
+		b.push([-3.2, 4.92, -0.96, 3.2, 5.17, -0.88, g]);
+		// огонёк микрофона
+		b.push([5.1, -2.6, 5.38, 5.6, -2.1, 5.47, '#d6c2ff']);
 		return boxGeometry(b, 1);
 	});
 
@@ -236,7 +278,7 @@ export const Headphones: React.FC<HeadphonesProps> = ({position, rotation, glow 
 			<mesh geometry={headphonesGeo()} material={vcMat()} />
 			<mesh geometry={ringGeo()} material={ring} />
 			{glow > 0.05
-				? [-1, 1].map((s) => <Glow key={s} position={[s * 7.2, -0.5, 0]} color="#9a6aff" size={9 * glow} opacity={0.35 * glow} />)
+				? [-1, 1].map((s) => <Glow key={s} position={[s * (CUP_OUT + 0.9), -0.5, 0]} color="#9a6aff" size={9 * glow} opacity={0.35 * glow} />)
 				: null}
 		</group>
 	);

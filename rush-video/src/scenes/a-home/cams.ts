@@ -160,6 +160,23 @@ const BAG_CAM_POS: [number, Vec3][] = [
 	[11.15, [10.3, 0.28, 5.32]],
 	[12.0, [10.24, 0.28, 5.3]],
 ];
+// Замедление — «деньги кадра»: объектив держит летящий рюкзак крупно (длинный фокус, взгляд ведёт рюкзак),
+// а когда рюкзак идёт вниз, к полу, — резкий отъезд зумом в тот же неподвижный общий план, что и раньше (удар 11.2).
+// После удара и перевода фокуса (11.5) — медленный наезд зумом на героя: он готовится к рывку.
+const BAG_LENS = {
+	// фокусное в полёте (поле зрения по вертикали, градусы)
+	tight: 14.8,
+	// когда начинается отъезд и сколько длится (к landHold + 0.04 кадр уже неподвижен)
+	wideFrom: 10.98,
+	wideDur: 0.14,
+	// насколько взгляд ведёт рюкзак: на броске → в замедлении
+	followThrow: 0.4,
+	followSlow: 0.94,
+	// наезд на героя после перевода фокуса
+	pushFrom: 11.5,
+	pushDur: 0.5,
+	pushFov: 11,
+};
 const camBag = (t: number) => {
 	const pos = sp3(t, BAG_CAM_POS);
 	const hero = chest(t);
@@ -167,16 +184,21 @@ const camBag = (t: number) => {
 		const b = bagAt(tt);
 		return b.mode === 'loose' ? b.pos : add(heroAt(tt).pos, [0, 1.1, 0]);
 	};
-	// в полёте взгляд чуть тянется за рюкзаком (вверх по дуге), к удару возвращается — рюкзак падает в кадр
-	const follow = 0.4 * smooth(prog(t, BEATS.bagRelease - 0.02, 0.2)) * (1 - smooth(prog(t, BEATS.landTurn, BEATS.landHold - BEATS.landTurn)));
+	const L = BAG_LENS;
+	const wide = smooth(prog(t, L.wideFrom, L.wideDur));
+	// взгляд: на броске чуть тянется за рюкзаком, в замедлении ведёт его почти вплотную;
+	// с отъездом возвращается — рюкзак падает в неподвижный кадр
+	const follow = (L.followThrow * smooth(prog(t, BEATS.bagRelease - 0.02, 0.2)) + (L.followSlow - L.followThrow) * smooth(prog(t, 10.66, 0.22))) * (1 - wide);
 	const bag = lagged(bagPos, t, 0.08, 4, BEATS.a7);
 	const base: Vec3 = v3lerp(hero, [ACT[0] + 0.6, 0.95, ACT[2] + 0.2], smooth(prog(t, BEATS.bagRelease, 0.4)));
-	const look = v3lerp(base, bag, follow);
-	// длинный фокус на героя → быстрый отъезд зумом, когда рюкзак летит в камеру
-	const fov = lerp(23, 50, smooth(prog(t, 10.55, 0.35))) - 3 * smooth(prog(t, BEATS.bagLand + 0.1, 0.7));
+	// наезд: взгляд чуть смещается к герою (он в центре кадра, рюкзак — слева внизу на первом плане)
+	const push = smooth(prog(t, L.pushFrom, L.pushDur));
+	const look = v3lerp(v3lerp(base, bag, follow), add(hero, [0, -0.1, 0]), 0.5 * push);
+	// длинный фокус на героя → ещё длиннее на рюкзак в полёте → резкий отъезд зумом перед ударом → медленный наезд на героя
+	const fov = lerp(lerp(23, L.tight, smooth(prog(t, 10.55, 0.35))), 50, wide) - 3 * smooth(prog(t, BEATS.bagLand + 0.1, 0.7)) - L.pushFov * push;
 	const hit = 0.05 * impulse(t, BEATS.bagLand, 9);
-	// перед ударом — без ручной тряски
-	const shake = 0.007 * (1 - pulse(t, BEATS.landHold - 0.02, BEATS.bagLand + 0.02, 0.04, 0.06));
+	// перед ударом — без ручной тряски; в полёте на длинном фокусе тряска меньше (иначе рюкзак дёргается по кадру)
+	const shake = 0.007 * (1 - 0.6 * (1 - wide) * smooth(prog(t, 10.6, 0.15))) * (1 - pulse(t, BEATS.landHold - 0.02, BEATS.bagLand + 0.02, 0.04, 0.06));
 	return handheld(handheld(lookCam(pos, look, fov), hit, t, 71, 24), shake, t, 72, 2);
 };
 
@@ -296,6 +318,9 @@ export const post = (t: number, cam: CameraState): PostSettings => {
 	return {...s, ...sm, smear: sm.smear < 4 ? 0 : sm.smear};
 };
 
+// A1 до открытия двери: прибавка к экспозиции (стопы), подъём теней, ослабление виньетки
+const DOOR_SHUT = {exposure: 0.4, lift: 0.015, vignette: 0.12};
+
 const postBase = (t: number, cam: CameraState): PostSettings => {
 	const {name} = shotOf(t);
 	switch (name) {
@@ -303,7 +328,18 @@ const postBase = (t: number, cam: CameraState): PostSettings => {
 			const open = doorOpenAt(t);
 			// тёмный контрастный тёплый интерьер: кирпич уходит в тень, яркое — проём и свечи
 			// когда он вошёл и стоит в тёплом свете — чуть светлее (лицо читается)
-			const warm = {...POST.warmInterior, dof: 6, focusRange: 1.6, saturation: 0.82, contrast: 1.16, lift: -0.02, vignette: 0.6, exposure: lerp(-0.14, 0.0, smooth(prog(t, 2.4, 1.0)))};
+			// пока дверь закрыта — светлее (иначе на телефоне почти чёрный кадр); с открытием «глаз привыкает» к свету из проёма
+			const shut = 1 - smooth(prog(t, BEATS.doorOpen, 0.8));
+			const warm = {
+				...POST.warmInterior,
+				dof: 6,
+				focusRange: 1.6,
+				saturation: 0.82,
+				contrast: 1.16,
+				lift: -0.02 + DOOR_SHUT.lift * shut,
+				vignette: 0.6 - DOOR_SHUT.vignette * shut,
+				exposure: lerp(-0.14, 0.0, smooth(prog(t, 2.4, 1.0))) + DOOR_SHUT.exposure * shut,
+			};
 			const base = mixPost(warm, {...POST.coldDay, exposure: -0.08, saturation: 0.85, vignette: 0.5}, 0.5 * open);
 			const z = heroAt(t).pos[2];
 			const target: Vec3 = t < BEATS.doorOpen ? [2.5, 0.6, 7.1] : [2.5, 1.2, Math.min(z, 8.6)];

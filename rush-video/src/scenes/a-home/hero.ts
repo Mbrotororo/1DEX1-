@@ -139,6 +139,14 @@ const standFace = (t: number): Partial<FaceState> => {
 	return {...shock, lookX: saccade(t, 3) * ks, lookY: 0.1 + saccade(t, 4) * 0.35 * ks, blink: 0};
 };
 
+// подготовка к рывку: 0 → 1 к самой склейке 12.0 (в 11.98 и 12.0 поза одна и та же)
+const READY_FROM = 11.58;
+const readyAt = (t: number) => smooth(prog(t, READY_FROM, BEATS.turn - 0.02 - READY_FROM));
+// стойка: корпус и голова к лестнице (+ — влево), присел (ноги в шаге), руки согнуты к бегу
+const READY_POSE: Pose = {headYaw: 0.55, headPitch: -0.1, bend: 0.3, lean: 0.1, twist: 0.38, tilt: -0.05, dy: -0.07, legR: [-0.5, -0.06], legL: [0.42, 0.08], armR: [0.75, -0.28], armL: [-0.65, 0.28], shrug: 0.4};
+// поворот всего тела к лестнице (рад, + — влево, к −z); RUN продолжает поворот отсюда
+const READY_YAW = 0.32;
+
 // A6–A7: шапка, рюкзак (сюжетное время в замедлении)
 const actPose = (t: number): Pose => {
 	const s = story(t);
@@ -148,19 +156,17 @@ const actPose = (t: number): Pose => {
 	p = mixPose(p, flingHat(kh), wf);
 	const kb = prog(s, BEATS.bagFrom, BAG_DUR);
 	if (kb > 0 && kb < 1) p = mixPose(p, hurlBackpack(kb), smooth((s - BEATS.bagFrom) / 0.1));
-	// перед рывком: присел, голова к лестнице (влево)
-	const ready = smooth(prog(t, 11.45, 0.45));
-	if (ready > 0) {
-		const r = withPose(idle(t), {headYaw: 0.75, headPitch: -0.05, bend: 0.14, lean: 0.06, legR: [-0.25, -0.1], legL: [0.2, 0.1], armR: [0.3, -0.15], armL: [-0.4, 0.15], twist: 0.25, dy: -0.04});
-		p = mixPose(p, r, ready);
-	}
+	// перед рывком (11.6–12.0, его видно на наезде): голова и корпус — к лестнице (влево), присел в стойку,
+	// руки — к бегу. В 12.0 эта поза — ровно начало RUN (runPose смешивает от actPose(BEATS.turn))
+	const ready = readyAt(t);
+	if (ready > 0) p = mixPose(p, READY_POSE, ready);
 	return p;
 };
 
 const actYaw = (t: number): number => {
-	// поворот к вешалке (начат ещё «за склейкой»), затем — вдоль прихожей
+	// поворот к вешалке (начат ещё «за склейкой»), затем — вдоль прихожей; перед рывком — на треть к лестнице
 	const a = lerp(3.95, YAW_HAT, easeOutCubic(prog(t, BEATS.a6 - 0.02, 0.24)));
-	return lerp(a, YAW_BAG, smooth(prog(t, 10.08, 0.36)));
+	return lerp(a, YAW_BAG, smooth(prog(t, 10.08, 0.36))) + READY_YAW * readyAt(t);
 };
 
 // полёт «рыбкой»: руки вперёд над головой, ноги назад, голова поднята (корпус наклоняет tumble)
@@ -177,7 +183,7 @@ const runPose = (t: number): {pose: Pose; pos: Vec3; yaw: number; dive: number; 
 	const kd = prog(t, SHOVE_FROM, SHOVE_DUR);
 	if (kd > 0 && kd < 1) p = doorShove(kd, p);
 	let pos: Vec3 = st.position;
-	let yaw = lerpAngle(YAW_BAG, st.heading, smooth(prog(t, BEATS.turn, 0.16)));
+	let yaw = lerpAngle(actYaw(BEATS.turn), st.heading, smooth(prog(t, BEATS.turn, 0.16)));
 	// прыжок «рыбкой» в комнату: толчок, затем полёт почти горизонтально, руки вперёд
 	const kv = prog(t, BEATS.dive - 0.04, DIVE_DUR);
 	let dive = 0;
@@ -196,6 +202,8 @@ const runPose = (t: number): {pose: Pose; pos: Vec3; yaw: number; dive: number; 
 	}
 	return {pose: p, pos, yaw, dive, ground: kv > 0 ? DIVE_FROM[1] : st.position[1]};
 };
+
+const runMouth = (t: number) => 0.2 + 0.15 * Math.abs(Math.sin(t * 9));
 
 export const heroAt = (t: number): HeroState => {
 	if (t < BEATS.a2) {
@@ -218,11 +226,13 @@ export const heroAt = (t: number): HeroState => {
 	if (t < BEATS.turn) {
 		const kh = prog(t, BEATS.hatFrom, HAT_DUR);
 		const effort = 0.35 * pulse(kh, 0.45, 0.75, 0.1, 0.2) + 0.3 * pulse(story(t), BEATS.bagRelease - 0.1, BEATS.bagRelease + 0.15, 0.06, 0.12);
+		// перед рывком дышит ртом, как на бегу (лицо в 12.0 совпадает с началом A8)
+		const mouth = lerp(effort, runMouth(t), readyAt(t));
 		return {
 			pos: ACT,
 			yaw: actYaw(t),
 			pose: actPose(t),
-			face: {...mixFace({shock: 0.6}, {focus: 1}, smooth(prog(t, BEATS.a6, 0.12))), blink: autoBlink(t, 4, 2.4, 0.12), mouth: effort},
+			face: {...mixFace({shock: 0.6}, {focus: 1}, smooth(prog(t, BEATS.a6, 0.12))), blink: autoBlink(t, 4, 2.4, 0.12), mouth},
 			color: '#ffffff',
 			lean: [0, 0],
 			tumble: [0, 0],
@@ -231,7 +241,7 @@ export const heroAt = (t: number): HeroState => {
 	}
 	const r = runPose(t);
 	const sp = smooth(prog(t, BEATS.turn + 0.05, 0.2));
-	return {pos: r.pos, yaw: r.yaw, pose: r.pose, face: {focus: 1, mouth: 0.2 + 0.15 * Math.abs(Math.sin(t * 9)), blink: autoBlink(t, 6, 2.2, 0.1)}, color: '#ffffff', lean: [0.06 * sp * (1 - r.dive), 0], tumble: [1.3 * r.dive, 0], ground: r.ground};
+	return {pos: r.pos, yaw: r.yaw, pose: r.pose, face: {focus: 1, mouth: runMouth(t), blink: autoBlink(t, 6, 2.2, 0.1)}, color: '#ffffff', lean: [0.06 * sp * (1 - r.dive), 0], tumble: [1.3 * r.dive, 0], ground: r.ground};
 };
 
 // ---------- точки скелета в мире (матрицы как в Humanoid; lean-проп = 0) ----------

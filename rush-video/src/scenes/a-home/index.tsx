@@ -94,6 +94,8 @@ const World: React.FC<SceneProps> = ({t, cam, assets}) => {
 					<HatSnow amount={hat.snow} loose />
 				</group>
 			) : null}
+			{/* A7: тёплый подсвет летящего рюкзака (спереди-сверху) и ореол за ним — тёмный рюкзак отделяется от стен */}
+			{name === 'bag' ? <BagLight t={t} cam={cam} bag={bag} /> : null}
 			{/* рюкзак в руке / в полёте / на полу */}
 			{bag.mode === 'loose' && !up ? (
 				<group position={[bag.pos[0], 0, bag.pos[2]]} scale={[1 + bag.squash * 0.5, 1 - bag.squash, 1 + bag.squash * 0.5]}>
@@ -137,6 +139,27 @@ const World: React.FC<SceneProps> = ({t, cam, assets}) => {
 	);
 };
 
+// подсвет рюкзака в замедлении: свет всегда в сцене плана 'bag' (без перекомпиляции шейдеров), меняется только сила;
+// гаснет до удара 11.2 — кадр удара как раньше
+const BagLight: React.FC<{t: number; cam: SceneProps['cam']; bag: ReturnType<typeof bagAt>}> = ({t, cam, bag}) => {
+	const on = bag.mode === 'loose' ? smooth(prog(t, BEATS.bagRelease - 0.02, 0.1)) * (1 - smooth(prog(t, 11.02, 0.14))) : 0;
+	const p = bag.mode === 'loose' ? bag.pos : ([2.9, 1.2, 4.05] as [number, number, number]);
+	const dx = p[0] - cam.position.x;
+	const dy = p[1] - cam.position.y;
+	const dz = p[2] - cam.position.z;
+	const dl = Math.hypot(dx, dy, dz) || 1;
+	const d = [dx / dl, dy / dl, dz / dl];
+	// свет: между камерой и рюкзаком, выше него; ореол: за рюкзаком по лучу из камеры
+	const light: [number, number, number] = [p[0] - d[0] * 0.75, p[1] - d[1] * 0.75 + 0.55, p[2] - d[2] * 0.75];
+	const halo: [number, number, number] = [p[0] + d[0] * 0.7, p[1] + d[1] * 0.7 + 0.05, p[2] + d[2] * 0.7];
+	return (
+		<>
+			<pointLight position={light} color="#ffb070" intensity={2.6 * on} distance={2.4} decay={2} />
+			{on > 0.01 ? <Glow position={halo} color="#ff9a48" size={1.7} opacity={0.42 * on} /> : null}
+		</>
+	);
+};
+
 // полоска света под дверью комнаты: яркая кромка + мягкий разлив по полу; тени ног (бег) перекрывают её
 const DoorLight: React.FC<{t: number}> = ({t}) => {
 	const st = RUN.at(t);
@@ -169,7 +192,9 @@ const DoorLight: React.FC<{t: number}> = ({t}) => {
 			{strip(21.3, 0.6, 0.16 * flick, '#ff9a50')}
 			{shadow(1.38, sl)}
 			{shadow(1.78, sr)}
-			<Glow position={[21.1, 5.08, 1.6]} color="#ffa860" size={1.8} opacity={0.8 * flick * (1 - 0.5 * Math.max(sl, sr))} />
+			{/* мягкое свечение вокруг щели: без теста глубины — спрайт стоит «лицом к камере» и иначе срезается
+			    плоскостью двери и пола прямой кромкой; перед дверью в этом плане ничего не проходит */}
+			<Glow position={[21.12, 5.04, 1.6]} color="#ffa860" size={1.5} opacity={0.5 * flick * (1 - 0.5 * Math.max(sl, sr))} onTop />
 		</>
 	);
 };
@@ -179,7 +204,7 @@ const SHOCK_TEXT = 'Я ОПОЗДАЛ НА 3 ЧАСА?!';
 
 const Overlay: React.FC<SceneProps> = ({t}) => {
 	// A1: тихий титр слева внизу
-	const cap = pulse(t, BEATS.captionFrom, BEATS.captionTo, 0.5, 0.5);
+	const cap = pulse(t, BEATS.captionFrom, BEATS.captionTo, 0.3, 0.5);
 	// A5: надпись влетает с ударом в 8.25 и держится до ~9.5
 	const ks = prog(t, BEATS.title, 0.11);
 	const showTitle = t >= BEATS.title && t < BEATS.titleOut + 0.12;
@@ -201,8 +226,8 @@ const Overlay: React.FC<SceneProps> = ({t}) => {
 			{speed > 0.01 ? <SpeedLines t={t} amount={speed} color="#fff1dc" count={40} /> : null}
 			{cap > 0.003 ? (
 				<>
-					<div style={{position: 'absolute', left: 100, top: 932, width: 72 * cap + 8, height: 3, background: '#f0d9b5', opacity: 0.8 * cap}} />
-					<PixelText x={100} y={980} size={50} align="left" color="#f6ecdd" color2="#e8cfa8" outlineColor="#120b06" opacity={cap} style={{transform: `translateY(${(1 - cap) * 8}px)`}}>
+					<div style={{position: 'absolute', left: 100, top: 916, width: 92 * cap + 10, height: 4, background: '#f0d9b5', opacity: 0.8 * cap}} />
+					<PixelText x={100} y={970} size={64} align="left" color="#f6ecdd" color2="#e8cfa8" outlineColor="#120b06" opacity={cap} style={{transform: `translateY(${(1 - cap) * 8}px)`}}>
 						СУББОТА · 21 НОЯБРЯ
 					</PixelText>
 				</>
