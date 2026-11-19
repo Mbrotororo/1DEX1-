@@ -133,11 +133,7 @@ export const ScreenPOV: React.FC<ScreenPOVProps> = ({
 	useLayoutEffect(() => {
 		if (!ok || !screenRef.current || !glowRef.current || !glow2Ref.current) return;
 		const c = screenRef.current;
-		const T0 = performance.now();
-		paintScreen(c.getContext('2d')!, () => undefined, t);
-		const T1 = performance.now();
-		(window as any).__pt = ((window as any).__pt ?? []).concat([Math.round(T1 - T0)]);
-		console.log('PAINT ' + (window as any).__pt.join(','));
+		paintScreen(c.getContext('2d')!, draw, t);
 		// ореол: уменьшаем в два шага (дёшево и мягко), растягивает уже браузер
 		const m = mid.getContext('2d')!;
 		m.imageSmoothingEnabled = true;
@@ -164,7 +160,7 @@ export const ScreenPOV: React.FC<ScreenPOVProps> = ({
 	const dx = -fx * zoom * pull + jx;
 	const dy = -fy * zoom * pull + jy;
 	const br = Math.max(0, Math.min(1, brightness));
-	const transform = `translate(${dx.toFixed(2)}px, ${dy.toFixed(2)}px) scale(${zoom.toFixed(4)})`;
+	const transform = `translate(${dx.toFixed(2)}px, ${dy.toFixed(2)}px) perspective(2600px) rotateY(${tilt[0].toFixed(3)}deg) rotateX(${tilt[1].toFixed(3)}deg) scale(${zoom.toFixed(4)})`;
 	const abs: React.CSSProperties = {position: 'absolute', left: 0, top: 0, width: '100%', height: '100%'};
 
 	return (
@@ -177,7 +173,7 @@ export const ScreenPOV: React.FC<ScreenPOVProps> = ({
 					ref={glowRef}
 					width={80}
 					height={45}
-					style={{position: 'absolute', left: -sw * 0.18, top: -sh * 0.2, width: sw * 1.36, height: sh * 1.4, opacity: 0.55 * glow * br}}
+					style={{position: 'absolute', left: -sw * 0.18, top: -sh * 0.2, width: sw * 1.36, height: sh * 1.4, opacity: 0.55 * glow * br, filter: 'blur(40px)'}}
 				/>
 				{/* корпус-рамка */}
 				<div
@@ -199,7 +195,7 @@ export const ScreenPOV: React.FC<ScreenPOVProps> = ({
 					ref={glow2Ref}
 					width={80}
 					height={45}
-					style={{position: 'absolute', left: 0, top: 0, width: sw, height: sh, mixBlendMode: 'screen', opacity: 0.22 * glow * br}}
+					style={{position: 'absolute', left: 0, top: 0, width: sw, height: sh, mixBlendMode: 'screen', opacity: 0.22 * glow * br, filter: 'blur(14px)'}}
 				/>
 				{/* строки и пиксельная сетка */}
 				<div
