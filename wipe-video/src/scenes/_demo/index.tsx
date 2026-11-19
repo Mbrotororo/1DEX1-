@@ -6,9 +6,11 @@ import {
 	Breeze,
 	Burst,
 	Caption,
+	Chest,
 	CooldownClock,
 	CopperGate,
 	Countdown,
+	Door,
 	Counter,
 	ENV,
 	Environment,
@@ -21,9 +23,11 @@ import {
 	Hearts,
 	HudLayer,
 	Humanoid,
+	IceCube,
 	InstancedBlocks,
 	ItemIcon,
 	Lantern,
+	Mace,
 	Letterbox,
 	LightBeam,
 	NameTag,
@@ -277,6 +281,13 @@ const IslandShot: React.FC<SceneProps> = ({t, cam, assets}) => {
 					<Lantern position={[hx + 6.5, hy + 1, hz + 1.5]} t={t} />
 				</>
 			) : null}
+			{/* дверь и сундук — модели: открываются; вместе с миром появляются и исчезают по времени */}
+			{t > 2.4 && t < 6.4 ? (
+				<>
+					<Door position={[hx + 2, hy, hz + 3]} open={smooth(prog(t, 3.0, 0.5)) * (1 - smooth(prog(t, 4.6, 0.4)))} />
+					<Chest position={[hx + 6.5, hy, hz + 3.5]} lid={smooth(prog(t, 3.2, 0.4))} glow={prog(t, 3.3, 0.4)} />
+				</>
+			) : null}
 
 			{/* объёмная надпись в мире + экранный 3D-слой */}
 			<VoxelText text="ДЕМО ЯДРА" t={t} px={0.5} top="#ffffff" bottom="#9fd0ff" body="#1b3a6e" appearAt={BEATS.title} exitAt={3.4} position={[0, 17, 0]} rotation={[0, cam.azimuth, 0]} />
@@ -344,7 +355,7 @@ const DungeonShot: React.FC<SceneProps> = ({t, cam, assets}) => {
 				) : null;
 			})}
 			{/* награда: булава и книга поднимаются из сундука */}
-			<PixelItem art="mace" size={1.1} position={[0.5 - 0.5 * rise, 1.6 + rise * 1.3, 0.5]} rotation={[0, ts * 2, 0]} scale={rise} glow={0.5} />
+			<Mace length={1.1} position={[0.5 - 0.5 * rise, 1.6 + rise * 1.3, 0.5]} rotation={[0.3, ts * 2, 0.5]} scale={rise} glow={0.5} />
 			<PixelItem art="enchantedBook" size={0.8} position={[0.5 + 0.7 * rise, 1.6 + rise * 1.1, 0.5]} rotation={[0, -ts * 1.6, 0]} scale={rise} glint={t} glow={0.4} />
 
 			{/* персонажи */}
@@ -356,8 +367,9 @@ const DungeonShot: React.FC<SceneProps> = ({t, cam, assets}) => {
 			))}
 			<NameTag text="1DEX1" position={headTop(hero)} cam={cam} />
 
-			<Humanoid skin={getSkin('griefer')} position={griefer} rotationY={-0.9} pose={ts < 2 ? smash(clamp01((ts - 1.5) / 0.3)) : cheer(t)} handR={<PixelItem art="mace" held />} frozen={prog(t, 11, 0.5)} />
+			<Humanoid skin={getSkin('griefer')} position={griefer} rotationY={-0.9} pose={ts < 2 ? smash(clamp01((ts - 1.5) / 0.3)) : cheer(t)} handR={<Mace held rotation={ts < 2 ? [0, 0, 0] : [-1.3, 0, 0]} />} frozen={prog(t, 11, 0.5)} />
 			<NameTag text="GRIEFER" position={headTop(griefer)} cam={cam} color="#ff4a3c" />
+			<IceCube position={griefer} grow={easeOutBack(prog(t, 11, 0.4), 1.1)} />
 			<Humanoid skin={getSkin('zombie')} position={zombie} rotationY={2.2} pose={zombieArms(ts * 5)} />
 			<Humanoid skin={getSkin('skeleton')} position={skeleton} rotationY={-1.9} pose={aimBow()} handL={<PixelItem art="bow" held />} />
 			<Breeze position={breeze} t={t} rotationY={Math.PI} charge={0.5 + 0.5 * Math.sin(ts * 2)} dissolve={prog(t, 11.2, 0.6)} />
@@ -416,14 +428,14 @@ const ParadeShot: React.FC<SceneProps> = ({t, cam, assets}) => {
 	}, []);
 	const hero = imageHero(assets);
 	const k = (ts * 0.7) % 1;
-	const actors: {x: number; node: (pos: Vec3) => React.ReactNode; name?: string; color?: string}[] = [
-		{x: -6, name: 'ЗЕЛЬЕ', node: (pos) => <Player skin={hero} position={pos} pose={drink(k)} handR={<PixelItem art={potionArt(SPEED_POTION)} held />} />},
-		{x: -4, name: 'СНЕЖОК', node: (pos) => <Player skin={hero} position={pos} pose={throwing(k)} handR={k < 0.5 ? <PixelItem art="snowball" held /> : undefined} />},
-		{x: -2, name: 'БУЛАВА', node: (pos) => <Player skin={hero} position={pos} pose={mixPose(shoulder(t), smash(clamp01((k - 0.5) / 0.25)), k > 0.4 ? 1 : 0)} handR={<PixelItem art="mace" held />} />},
-		{x: 0, name: '1DEX1', node: (pos) => <Player skin={hero} position={pos} pose={hold()} handR={<PixelItem art="enderPearl" held />} handL={<PixelItem art="trialKey" held />} />},
-		{x: 2, name: 'GRIEFER', color: '#ff4a3c', node: (pos) => <Humanoid skin={getSkin('griefer')} position={pos} pose={lookAround(t, k)} handR={<PixelItem art="ironSword" held />} />},
-		{x: 4, name: 'ЗОМБИ', node: (pos) => <Humanoid skin={getSkin('zombie')} position={pos} pose={zombieArms(ts * 5)} />},
-		{x: 6, name: 'СКЕЛЕТ', node: (pos) => <Humanoid skin={getSkin('skeleton')} position={pos} pose={aimBow()} handL={<PixelItem art="bow" held />} />},
+	const actors: {x: number; node: (pos: Vec3, yaw: number) => React.ReactNode; name?: string; color?: string}[] = [
+		{x: -6, name: 'ЗЕЛЬЕ', node: (pos, yaw) => <Player skin={hero} position={pos} rotationY={yaw} pose={drink(k)} handR={<PixelItem art={potionArt(SPEED_POTION)} held />} />},
+		{x: -4, name: 'СНЕЖОК', node: (pos, yaw) => <Player skin={hero} position={pos} rotationY={yaw} pose={throwing(k)} handR={k < 0.5 ? <PixelItem art="snowball" held /> : undefined} />},
+		{x: -2, name: 'БУЛАВА', node: (pos, yaw) => <Player skin={hero} position={pos} rotationY={yaw} pose={mixPose(shoulder(t), smash(clamp01((k - 0.5) / 0.25)), k > 0.4 ? 1 : 0)} handR={<Mace held />} />},
+		{x: 0, name: '1DEX1', node: (pos, yaw) => <Player skin={hero} position={pos} rotationY={yaw} pose={hold()} handR={<PixelItem art="enderPearl" held />} handL={<PixelItem art="trialKey" held />} />},
+		{x: 2, name: 'GRIEFER', color: '#ff4a3c', node: (pos, yaw) => <Humanoid skin={getSkin('griefer')} position={pos} rotationY={yaw} pose={lookAround(t, k)} handR={<PixelItem art="ironSword" held />} />},
+		{x: 4, name: 'ЗОМБИ', node: (pos, yaw) => <Humanoid skin={getSkin('zombie')} position={pos} rotationY={yaw} pose={zombieArms(ts * 5)} />},
+		{x: 6, name: 'СКЕЛЕТ', node: (pos, yaw) => <Humanoid skin={getSkin('skeleton')} position={pos} rotationY={yaw} pose={aimBow()} handL={<PixelItem art="bow" held />} />},
 	];
 	return (
 		<>
@@ -433,10 +445,11 @@ const ParadeShot: React.FC<SceneProps> = ({t, cam, assets}) => {
 			<Snowfall t={t} center={[cam.position.x, cam.position.y, cam.position.z]} count={900} density={0.5} wind={[0.4, -1.6, 0.2]} />
 			{actors.map((a) => {
 				const pos: Vec3 = [a.x + 0.5, 0, 0.5];
+				const turn = Math.sin(ts * 1.4) * 0.9;
 				return (
 					<React.Fragment key={a.x}>
 						<BlobShadow x={pos[0]} z={pos[2]} opacity={0.35} />
-						{a.node(pos)}
+						{a.node(pos, turn)}
 						{a.name ? <NameTag text={a.name} position={headTop(pos)} cam={cam} color={a.color} /> : null}
 					</React.Fragment>
 				);

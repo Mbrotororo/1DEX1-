@@ -11,9 +11,9 @@ export {TEX, paintTexture, dataTexture, imageTexture} from './textures';
 
 // воксели
 export {B, BLOCKS, defineBlock, blockByName, blockName, type BlockDef, type BlockSpec, type BlockName} from './voxel/blocks';
-export {defineTile, defineSpriteTile, tileIndex, shade, mixRgb, type Painter} from './voxel/tiles';
+export {defineTile, defineSpriteTile, tileIndex, tileData, shade, mixRgb, type Painter} from './voxel/tiles';
 export {getAtlas} from './voxel/atlas';
-export {VoxelWorld, makeBands, bandBlocks, defaultStrata, type BlockInst, type Bands} from './voxel/world';
+export {VoxelWorld, makeBands, bandBlocks, defaultStrata, strata, type BlockInst, type Bands} from './voxel/world';
 export {buildVoxelMeshes, collectLights, FACE_SHADE, FACE_SHADES, type BakedLight, type MeshOptions, type VoxelMeshes} from './voxel/mesher';
 export {VoxelMesh, type VoxelMeshProps} from './voxel/VoxelMesh';
 export {InstancedBlocks, type BlockAnim, type InstancedBlocksProps} from './voxel/InstancedBlocks';
@@ -28,7 +28,7 @@ export {makePath, type Path, type PathKey, type PathState} from './chars/path';
 export {getSkin, imageSkin, type Skin, type SkinName, type SkinBuild} from './chars/skins';
 export {NameTag, BlobShadow, shadowFor, Glow, type NameTagProps} from './chars/extras';
 export {Pig, Breeze, type PigProps, type BreezeProps} from './chars/mobs';
-export {Torch, Lantern, TrialSpawner, Vault, CopperGate, TreeLights, flicker} from './props';
+export {Torch, Lantern, TrialSpawner, Vault, Chest, Door, CopperGate, TreeLights, Mace, IceCube, flicker} from './props';
 export {PixelItem, itemTexture, type PixelItemProps} from './items/PixelItem';
 export {ART, potionArt, SPEED_POTION, type ItemArt, type ItemName} from './items/art';
 

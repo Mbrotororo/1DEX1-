@@ -22,8 +22,8 @@ const StubWorld: React.FC<SceneProps & {id: string}> = ({t, cam, assets, id}) =>
 	const meshes = useMemo(() => {
 		const w = new VoxelWorld([-14, -3, -14], [13, 12, 13]);
 		w.heightmap(() => -1, {block: (_x, y, _z, top) => (y === top ? B.snowyGrass : B.dirt)});
-		spruceTree(w, -7, 0, -6, {snowy: true});
-		spruceTree(w, 8, 0, -4, {snowy: true, height: 7});
+		spruceTree(w, -6, 0, -9, {snowy: true});
+		spruceTree(w, 7, 0, -8, {snowy: true, height: 7});
 		return buildVoxelMeshes(w, {cull: {bottom: true}});
 	}, []);
 	const env = ENV.frostyMorning;
@@ -35,7 +35,7 @@ const StubWorld: React.FC<SceneProps & {id: string}> = ({t, cam, assets, id}) =>
 			<BlobShadow x={0} z={0} />
 			<Humanoid skin={assets.skin} position={pos} rotationY={cam.azimuth} pose={idle(t)} />
 			<NameTag text="1DEX1" position={headTop(pos)} cam={cam} />
-			<VoxelText text={id} t={t} px={0.16} top="#ffffff" bottom="#9fd0ff" body="#1b3a6e" appearAt={0.3} position={[0, 4.2, -3]} rotation={[0, cam.azimuth, 0]} />
+			<VoxelText text={id} t={t} px={0.16} top="#ffffff" bottom="#9fd0ff" body="#1b3a6e" appearAt={0.3} position={[0, 4.6, -4]} rotation={[0, cam.azimuth, 0]} />
 			<Snowfall t={t} center={[cam.position.x, cam.position.y, cam.position.z]} count={600} density={0.6} />
 		</>
 	);
@@ -44,8 +44,8 @@ const StubWorld: React.FC<SceneProps & {id: string}> = ({t, cam, assets, id}) =>
 export const makeStubScene = (id: string): SceneDef => ({
 	id,
 	camera: orbitCam([
-		{t: 0, az: 20, el: 14, dist: 15, target: [0, 2.2, 0]},
-		{t: 40, az: 140, el: 18, dist: 13, target: [0, 2.2, 0]},
+		{t: 0, az: -35, el: 12, dist: 14, target: [0, 2.2, 0]},
+		{t: 40, az: 45, el: 16, dist: 12, target: [0, 2.2, 0]},
 	]),
 	World: (props) => <StubWorld {...props} id={id} />,
 	Overlay: () => (

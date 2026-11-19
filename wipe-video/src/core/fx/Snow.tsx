@@ -210,19 +210,21 @@ export type FlakeStreamProps = {
 // Для сборки мира «наоборот» передай time = конец − t и ветер к себе.
 export const FlakeStream: React.FC<FlakeStreamProps> = ({t, sources, perSource = 3, wind = [6, 1.5, 2], life = 1.6, size = 0.12, spread = 0.5, gravity = 0, color = '#ffffff', opacity = 0.95, seed = 11}) => {
 	const bufH = useBufferHeight();
-	const geo = useMemo(() => {
-		const n = sources.length * perSource;
+	const {geo, starts} = useMemo(() => {
+		// источники по порядку времени: каждый кадр рисуется только отрезок «живых»
+		const sorted = [...sources].sort((a, b) => a.at - b.at);
+		const n = sorted.length * perSource;
 		const rnd = mulberry32(seed);
 		const pos = new Float32Array(n * 3);
 		const start = new Float32Array(n);
 		const seeds = new Float32Array(n * 4);
-		for (let i = 0; i < sources.length; i++) {
+		for (let i = 0; i < sorted.length; i++) {
 			for (let j = 0; j < perSource; j++) {
 				const o = i * perSource + j;
-				pos[o * 3] = sources[i].pos[0];
-				pos[o * 3 + 1] = sources[i].pos[1];
-				pos[o * 3 + 2] = sources[i].pos[2];
-				start[o] = sources[i].at;
+				pos[o * 3] = sorted[i].pos[0];
+				pos[o * 3 + 1] = sorted[i].pos[1];
+				pos[o * 3 + 2] = sorted[i].pos[2];
+				start[o] = sorted[i].at;
 				for (let q = 0; q < 4; q++) seeds[o * 4 + q] = rnd();
 			}
 		}
@@ -230,7 +232,7 @@ export const FlakeStream: React.FC<FlakeStreamProps> = ({t, sources, perSource =
 		g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
 		g.setAttribute('aStart', new THREE.BufferAttribute(start, 1));
 		g.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 4));
-		return g;
+		return {geo: g, starts: sorted.map((s) => s.at)};
 	}, [sources, perSource, seed]);
 	const mat = useMemo(
 		() =>
@@ -268,6 +270,20 @@ export const FlakeStream: React.FC<FlakeStreamProps> = ({t, sources, perSource =
 	u.uGravity.value = gravity;
 	(u.uColor.value as THREE.Color).set(color);
 	u.uOpacity.value = opacity;
-	if (sources.length === 0) return null;
+	// первый ещё не «умерший» источник и первый ещё не родившийся
+	const lowerBound = (v: number) => {
+		let a = 0;
+		let b = starts.length;
+		while (a < b) {
+			const m = (a + b) >> 1;
+			if (starts[m] < v) a = m + 1;
+			else b = m;
+		}
+		return a;
+	};
+	const first = lowerBound(t - life - 0.3);
+	const last = lowerBound(t + 0.001);
+	geo.setDrawRange(first * perSource, Math.max(0, last - first) * perSource);
+	if (last <= first) return null;
 	return <points geometry={geo} material={mat} frustumCulled={false} renderOrder={5} />;
 };

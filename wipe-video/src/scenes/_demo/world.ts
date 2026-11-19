@@ -75,11 +75,12 @@ export const getIsland = once(() => {
 		])
 			world.set(cx, gy + y, cz, B.oakLog);
 	}
-	world.set(hx + 2, gy, hz + 3, B.doorBottom).set(hx + 2, gy + 1, hz + 3, B.doorTop);
+	// дверной проём пустой: саму дверь рисует <Door/> (она открывается)
+	world.fill(hx + 2, gy, hz + 3, hx + 2, gy + 1, hz + 3, 0);
 	world.set(hx + 1, gy + 1, hz + 3, B.window).set(hx + 3, gy + 1, hz + 3, B.window).set(hx + 4, gy + 1, hz + 1, B.windowLit);
 	for (let step = 0; step < 3; step++) world.fill(hx - 1 + step, gy + 3 + step, hz - 1 + step, hx + 5 - step, gy + 3 + step, hz + 4 - step, B.darkPlanks);
 	// двор: сундук, верстак, полка, сено, грядка, дорожка, забор, полублоки
-	world.set(hx + 6, gy, hz + 3, B.chest).set(hx + 7, gy, hz + 3, B.craftingTable).set(hx + 8, gy, hz + 3, B.bookshelf).set(hx + 6, gy, hz + 1, B.hay);
+	world.set(hx + 7, gy, hz + 3, B.craftingTable).set(hx + 8, gy, hz + 3, B.bookshelf).set(hx + 6, gy, hz + 1, B.hay);
 	for (let x = 0; x < 4; x++) {
 		for (let z = 0; z < 3; z++) {
 			world.set(-2 + x, gy - 1, -9 + z, B.farmland);

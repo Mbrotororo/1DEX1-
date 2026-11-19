@@ -138,6 +138,16 @@ export type VoxelMeshProps = {
 	renderOrder?: number;
 };
 
+// Лёгкая «обёртка» над общей геометрией: свои границы отрисовки у каждого VoxelMesh
+const viewOf = (src: THREE.BufferGeometry) => {
+	const geo = new THREE.BufferGeometry();
+	for (const name of Object.keys(src.attributes)) geo.setAttribute(name, src.getAttribute(name));
+	geo.setIndex(src.getIndex());
+	return geo;
+};
+
+const LAYERS = ['opaque', 'cutout', 'translucent'] as const;
+
 // Статичный мир одной слитой геометрией (до трёх слоёв: обычные блоки, «дырявые», вода)
 export const VoxelMesh: React.FC<VoxelMeshProps> = ({
 	meshes,
@@ -162,6 +172,14 @@ export const VoxelMesh: React.FC<VoxelMeshProps> = ({
 		}),
 		[],
 	);
+	const views = useMemo(
+		() =>
+			LAYERS.map((name) => {
+				const layer = meshes[name];
+				return layer ? {name, layer, main: viewOf(layer.main), seam: layer.seam ? viewOf(layer.seam) : null} : null;
+			}),
+		[meshes],
+	);
 	// униформы обновляются каждый кадр прямо тут: рендер three читает их позже
 	for (const mat of [mats.opaque, mats.cutout, mats.translucent]) {
 		const u = mat.uniforms;
@@ -174,13 +192,28 @@ export const VoxelMesh: React.FC<VoxelMeshProps> = ({
 	}
 	mats.translucent.uniforms.uOpacity.value = waterOpacity;
 
+	// какие полосы видны -> какой отрезок индексов рисовать
+	const nb = meshes.bandMax - meshes.bandMin + 1;
+	const lo = Math.min(nb, Math.max(0, Math.ceil((bands ? bands[0] : -Infinity) - meshes.bandMin)));
+	const hi = Math.min(nb, Math.max(lo, Math.ceil((bands ? bands[1] : Infinity) - meshes.bandMin)));
+	const all = lo === 0 && hi === nb;
+	for (const v of views) {
+		if (!v) continue;
+		v.main.setDrawRange(v.layer.mainStart[lo], v.layer.mainStart[hi] - v.layer.mainStart[lo]);
+		// швы нужны, только когда часть полос скрыта
+		if (v.seam) v.seam.setDrawRange(v.layer.seamStart[lo], all ? 0 : v.layer.seamStart[hi] - v.layer.seamStart[lo]);
+	}
+
 	return (
 		<group position={position} rotation={rotation} scale={scale} visible={visible}>
-			{meshes.opaque ? <mesh geometry={meshes.opaque} material={mats.opaque} frustumCulled={false} renderOrder={renderOrder} /> : null}
-			{meshes.cutout ? <mesh geometry={meshes.cutout} material={mats.cutout} frustumCulled={false} renderOrder={renderOrder} /> : null}
-			{meshes.translucent ? (
-				<mesh geometry={meshes.translucent} material={mats.translucent} frustumCulled={false} renderOrder={renderOrder + 1} />
-			) : null}
+			{views.map((v) =>
+				v ? (
+					<React.Fragment key={v.name}>
+						<mesh geometry={v.main} material={mats[v.name]} frustumCulled={false} renderOrder={renderOrder + (v.name === 'translucent' ? 1 : 0)} />
+						{v.seam && !all ? <mesh geometry={v.seam} material={mats[v.name]} frustumCulled={false} renderOrder={renderOrder + (v.name === 'translucent' ? 1 : 0)} /> : null}
+					</React.Fragment>
+				) : null,
+			)}
 		</group>
 	);
 };

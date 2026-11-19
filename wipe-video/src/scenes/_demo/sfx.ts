@@ -19,7 +19,7 @@ s.add(6.85, 'mob/pig/say1', 0.6, {rate: 1.2});
 // подземелье: эхо
 const cave = {reverb: 0.5};
 s.add(BEATS.spawner, 'block/trial_spawner/ambient1', 0.5, cave);
-s.add(BEATS.keyFly, 'block/vault/insert_item', 0.8, cave);
+s.add(BEATS.keyFly, 'block/vault/insert', 0.8, cave);
 s.add(BEATS.lidOpen, 'block/vault/open_shutter', 0.8, cave);
 s.add(BEATS.gate, 'block/copper_door/toggle1', 0.7, cave);
 s.add(BEATS.shock, 'item/mace/smash_ground1', 0.8, cave);

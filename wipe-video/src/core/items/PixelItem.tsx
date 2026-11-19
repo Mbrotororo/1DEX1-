@@ -108,10 +108,14 @@ const getGlint = () => {
 export type PixelItemProps = {
 	// имя из библиотеки ('mace', 'snowball', ...) или свой рисунок (например potionArt('#33ccff'))
 	art: ItemName | ItemArt;
-	// размер рисунка в блоках (16 пикселей по большей стороне); по умолчанию 0.85 — как в руке у игрока
+	// размер рисунка в блоках (по большей стороне); по умолчанию 0.85, а у обычного предмета в руке — 0.6 (как в игре)
 	size?: number;
-	// предмет в руке: передаётся в handR/handL персонажа, сам встаёт в кулак как в игре
+	// предмет в руке: передаётся в handR/handL персонажа, сам встаёт в кулак как в игре.
+	// Оружие (меч, лук) торчит вперёд; обычный предмет (зелье, снежок) лежит в ладони плоскостью
+	// поперёк руки — когда рука вытянута вперёд, рисунок смотрит на зрителя.
 	held?: boolean;
+	// всегда лицом к камере (летящий снежок, жемчуг, ключ): передай cam
+	billboard?: {quaternion: THREE.Quaternion};
 	position?: [number, number, number];
 	rotation?: [number, number, number];
 	scale?: number;
@@ -131,8 +135,9 @@ const WHITE = new THREE.Color('#ffffff');
 
 export const PixelItem: React.FC<PixelItemProps> = ({
 	art,
-	size = 0.85,
+	size,
 	held = false,
+	billboard,
 	position,
 	rotation,
 	scale = 1,
@@ -166,7 +171,7 @@ export const PixelItem: React.FC<PixelItemProps> = ({
 	mat.opacity = opacity;
 
 	if (!visible || scale <= 0.0001 || opacity <= 0.001) return null;
-	const k = (size / Math.max(b.w, b.h)) * scale;
+	const k = ((size ?? (held && !def.tool ? 0.6 : 0.85)) / Math.max(b.w, b.h)) * scale;
 
 	if (glint !== undefined) {
 		// бегущие полосы зачарования
@@ -184,20 +189,34 @@ export const PixelItem: React.FC<PixelItemProps> = ({
 		</>
 	);
 
-	if (held) {
-		// В руке: плоскость рисунка — вдоль руки и «вперёд» (нормаль вбок), точка хвата — в кулаке.
-		// Инструмент торчит вперёд и чуть вверх, как меч в игре; обычный предмет стоит в ладони.
+	if (held && def.tool) {
+		// Оружие: плоскость рисунка — вдоль руки и «вперёд» (нормаль вбок), рукоять — в кулаке,
+		// остриё смотрит вперёд и чуть вверх, как меч в игре.
 		const [gx, gy] = def.grip ?? [b.w / 2, b.h / 2];
-		const ox = -(gx - b.w / 2);
-		const oy = -(gy - b.h / 2);
-		const tilt = def.tool ? Math.PI * 0.19 : Math.PI * 0.42;
 		return (
 			<group position={position} rotation={rotation}>
-				<group position={[0, -0.02, 0.07]} rotation={[tilt, 0, 0]}>
+				<group position={[0, -0.02, 0.07]} rotation={[Math.PI * 0.19, 0, 0]}>
 					<group rotation={[0, -Math.PI / 2, 0]} scale={k}>
-						<group position={[ox, oy, 0]}>{mesh}</group>
+						<group position={[-(gx - b.w / 2), -(gy - b.h / 2), 0]}>{mesh}</group>
 					</group>
 				</group>
+			</group>
+		);
+	}
+	if (held) {
+		// Обычный предмет: лежит поперёк руки, верх рисунка — «вперёд» от кулака
+		return (
+			<group position={position} rotation={rotation}>
+				<group position={[0, -0.09, 0.1 + (k * b.h) / 2 - 0.12]} rotation={[Math.PI / 2, 0, 0]} scale={k}>
+					{mesh}
+				</group>
+			</group>
+		);
+	}
+	if (billboard) {
+		return (
+			<group position={position} quaternion={billboard.quaternion.clone()} scale={k}>
+				<group rotation={rotation}>{mesh}</group>
 			</group>
 		);
 	}

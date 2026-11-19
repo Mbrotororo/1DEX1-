@@ -19,6 +19,8 @@ export type VideoProps = {
 	audio?: boolean;
 	// впечатать время в кадр (для контактных листов)
 	stamp?: boolean;
+	// сглаживание краёв (по умолчанию включено)
+	antialias?: boolean;
 };
 
 export const sceneLength = (scene: SceneDef): number => {
@@ -27,6 +29,9 @@ export const sceneLength = (scene: SceneDef): number => {
 	if (!slot) throw new Error(`Сцена "${scene.id}": нет в timeline.ts и не задана duration`);
 	return slot.duration;
 };
+
+// Начальные параметры камеры холста (дальше её каждый кадр ставит CameraRig)
+const CANVAS_CAMERA = {fov: 38, near: 0.1, far: 2000};
 
 // Ставит камеру кадра
 const CameraRig: React.FC<{cam: CameraState}> = ({cam}) => {
@@ -84,7 +89,7 @@ type PlayerProps = VideoProps & {
 	mode: 'timeline' | 'single';
 };
 
-export const ScenePlayer: React.FC<PlayerProps> = ({scenes, mode, audio = true, stamp = false}) => {
+export const ScenePlayer: React.FC<PlayerProps> = ({scenes, mode, audio = true, stamp = false, antialias = true}) => {
 	const assets = useAssets();
 	const frame = useCurrentFrame();
 	const {fps} = useVideoConfig();
@@ -118,7 +123,7 @@ export const ScenePlayer: React.FC<PlayerProps> = ({scenes, mode, audio = true, 
 		<AbsoluteFill style={{backgroundColor: '#05081e', overflow: 'hidden'}}>
 			{assets ? (
 				<>
-					<ThreeCanvas width={WIDTH} height={HEIGHT} flat dpr={dpr} camera={{fov: cam.fov, near: 0.1, far: 2000}} gl={{antialias: true}}>
+					<ThreeCanvas width={WIDTH} height={HEIGHT} flat dpr={dpr} camera={CANVAS_CAMERA} gl={{antialias}}>
 						<CameraRig cam={cam} />
 						<World key={scene.id} t={t} cam={cam} assets={assets} duration={duration} />
 					</ThreeCanvas>

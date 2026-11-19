@@ -249,6 +249,12 @@ const DIRT = BLOCKS.find((b) => b.name === 'dirt')!.id;
 const STONE = BLOCKS.find((b) => b.name === 'stone')!.id;
 export const defaultStrata = (_x: number, y: number, _z: number, top: number) => (y === top ? GRASS : y >= top - 3 ? DIRT : STONE);
 
+// Свои слои для heightmap: strata(B.snowyGrass) — снежный верх, под ним земля и камень
+export const strata =
+	(top: number, under: number = DIRT, deep: number = STONE, underDepth = 3) =>
+	(_x: number, y: number, _z: number, topY: number) =>
+		y === topY ? top : y >= topY - underDepth ? under : deep;
+
 // ---------- полосы (bands) для волны появления/распада ----------
 // Каждому блоку — целый номер полосы 0..N. VoxelMesh умеет показывать только полосы из диапазона,
 // а bandBlocks отдаёт блоки одной полосы для поблочной анимации через InstancedBlocks.

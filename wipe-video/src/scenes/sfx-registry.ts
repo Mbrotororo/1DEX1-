@@ -8,9 +8,9 @@ import {events as s6} from './s6-reward/sfx';
 import {events as s7} from './s7-pvp/sfx';
 import {events as s8} from './s8-pearl/sfx';
 import {events as s9} from './s9-finale/sfx';
-import {events as demo} from './_demo/sfx';
 
-// Звуки всех сцен (локальное время каждой). ЧИСТЫЙ модуль: его читают Node-скрипты.
+// Звуки всех сцен таймлайна (локальное время каждой). ЧИСТЫЙ модуль: его читают Node-скрипты
+// (scripts/fetch-sounds.ts и scripts/mix-audio.ts). Служебные сцены (_demo и др.) сводятся отдельно: --scene=demo.
 export const SCENE_SFX: Record<string, SfxEvent[]> = {
 	's1-hook': s1,
 	's2-oldworld': s2,
@@ -21,9 +21,4 @@ export const SCENE_SFX: Record<string, SfxEvent[]> = {
 	's7-pvp': s7,
 	's8-pearl': s8,
 	's9-finale': s9,
-};
-
-// Сцены вне таймлайна (в общий микс не идут; сводятся только через --scene=<id>)
-export const EXTRA_SFX: Record<string, {events: SfxEvent[]; duration: number}> = {
-	demo: {events: demo, duration: 15.5},
 };

@@ -1,5 +1,8 @@
+# Собирает public/fonts/pixelify-sans-ru-{500,700}.woff2 из исходных файлов Pixelify Sans (OFL).
+# Запуск (нужны fonttools и brotli): python3 scripts/patch-font.py <папка с pixelify-sans-latin/cyrillic.woff2> public/fonts
 # Чинит Pixelify Sans для русского текста: в исходном шрифте нет заглавных «О» и «П»,
 # а у «К» лишний штрих. Делает статические начертания (вес 500 и 700) с полным набором букв.
+import os
 import sys
 from fontTools.ttLib import TTFont
 from fontTools.varLib import instancer
@@ -18,11 +21,13 @@ for weight in (500, 700):
         for tag in ('GSUB', 'GPOS', 'GDEF', 'STAT', 'avar', 'MVAR', 'HVAR'):
             if tag in f:
                 del f[tag]
-        path = f'/tmp/claude-0/font/{name}-{weight}.ttf'
+        path = f'{out}/.tmp-{name}-{weight}.ttf'
         f.flavor = None
         f.save(path)
         parts.append(path)
     font = Merger().merge(parts)
+    for path in parts:
+        os.remove(path)
     cmap = font.getBestCmap()
     gs = font.getGlyphSet()
     glyf = font['glyf']

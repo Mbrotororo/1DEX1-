@@ -9,11 +9,11 @@
 //   npm run shots -- --global --sheet --step=5
 //
 // Для сцены собирается ТОЛЬКО она (временная точка входа), поэтому чужой сломанный файл не мешает.
-import {bundle} from '@remotion/bundler';
-import {openBrowser, renderFrames, renderStill, selectComposition} from '@remotion/renderer';
-import {mkdirSync, readdirSync, rmSync, writeFileSync, copyFileSync} from 'node:fs';
+import {getCompositions, openBrowser, renderFrames, renderStill, selectComposition} from '@remotion/renderer';
+import {copyFileSync, mkdirSync, readdirSync, rmSync} from 'node:fs';
 import {join, relative} from 'node:path';
-import {OUT, PUBLIC, ROOT, TMP, parseArgs, runFfmpeg, sceneFolder} from './lib';
+import {OUT, ROOT, TMP, parseArgs, runFfmpeg} from './lib';
+import {bundleTarget, chromiumOptions, logLevel, makeBrowserLog} from './render-lib';
 
 const {flags, rest} = parseArgs(process.argv.slice(2));
 const isGlobal = flags.global === true;
@@ -27,67 +27,21 @@ const sheet = flags.sheet === true;
 const bench = flags.bench === true;
 const jobs = Math.max(1, Number(flags.jobs ?? 2));
 const times = rest.map(Number).filter((n) => Number.isFinite(n));
-const chromiumOptions = {gl: 'swangle' as const};
-const logLevel = 'error' as const;
-
 const log = (msg: string) => console.log(msg);
 
 const main = async () => {
-	mkdirSync(TMP, {recursive: true});
-	let entryPoint: string;
-	let compId: string;
-	let name: string;
-	if (isGlobal) {
-		entryPoint = join(ROOT, 'src', 'index.ts');
-		compId = 'WipeVideo';
-		name = 'global';
-	} else {
-		const folder = sceneFolder(sceneArg!);
-		name = folder.replace(/^_/, '');
-		entryPoint = join(TMP, `entry-${name}.tsx`);
-		// точка входа только с этой сценой
-		writeFileSync(
-			entryPoint,
-			[
-				`import React from 'react';`,
-				`import {registerRoot} from 'remotion';`,
-				`import {sceneComposition} from '../src/core/player';`,
-				`import {scene} from '../src/scenes/${folder}';`,
-				`registerRoot(() => <>{sceneComposition(scene)}</>);`,
-				``,
-			].join('\n'),
-		);
-		compId = '';
-	}
+	const target = await bundleTarget(isGlobal ? null : sceneArg);
+	const {name, serveUrl} = target;
+	let compId = target.compId ?? '';
 	const outDir = join(OUT, 'shots', name);
 	mkdirSync(outDir, {recursive: true});
-
-	const t0 = Date.now();
-	const serveUrl = await bundle({
-		entryPoint,
-		publicDir: PUBLIC,
-		symlinkPublicDir: true,
-		// у каждой сцены свой кэш сборки, чтобы параллельные запуски не мешали друг другу
-		webpackOverride: (config) => ({...config, cache: config.cache && typeof config.cache === 'object' ? {...config.cache, name: `shots-${name}`} : config.cache}),
-	});
-	log(`Сборка: ${((Date.now() - t0) / 1000).toFixed(1)} с`);
-
 	const browser = await openBrowser('chrome', {chromiumOptions, logLevel});
-	const seen = new Set<string>();
-	const onBrowserLog = (l: {type: string; text: string}) => {
-		if (l.type !== 'error' && l.type !== 'warning' && l.type !== 'log') return;
-		if (/Download the React DevTools|GPU stall|WebGL.*deprecated|GL Driver Message|THREE\.Clock/i.test(l.text)) return;
-		const key = `${l.type}:${l.text}`;
-		if (seen.has(key)) return;
-		seen.add(key);
-		log(`  [браузер ${l.type}] ${l.text}`);
-	};
+	const onBrowserLog = makeBrowserLog();
 
 	try {
-		const inputProps = {audio: false, stamp: sheet};
+		const inputProps = {audio: false, stamp: sheet, antialias: flags.noaa !== true};
 		if (!compId) {
 			// id композиции = id сцены из её SceneDef
-			const {getCompositions} = await import('@remotion/renderer');
 			const comps = await getCompositions(serveUrl, {inputProps, puppeteerInstance: browser, chromiumOptions, logLevel});
 			compId = comps[0].id;
 		}
@@ -112,6 +66,7 @@ const main = async () => {
 				outputDir: dir,
 				frameRange: [start, Math.min(last, start + count - 1)],
 				imageFormat: 'jpeg',
+				scale: Number(flags.scale ?? 1),
 				concurrency: 1,
 				puppeteerInstance: browser,
 				chromiumOptions,
@@ -217,6 +172,8 @@ const main = async () => {
 		log(`Кадры (${full ? '1920x1080' : '960x540'}; время включает загрузку страницы и постройку мира):`);
 		for (const r of results) log(`  t=${r.t.toFixed(2)}  ${String(r.ms).padStart(5)} мс  ${relative(ROOT, r.file)}`);
 	} finally {
+		// даём вкладкам закрыться самим, иначе браузер ругается на уже закрытые
+		await new Promise((r) => setTimeout(r, 400));
 		await browser.close({silent: true});
 		rmSync(serveUrl, {recursive: true, force: true});
 	}

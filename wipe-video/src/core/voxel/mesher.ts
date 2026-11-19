@@ -40,10 +40,21 @@ export type MeshOptions = {
 	cull?: {bottom?: boolean; sides?: boolean; top?: boolean};
 };
 
+// Геометрия одного слоя. Грани отсортированы по номеру полосы, поэтому VoxelMesh рисует
+// только нужный отрезок индексов. «Швы» между полосами лежат отдельно: они нужны, лишь когда
+// соседняя полоса скрыта, и при полностью видимом мире не рисуются вовсе.
+export type LayerGeometry = {
+	main: THREE.BufferGeometry;
+	// начало граней полосы b в индексах main: mainStart[b - bandMin]; последний элемент — конец
+	mainStart: Uint32Array;
+	seam: THREE.BufferGeometry | null;
+	seamStart: Uint32Array;
+};
+
 export type VoxelMeshes = {
-	opaque: THREE.BufferGeometry | null;
-	cutout: THREE.BufferGeometry | null;
-	translucent: THREE.BufferGeometry | null;
+	opaque: LayerGeometry | null;
+	cutout: LayerGeometry | null;
+	translucent: LayerGeometry | null;
 	// диапазон номеров полос [min, max]
 	bandMin: number;
 	bandMax: number;
@@ -81,9 +92,12 @@ class Layer {
 	uv = new Float32Array(4096 * 4);
 	col = new Float32Array(4096 * 3);
 	fx = new Float32Array(4096 * 4);
-	idx = new Uint32Array(4096 * 6);
+	// у каждой грани: номер полосы и признак «шов между полосами»
+	qBand = new Int32Array(1024);
+	qSeam = new Uint8Array(1024);
 	verts = 0;
-	indices = 0;
+	quads = 0;
+	flips = new Uint8Array(1024);
 
 	private grow() {
 		const cap = (this.pos.length / 3) * 2;
@@ -96,12 +110,21 @@ class Layer {
 		this.uv = g(this.uv, cap * 4);
 		this.col = g(this.col, cap * 3);
 		this.fx = g(this.fx, cap * 4);
-		this.idx = g(this.idx, (cap / 4) * 6 * 2);
+		const q = cap / 4;
+		const gi = new Int32Array(q);
+		gi.set(this.qBand);
+		this.qBand = gi;
+		const gs = new Uint8Array(q);
+		gs.set(this.qSeam);
+		this.qSeam = gs;
+		const gf = new Uint8Array(q);
+		gf.set(this.flips);
+		this.flips = gf;
 	}
 
 	// одна четырёхугольная грань; flip — другая диагональ (для правильной интерполяции AO)
 	quad(p: number[], uv: number[], tile: number, c: number[], snowTh: number, snowKind: number, band: number, nband: number, flip: boolean) {
-		if (this.verts + 4 > this.pos.length / 3 || this.indices + 6 > this.idx.length) this.grow();
+		if (this.verts + 4 > this.pos.length / 3) this.grow();
 		const v = this.verts;
 		const tx = tile % ATLAS_COLS;
 		const ty = Math.floor(tile / ATLAS_COLS);
@@ -121,37 +144,69 @@ class Layer {
 			this.fx[(v + k) * 4 + 2] = band;
 			this.fx[(v + k) * 4 + 3] = nband;
 		}
-		const i = this.indices;
-		if (flip) {
-			this.idx[i] = v + 1;
-			this.idx[i + 1] = v + 2;
-			this.idx[i + 2] = v + 3;
-			this.idx[i + 3] = v + 1;
-			this.idx[i + 4] = v + 3;
-			this.idx[i + 5] = v;
-		} else {
-			this.idx[i] = v;
-			this.idx[i + 1] = v + 1;
-			this.idx[i + 2] = v + 2;
-			this.idx[i + 3] = v;
-			this.idx[i + 4] = v + 2;
-			this.idx[i + 5] = v + 3;
-		}
+		this.qBand[this.quads] = band;
+		this.qSeam[this.quads] = nband >= 0 ? 1 : 0;
+		this.flips[this.quads] = flip ? 1 : 0;
 		this.verts += 4;
-		this.indices += 6;
+		this.quads++;
 	}
 
-	build(): THREE.BufferGeometry | null {
+	// индексы граней (обычных или швов), отсортированные по полосе, и начала полос
+	private indexFor(seam: number, bandMin: number, bandMax: number) {
+		const nb = bandMax - bandMin + 1;
+		const counts = new Uint32Array(nb + 1);
+		let total = 0;
+		for (let q = 0; q < this.quads; q++) {
+			if (this.qSeam[q] !== seam) continue;
+			counts[this.qBand[q] - bandMin + 1]++;
+			total++;
+		}
+		const start = new Uint32Array(nb + 1);
+		for (let b = 0; b < nb; b++) start[b + 1] = start[b] + counts[b + 1];
+		const cursor = start.slice(0, nb);
+		const idx = new Uint32Array(total * 6);
+		for (let q = 0; q < this.quads; q++) {
+			if (this.qSeam[q] !== seam) continue;
+			const i = cursor[this.qBand[q] - bandMin]++ * 6;
+			const v = q * 4;
+			if (this.flips[q]) {
+				idx[i] = v + 1;
+				idx[i + 1] = v + 2;
+				idx[i + 2] = v + 3;
+				idx[i + 3] = v + 1;
+				idx[i + 4] = v + 3;
+				idx[i + 5] = v;
+			} else {
+				idx[i] = v;
+				idx[i + 1] = v + 1;
+				idx[i + 2] = v + 2;
+				idx[i + 3] = v;
+				idx[i + 4] = v + 2;
+				idx[i + 5] = v + 3;
+			}
+		}
+		for (let b = 0; b <= nb; b++) start[b] *= 6;
+		return {idx, start, total};
+	}
+
+	build(bandMin: number, bandMax: number): LayerGeometry | null {
 		if (this.verts === 0) return null;
-		const geo = new THREE.BufferGeometry();
-		geo.setAttribute('position', new THREE.BufferAttribute(this.pos.slice(0, this.verts * 3), 3));
-		geo.setAttribute('aUv', new THREE.BufferAttribute(this.uv.slice(0, this.verts * 4), 4));
-		geo.setAttribute('color', new THREE.BufferAttribute(this.col.slice(0, this.verts * 3), 3));
-		geo.setAttribute('aFx', new THREE.BufferAttribute(this.fx.slice(0, this.verts * 4), 4));
-		geo.setIndex(new THREE.BufferAttribute(this.idx.slice(0, this.indices), 1));
-		geo.computeBoundingSphere();
-		geo.computeBoundingBox();
-		return geo;
+		const attrs = {
+			position: new THREE.BufferAttribute(this.pos.slice(0, this.verts * 3), 3),
+			aUv: new THREE.BufferAttribute(this.uv.slice(0, this.verts * 4), 4),
+			color: new THREE.BufferAttribute(this.col.slice(0, this.verts * 3), 3),
+			aFx: new THREE.BufferAttribute(this.fx.slice(0, this.verts * 4), 4),
+		};
+		const make = (idx: Uint32Array) => {
+			const geo = new THREE.BufferGeometry();
+			// атрибуты общие у обеих геометрий: в видеопамяти они лежат один раз
+			for (const [name, attr] of Object.entries(attrs)) geo.setAttribute(name, attr);
+			geo.setIndex(new THREE.BufferAttribute(idx, 1));
+			return geo;
+		};
+		const main = this.indexFor(0, bandMin, bandMax);
+		const seam = this.indexFor(1, bandMin, bandMax);
+		return {main: make(main.idx), mainStart: main.start, seam: seam.total > 0 ? make(seam.idx) : null, seamStart: seam.start};
 	}
 }
 
@@ -465,16 +520,19 @@ export const buildVoxelMeshes = (world: VoxelWorld, opts: MeshOptions = {}): Vox
 		}
 	}
 
-	const geos = {opaque: layers.opaque.build(), cutout: layers.cutout.build(), translucent: layers.translucent.build()};
+	const bandMin = opts.bands?.min ?? 0;
+	const bandMax = opts.bands?.max ?? 0;
+	const geos = {opaque: layers.opaque.build(bandMin, bandMax), cutout: layers.cutout.build(bandMin, bandMax), translucent: layers.translucent.build(bandMin, bandMax)};
 	return {
 		...geos,
-		bandMin: opts.bands?.min ?? 0,
-		bandMax: opts.bands?.max ?? 0,
+		bandMin,
+		bandMax,
 		stats: {quads, blocks, ms: typeof performance !== 'undefined' ? Math.round(performance.now() - started) : 0},
 		dispose: () => {
-			geos.opaque?.dispose();
-			geos.cutout?.dispose();
-			geos.translucent?.dispose();
+			for (const g of [geos.opaque, geos.cutout, geos.translucent]) {
+				g?.main.dispose();
+				g?.seam?.dispose();
+			}
 		},
 	};
 };

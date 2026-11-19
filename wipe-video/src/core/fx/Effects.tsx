@@ -28,13 +28,15 @@ export const Shockwave: React.FC<{
 	debris?: string[];
 	count?: number;
 	seed?: number;
-}> = ({t, at, origin, radius = 5, duration = 0.6, color = '#ffffff', debris = ['#ffffff', '#e6f0fa', '#cfe0f0'], count = 40, seed = 31}) => {
+	// как повёрнуто кольцо: по умолчанию лежит на земле; [0, yaw, 0] — стоит стеной (барьер)
+	rotation?: [number, number, number];
+}> = ({t, at, origin, radius = 5, duration = 0.6, color = '#ffffff', debris = ['#ffffff', '#e6f0fa', '#cfe0f0'], count = 40, seed = 31, rotation = [-Math.PI / 2, 0, 0]}) => {
 	const k = (t - at) / duration;
 	const ring =
 		k > 0 && k < 1 ? (
-			<mesh position={[origin[0], origin[1] + 0.06, origin[2]]} rotation={[-Math.PI / 2, 0, 0]} scale={easeOutCubic(k) * radius * 2.4} renderOrder={3}>
+			<mesh position={[origin[0], origin[1] + 0.06, origin[2]]} rotation={rotation} scale={easeOutCubic(k) * radius * 2.4} renderOrder={3}>
 				<planeGeometry args={[1, 1]} />
-				<meshBasicMaterial map={TEX.ring()} color={color} transparent opacity={(1 - k) * 0.9} depthWrite={false} blending={THREE.AdditiveBlending} fog={false} />
+				<meshBasicMaterial map={TEX.ring()} color={color} transparent opacity={(1 - k) * 0.9} depthWrite={false} blending={THREE.AdditiveBlending} fog={false} side={THREE.DoubleSide} />
 			</mesh>
 		) : null;
 	return (

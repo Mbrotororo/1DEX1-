@@ -53,15 +53,18 @@ const STAR_LAYERS = [
 ];
 
 // ---------- облака ----------
-const CLOUD_CELL = 12;
-const CLOUD_RANGE = 16;
+const CLOUD_CELL = 14;
+const CLOUD_RANGE = 30;
 const CLOUD_MAX = (CLOUD_RANGE * 2 + 1) ** 2;
 const dummy = new THREE.Object3D();
 
 const CloudLayer: React.FC<{t: number; cam: CameraState; amount: number; color: string; height: number; speed: number}> = ({t, cam, amount, color, height, speed}) => {
 	const ref = useRef<THREE.InstancedMesh>(null);
+	const depthRef = useRef<THREE.InstancedMesh>(null);
 	const geo = useMemo(() => new THREE.BoxGeometry(1, 1, 1), []);
-	const mat = useMemo(() => new THREE.MeshBasicMaterial({transparent: true, depthWrite: false, fog: false}), []);
+	// два прохода: сначала только глубина, потом цвет — соседние облака не просвечивают друг сквозь друга
+	const depthMat = useMemo(() => new THREE.MeshBasicMaterial({transparent: true, colorWrite: false, depthWrite: true, fog: false}), []);
+	const mat = useMemo(() => new THREE.MeshBasicMaterial({transparent: true, depthWrite: false, depthFunc: THREE.LessEqualDepth, fog: true}), []);
 	mat.color.set(color);
 	mat.opacity = Math.min(1, amount * 1.6) * 0.9;
 
@@ -73,7 +76,8 @@ const CloudLayer: React.FC<{t: number; cam: CameraState; amount: number; color: 
 
 	useLayoutEffect(() => {
 		const mesh = ref.current;
-		if (!mesh) return;
+		const depth = depthRef.current;
+		if (!mesh || !depth) return;
 		let n = 0;
 		if (amount > 0.01) {
 			// чем больше amount, тем ниже порог шума — облаков больше
@@ -84,22 +88,29 @@ const CloudLayer: React.FC<{t: number; cam: CameraState; amount: number; color: 
 					const gz = cz + j;
 					const v = noise2(gx * 0.19, gz * 0.26, 501) * 0.75 + hash3(gx, 0, gz, 502) * 0.25;
 					if (v < threshold) continue;
-					// к краю поля облака сходят на нет, чтобы не было видно границы
-					const edge = Math.max(Math.abs(i), Math.abs(j)) / CLOUD_RANGE;
-					const s = edge > 0.8 ? 1 - (edge - 0.8) / 0.2 : 1;
-					if (s <= 0.02) continue;
-					dummy.position.set((cx + i) * CLOUD_CELL + driftFrac + CLOUD_CELL / 2, height + hash3(gx, 1, gz, 503) * 3, (cz + j) * CLOUD_CELL + CLOUD_CELL / 2);
-					dummy.scale.set(CLOUD_CELL * s, 4 * s, CLOUD_CELL * s);
+					// поле круглое; вдали облака растворяет туман сцены
+					if (Math.hypot(i, j) > CLOUD_RANGE) continue;
+					dummy.position.set((cx + i) * CLOUD_CELL + driftFrac + CLOUD_CELL / 2, height, (cz + j) * CLOUD_CELL + CLOUD_CELL / 2);
+					dummy.scale.set(CLOUD_CELL, 4, CLOUD_CELL);
 					dummy.updateMatrix();
-					mesh.setMatrixAt(n++, dummy.matrix);
+					mesh.setMatrixAt(n, dummy.matrix);
+					depth.setMatrixAt(n, dummy.matrix);
+					n++;
 				}
 			}
 		}
 		mesh.count = n;
+		depth.count = n;
 		mesh.instanceMatrix.needsUpdate = true;
+		depth.instanceMatrix.needsUpdate = true;
 	}, [amount, cx, cz, driftCells, driftFrac, height]);
 
-	return <instancedMesh ref={ref} args={[geo, mat, CLOUD_MAX]} frustumCulled={false} renderOrder={-5} visible={amount > 0.01} />;
+	return (
+		<>
+			<instancedMesh ref={depthRef} args={[geo, depthMat, CLOUD_MAX]} frustumCulled={false} renderOrder={-6} visible={amount > 0.01} />
+			<instancedMesh ref={ref} args={[geo, mat, CLOUD_MAX]} frustumCulled={false} renderOrder={-5} visible={amount > 0.01} />
+		</>
+	);
 };
 
 export type EnvironmentProps = {
@@ -164,7 +175,6 @@ export const Environment: React.FC<EnvironmentProps> = ({env, cam, t, cloudHeigh
 									transparent
 									opacity={env.stars * (0.55 + 0.4 * Math.sin(t * l.speed + l.phase))}
 									depthWrite={false}
-									depthTest={false}
 									fog={false}
 								/>
 							</points>
@@ -173,20 +183,20 @@ export const Environment: React.FC<EnvironmentProps> = ({env, cam, t, cloudHeigh
 				{env.sunDisc > 0.01 ? (
 					<>
 						<sprite position={sunPos} scale={330} renderOrder={-80}>
-							<spriteMaterial map={TEX.glow()} color="#fff1c4" transparent opacity={0.55 * env.sunDisc} depthWrite={false} depthTest={false} fog={false} blending={THREE.AdditiveBlending} />
+							<spriteMaterial map={TEX.glow()} color="#fff1c4" transparent opacity={0.55 * env.sunDisc} depthWrite={false} fog={false} blending={THREE.AdditiveBlending} />
 						</sprite>
 						<sprite position={sunPos} scale={74} renderOrder={-79}>
-							<spriteMaterial map={TEX.sun()} transparent opacity={env.sunDisc} depthWrite={false} depthTest={false} fog={false} />
+							<spriteMaterial map={TEX.sun()} transparent opacity={env.sunDisc} depthWrite={false} fog={false} />
 						</sprite>
 					</>
 				) : null}
 				{env.moonDisc > 0.01 ? (
 					<>
 						<sprite position={moonPos} scale={240} renderOrder={-80}>
-							<spriteMaterial map={TEX.glow()} color="#8f9cff" transparent opacity={0.3 * env.moonDisc} depthWrite={false} depthTest={false} fog={false} />
+							<spriteMaterial map={TEX.glow()} color="#8f9cff" transparent opacity={0.3 * env.moonDisc} depthWrite={false} fog={false} />
 						</sprite>
 						<sprite position={moonPos} scale={66} renderOrder={-79}>
-							<spriteMaterial map={TEX.moon()} transparent opacity={env.moonDisc} depthWrite={false} depthTest={false} fog={false} />
+							<spriteMaterial map={TEX.moon()} transparent opacity={env.moonDisc} depthWrite={false} fog={false} />
 						</sprite>
 					</>
 				) : null}
