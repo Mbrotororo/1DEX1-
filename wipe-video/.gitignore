@@ -1,0 +1,7 @@
+node_modules/
+out/
+.tmp/
+# Звуки Minecraft и сведённая дорожка собираются скриптами (npm run audio)
+public/sounds/
+public/audio/
+.DS_Store
