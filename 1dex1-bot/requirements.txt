@@ -1,0 +1,4 @@
+aiogram==3.33.0
+aiosqlite==0.22.1
+python-dotenv==1.2.4
+yt-dlp[default]==2026.10.26
