@@ -4,47 +4,32 @@ from __future__ import annotations
 
 BOT_NAME = "1DEX1"
 
-SHORT_DESCRIPTION = "Бот для личных переписок: мут, спам, антимут, удалённые сообщения, видео, музыка, анимации ❤️"
+SHORT_DESCRIPTION = "Личный бот 1DEX1 для переписок"
 DESCRIPTION = (
-    "Бот для личных переписок: мут, антимут, удалённые и изменённые сообщения, "
-    "сохранение одноразок, видео без водяного знака, музыка, анимации.\n\n"
-    "Нажми «Старт» — там как подключить и все команды."
+    "Мут, антимут, удалённые и изменённые сообщения, одноразки, видео без вотермарки, музыка."
 )
 
 # Короткий список — в /start
 COMMANDS_SHORT = (
-    "<b>Команды</b> — пиши прямо в переписке:\n"
-    "Мут: .mute [10m] · .unmute · .unmuteme\n"
-    "Анимации: .love · .rose · .fire · .heart · .type · .glitch · .loading\n"
-    "Полезное: .link · .music · .weather · .currency · .time · .stats\n"
-    "Ещё: .spam · .save · .stop · .help\n\n"
-    "Само работает: правки и удалённые сообщения собеседника, одноразки "
-    "(ответь на них до открытия)."
+    ".mute [10m] · .unmute · .unmuteme\n"
+    ".love · .rose · .fire · .heart · .type · .glitch · .loading\n"
+    ".link · .music · .weather · .currency · .time · .stats\n"
+    ".spam · .save · .stop"
 )
 
 # Подробнее, по строке на команду — в /help и .help
 COMMANDS_HELP = (
-    "<b>Мут</b>\n"
-    ".mute — замутить собеседника, .mute 10m — на время (30s, 2h, 1d)\n"
-    ".unmute — размутить\n"
-    ".unmuteme — антимут, если тебя замутил чужой бот (.unmuteme off — выключить)\n\n"
-    "<b>Анимации</b> — можно со своим текстом: .love я скучаю\n"
-    ".love · .rose · .fire · .heart · .type · .glitch · .loading\n\n"
-    "<b>Полезное</b>\n"
-    ".link ссылка — видео из TikTok, YouTube, VK без водяного знака\n"
+    ".mute — мут (.mute 10m — на время)\n"
+    ".unmute — снять мут\n"
+    ".unmuteme — антимут (off — выключить)\n"
+    ".love .rose .fire .heart .type .glitch .loading — анимации, можно с текстом\n"
+    ".link ссылка — видео TikTok/YouTube/VK\n"
     ".music название — трек\n"
-    ".weather город — погода\n"
-    ".currency 100 usd — курс валют\n"
-    ".time город — время в городе\n"
-    ".stats — статистика переписки\n"
-    ".save — ответом на фото/видео: сохранить сюда\n\n"
-    "<b>Ещё</b>\n"
-    ".spam 20 текст — отправить текст 20 раз\n"
-    ".stop — остановить спам, анимацию или загрузку\n\n"
-    "<b>Само</b>\n"
-    "Правки и удалённые сообщения собеседника приходят сюда. Одноразовое фото или видео — "
-    "ответь на него до открытия, пришлю копию.\n\n"
-    "Меню команд: напиши @my1dex1_bot в любой переписке."
+    ".weather город · .currency 100 usd · .time город\n"
+    ".stats — статистика чата\n"
+    ".save — ответом на медиа, сохранить\n"
+    ".spam 20 текст · .stop\n\n"
+    "Правки, удалённые сообщения и одноразки (ответь до открытия) приходят сюда."
 )
 
 HOW_TO_CONNECT = (
@@ -59,14 +44,8 @@ PRIVACY = (
 )
 
 def start_text(name: str, user_id: int, connected: bool, cache_days: int = 7) -> str:
-    status = "✅ Подключён к твоему аккаунту." if connected else "⚠️ Пока не подключён."
-    return (
-        f"<b>{BOT_NAME}</b> — бот для личных переписок. Мутит, ловит удалённые и изменённые "
-        "сообщения, сохраняет одноразки, качает видео и музыку.\n\n"
-        f"{HOW_TO_CONNECT}\n{status}\n\n"
-        f"{COMMANDS_SHORT}\n\n"
-        "Подробнее — /help, настройки — /status"
-    )
+    status = "✅ Подключён" if connected else "⚠️ Не подключён"
+    return f"<b>{BOT_NAME}</b> · {status}\n\n{COMMANDS_SHORT}\n\nПодробно — /help, настройки — /status"
 
 def rights_text(can_reply: bool, can_read: bool, can_delete_all: bool) -> str:
     def mark(ok: bool) -> str:
