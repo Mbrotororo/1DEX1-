@@ -242,6 +242,7 @@ async def test_antimute_off(h: Harness) -> None:
     await h.owner_says(".unmuteme")
     await h.owner_says(".unmuteme off")
     assert not h.app.db.has_antimute(OWNER.id, FRIEND.id)
+    await h.settle()  # плашка «Антимут выключен» исчезает сама
     h.session.clear()
     await h.owner_says("обычное сообщение")
     assert not h.session.calls
