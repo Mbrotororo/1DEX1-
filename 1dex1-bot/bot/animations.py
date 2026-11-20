@@ -114,18 +114,19 @@ def _typing_steps(text: str, max_steps: int = 5) -> list[str]:
 
 MAX_GRID_TEXT = 40    # текст внутри сеток (.rose, .fire, .heart)
 MAX_LONG_TEXT = 300   # .type, .glitch, .mock, .loading
+MIN_FRAMES = 6        # границы, которые соблюдает каждый генератор кадров
 MAX_FRAMES = 25
-MAX_FRAME_LEN = 4096
+MAX_FRAME_LEN = 4096  # лимит Telegram на длину текста сообщения
 
-ZWJ = "‍"
+ZWJ = "\u200d"
 # Telegram сам вырезает эти символы из любого места текста — из-за них два «разных»
 # кадра могли бы оказаться одинаковыми после отправки
-_TG_REMOVED = frozenset("  ‪‫‬‭‮̳̿")
+_TG_REMOVED = frozenset("\u2028\u2029\u202a\u202b\u202c\u202d\u202e\u0333\u033f")
 # ...а эти Telegram обрезает по краям сообщения (вместе с обычными пробелами)
 _TG_EDGE = (
-    " \t\n\r\x0b\x0c\x1c\x1d\x1e\x1f\x85\xa0 ᠎"
+    " \t\n\r\x0b\x0c\x1c\x1d\x1e\x1f\x85\xa0\u1680\u180e"
     + "".join(chr(c) for c in range(0x2000, 0x2010))
-    + "    ⁠⠀　﻿￼"
+    + "\u2028\u2029\u202f\u205f\u2060\u2800\u3000\ufeff\ufffc"
 )
 
 
@@ -148,6 +149,11 @@ def _is_extender(ch: str) -> bool:
     )
 
 
+def _is_blank(ch: str) -> bool:
+    """Пробел или невидимый символ, который Telegram обрезает по краям сообщения."""
+    return ch.isspace() or ch in _TG_EDGE
+
+
 def _is_regional(ch: str) -> bool:
     return 0x1F1E6 <= ord(ch) <= 0x1F1FF
 
@@ -161,7 +167,7 @@ def _graphemes(text: str) -> list[str]:
         j = i + 1
         if _is_regional(text[i]) and j < n and _is_regional(text[j]):
             j += 1  # флаг страны = две «региональные буквы»
-        while j < n and (text[j - 1] == ZWJ or _is_extender(text[j])):
+        while j < n and (_is_extender(text[j]) or (text[j - 1] == ZWJ and not _is_blank(text[j]))):
             j += 1
         out.append(text[i:j])
         i = j
@@ -210,10 +216,10 @@ def _dedupe(frames: list[str]) -> list[str]:
     return out
 
 
-def _grid_with_text(cell: str, part: str, left: str | None = None, right: str | None = None) -> list[str]:
+def _grid_with_text(cell: str, part: str) -> list[str]:
     """Строки сетки 7×5 из cell, в средней строке — part (пустой part = «раскрытая» середина)."""
     rows = [_row(cell) for _ in range(ROWS)]
-    rows[MID] = _text_row(part, left or cell, right or cell)
+    rows[MID] = _text_row(part, cell, cell)
     return rows
 
 
@@ -444,7 +450,11 @@ def glitch_frames(text: str, seed: int = 0) -> list[str]:
     clean = _normalize(text, MAX_LONG_TEXT, DEFAULT_GLITCH_TEXT)
     cells = _graphemes(clean)
     rng = random.Random(f"glitch:{seed}:{clean}")
-    letters = [i for i, cell in enumerate(cells) if not cell.isspace()]
+    # пробелы и невидимые символы не трогаем: их нельзя «сломать», а Telegram обрезал бы их по краям
+    letters = [i for i, cell in enumerate(cells) if not _is_blank(cell[0])]
+    # меняться местами могут только «плотные» символы: если в конец кадра уедет символ,
+    # который заканчивается невидимкой, Telegram её обрежет
+    swappable = [i for i in letters if not _is_blank(cells[i][-1])]
 
     # шаг, на котором символ «встаёт на место»: в целом слева направо, но с разбросом
     # (шаги 2…GLITCH_STEPS-1, так что первые два кадра — сплошной шум, а последний ещё «искрит»)
@@ -453,8 +463,9 @@ def glitch_frames(text: str, seed: int = 0) -> list[str]:
         lock[i] = 2 + int((rank + rng.random()) / len(letters) * (GLITCH_STEPS - 3))
 
     def force(out: list[str]) -> None:
+        """Гарантированно меняет одну клетку кадра на блок, не равный ни ей, ни исходному символу."""
         i = rng.choice(letters)
-        out[i] += rng.choice(ZALGO)
+        out[i] = rng.choice([b for b in GLITCH_BLOCKS if b not in (out[i], cells[i])])
 
     frames: list[str] = []
     for step in range(GLITCH_STEPS):
@@ -463,12 +474,12 @@ def glitch_frames(text: str, seed: int = 0) -> list[str]:
         for i in letters:
             if lock[i] > step:
                 out[i] = _noise(cells[i], chaos, rng)
-            elif rng.random() < 0.15 * chaos:
+            elif cells[i][0].isalnum() and rng.random() < 0.15 * chaos:
                 out[i] = cells[i] + rng.choice(ZALGO)  # остаточные помехи
         # пара соседних символов меняется местами
-        if 0 < step < GLITCH_STEPS - 1 and len(letters) > 1 and rng.random() < 0.6:
-            j = rng.randrange(len(letters) - 1)
-            a, b = letters[j], letters[j + 1]
+        if 0 < step < GLITCH_STEPS - 1 and len(swappable) > 1 and rng.random() < 0.6:
+            j = rng.randrange(len(swappable) - 1)
+            a, b = swappable[j], swappable[j + 1]
             out[a], out[b] = out[b], out[a]
         if "".join(out) == clean:
             force(out)  # шумовой кадр не должен случайно совпасть с чистым текстом
@@ -495,6 +506,7 @@ DEFAULT_LOADING_DONE = "✅ Загрузка завершена!"
 
 
 def loading_bar(percent: int) -> str:
+    """Полоска из 10 делений: loading_bar(30) == '▰▰▰▱▱▱▱▱▱▱'."""
     filled = max(0, min(100, percent)) * LOADING_BAR_WIDTH // 100
     return LOADING_FULL * filled + LOADING_EMPTY * (LOADING_BAR_WIDTH - filled)
 

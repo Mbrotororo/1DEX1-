@@ -93,6 +93,21 @@ CREATE TABLE IF NOT EXISTS chat_stats (
     PRIMARY KEY (owner_id, chat_id)
 );
 
+CREATE TABLE IF NOT EXISTS kv (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS bday_wishes (
+    owner_id INTEGER NOT NULL,
+    year     INTEGER NOT NULL,
+    chat_id  INTEGER NOT NULL,
+    name     TEXT NOT NULL,
+    text     TEXT,
+    ts       REAL NOT NULL,
+    PRIMARY KEY (owner_id, year, chat_id)
+);
+
 CREATE TABLE IF NOT EXISTS chat_days (
     owner_id   INTEGER NOT NULL,
     chat_id    INTEGER NOT NULL,
@@ -498,6 +513,35 @@ class Database:
         if days:
             stats.top_day, stats.top_day_count = max(days.items(), key=lambda kv: (kv[1], kv[0]))
         return stats
+
+    # ------------------------------------------------------------ ключ-значение (флаги «уже сделано»)
+    async def kv_get(self, key: str) -> str | None:
+        async with self.db.execute("SELECT value FROM kv WHERE key=?", (key,)) as cur:
+            row = await cur.fetchone()
+        return row["value"] if row else None
+
+    async def kv_set(self, key: str, value: str) -> None:
+        await self.db.execute("INSERT OR REPLACE INTO kv (key, value) VALUES (?,?)", (key, value))
+        await self.db.commit()
+
+    # ------------------------------------------------------------ поздравления с днём рождения
+    async def add_bday_wish(self, owner_id: int, year: int, chat_id: int, name: str,
+                            text: str | None, ts: float) -> bool:
+        """True, если этот человек поздравил впервые в этом году."""
+        cur = await self.db.execute(
+            "INSERT OR IGNORE INTO bday_wishes (owner_id, year, chat_id, name, text, ts) "
+            "VALUES (?,?,?,?,?,?)",
+            (owner_id, year, chat_id, name, text, ts),
+        )
+        await self.db.commit()
+        return cur.rowcount > 0
+
+    async def bday_wishes(self, owner_id: int, year: int) -> list[tuple[int, str, str | None]]:
+        async with self.db.execute(
+            "SELECT chat_id, name, text FROM bday_wishes WHERE owner_id=? AND year=? ORDER BY ts",
+            (owner_id, year),
+        ) as cur:
+            return [(r["chat_id"], r["name"], r["text"]) async for r in cur]
 
     # ------------------------------------------------------------ maintenance
     async def purge_old(self, max_age_seconds: float) -> None:

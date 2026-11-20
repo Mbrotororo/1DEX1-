@@ -44,7 +44,10 @@ from ..utils import (
     user_mention_html,
     username_html,
 )
+from ..birthday import track_congrats
+from ..currency import CurrencyError, convert
 from ..weather import WeatherError, fetch_weather
+from ..worldtime import WorldTimeError, city_time
 
 log = logging.getLogger(__name__)
 
@@ -98,6 +101,7 @@ async def handle_incoming_message(message: Message, conn: Connection, app: App) 
         await expire_mute(app, conn.user_id, chat_id, mute)
 
     await _record_stat(app, conn, message, from_owner=False)
+    await track_congrats(app, conn, message)
     kind = media_kind(message)
     await app.db.cache_message(
         conn.user_id, chat_id, message.message_id,
@@ -511,11 +515,15 @@ async def _link_failed(app: App, conn: Connection, chat_id: int, status_id: int 
 
 # ------------------------------------------------------------------- анимации
 
-ANIMATION_USAGE = {"type": texts.TYPE_USAGE, "glitch": texts.GLITCH_USAGE}
+ANIMATION_USAGE = {"type": texts.TYPE_USAGE, "glitch": texts.GLITCH_USAGE,
+                   "rainbow": texts.RAINBOW_USAGE, "wave": texts.WAVE_USAGE}
+ANIMATION_NAMES = ("love", "rose", "fire", "heart", "type", "glitch", "loading",
+                   "rain", "firework", "rainbow", "wave")
 
 
 async def cmd_animation(command: Command, message: Message, conn: Connection, app: App) -> None:
-    """.love .rose .fire .heart .type .glitch .loading — сообщение-команда превращается в анимацию."""
+    """.love .rose .fire .heart .type .glitch .loading .rain .firework .rainbow .wave —
+    сообщение-команда превращается в анимацию."""
     if command.name in ANIMATION_USAGE and not command.args:
         await app.flash(conn, message, ANIMATION_USAGE[command.name])
         return
@@ -581,6 +589,37 @@ async def _status_failed(app: App, conn: Connection, chat_id: int, status_id: in
         await app.delete(conn, chat_id, status_id)
     else:
         await app.notify(conn, text)
+
+
+# ------------------------------------------------------------------- .currency / .time
+
+async def cmd_currency(command: Command, message: Message, conn: Connection, app: App) -> None:
+    async def run() -> None:
+        try:
+            card = await convert(command.args)
+        except CurrencyError as e:
+            await app.flash(conn, message, "❌ " + str(e))
+            return
+        await app.respond(conn, message, card)
+
+    _spawn_command(app, conn, message, run, "currency")
+
+
+async def cmd_time(command: Command, message: Message, conn: Connection, app: App) -> None:
+    city = command.args or app.config.weather_city
+    if not city:
+        await app.flash(conn, message, texts.TIME_USAGE)
+        return
+
+    async def run() -> None:
+        try:
+            card = await city_time(city, owner_offset_hours=app.config.tz_offset_hours)
+        except WorldTimeError as e:
+            await app.flash(conn, message, "❌ " + str(e))
+            return
+        await app.respond(conn, message, card)
+
+    _spawn_command(app, conn, message, run, "time")
 
 
 # ------------------------------------------------------------------- .music
@@ -781,7 +820,9 @@ COMMANDS = {
     "weather": cmd_weather,
     "music": cmd_music,
     "stats": cmd_stats,
-    **{name: cmd_animation for name in ("love", "rose", "fire", "heart", "type", "glitch", "loading")},
+    "currency": cmd_currency,
+    "time": cmd_time,
+    **{name: cmd_animation for name in ANIMATION_NAMES},
 }
 
 

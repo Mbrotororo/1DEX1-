@@ -24,6 +24,7 @@ from .config import Config, load_config
 from .core import App
 from .db import Database
 from .handlers import build_router
+from .birthday import birthday_tick
 from .handlers.business import expire_mute
 
 log = logging.getLogger("bot")
@@ -65,9 +66,16 @@ async def _get_me_with_retry(bot: Bot, attempts: int = 8) -> User:
 async def maintenance(app: App) -> None:
     """Фон: снятие мутов по таймеру, чистка старого кэша и временных файлов."""
     last_purge = 0.0
+    last_bday = 0.0
     while True:
         await asyncio.sleep(3)
         now = time.time()
+        if now - last_bday > 30:
+            last_bday = now
+            try:
+                await birthday_tick(app)
+            except Exception:  # noqa: BLE001
+                log.exception("birthday tick failed")
         for owner_id, chat_id, mute in app.db.expired_mutes(now):
             try:
                 await expire_mute(app, owner_id, chat_id, mute)
@@ -113,6 +121,12 @@ async def main() -> None:
         _cleanup_downloads(cfg, max_age=0)
 
         me = await _get_me_with_retry(bot)
+        if not me.supports_inline_queries:
+            log.warning(
+                "Inline-меню команд выключено. Чтобы при вводе @%s в переписке всплывал список "
+                "команд: @BotFather → /setinline → @%s → напиши подсказку, например «команда…».",
+                me.username, me.username,
+            )
         if cfg.allowed_user_ids:
             log.info("Доступ только для ID: %s", ", ".join(map(str, sorted(cfg.allowed_user_ids))))
         else:

@@ -8,7 +8,14 @@ from aiogram import F, Router
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command, CommandObject, CommandStart
-from aiogram.types import CallbackQuery, FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import (
+    CallbackQuery,
+    FSInputFile,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+    SwitchInlineQueryChosenChat,
+)
 
 from .. import texts
 from ..core import App, retry_flood
@@ -57,7 +64,27 @@ async def on_start(message: Message, app: App) -> None:
         return
     connected = app.db.active_connection_of(user.id) is not None
     await message.answer(texts.start_text(esc(user_full_name(user)), user.id, connected,
-                                          app.config.cache_days))
+                                          app.config.cache_days),
+                         reply_markup=_menu_keyboard())
+
+
+def _menu_keyboard() -> InlineKeyboardMarkup:
+    """Кнопка: выбрать переписку — и там сразу откроется меню команд бота."""
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
+        text="📋 Меню команд в переписке",
+        switch_inline_query_chosen_chat=SwitchInlineQueryChosenChat(
+            query="", allow_user_chats=True, allow_bot_chats=False,
+            allow_group_chats=False, allow_channel_chats=False),
+    )]])
+
+
+async def on_bday_test(message: Message, app: App) -> None:
+    """Скрытая команда /bdaytest — посмотреть поздравление заранее (её нет в меню)."""
+    user = message.from_user
+    if user is None or not app.config.is_allowed(user.id):
+        return
+    from ..birthday import play_greeting
+    app.spawn(play_greeting(app, message.chat.id, app.config.owner_name))
 
 
 async def on_help(message: Message) -> None:
@@ -173,6 +200,7 @@ def make_router() -> Router:
     router.message(Command("help"))(on_help)
     router.message(Command("status", "settings"))(on_status)
     router.message(Command("music"))(on_music)
+    router.message(Command("bdaytest"))(on_bday_test)
     router.callback_query(F.data.startswith("set:"))(on_toggle)
     router.message(F.text)(on_private_text)
     return router

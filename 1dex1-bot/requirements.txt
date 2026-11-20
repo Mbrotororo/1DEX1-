@@ -1,6 +1,9 @@
 aiogram==3.33.0
 aiosqlite==0.22.1
 python-dotenv==1.2.4
-yt-dlp[default]==2026.10.26
-# JS-движок для YouTube (yt-dlp нужен deno 2.3+ или node 22+); ставится прямо в venv на любой ОС
-deno==2.9.8
+# yt-dlp не фиксируем: сайты (TikTok, YouTube) часто меняются, run.sh/run.bat обновляют его при запуске
+yt-dlp[default]>=2026.10.26
+# JS-движок для YouTube (yt-dlp нужен deno 2.3+ или node 22+).
+# Колёса deno есть только для Linux x86_64/aarch64 (glibc), macOS и Windows x64 — на остальных
+# платформах pip его пропустит, а yt-dlp возьмёт node из системы или будет работать без YouTube.
+deno==2.9.8; (sys_platform == "linux" and (platform_machine == "x86_64" or platform_machine == "aarch64")) or sys_platform == "darwin" or (sys_platform == "win32" and platform_machine == "AMD64")

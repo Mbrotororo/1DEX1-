@@ -78,6 +78,8 @@ class Config:
     log_level: str
     tz_offset_hours: float = 3.0
     weather_city: str = ""
+    birthday: tuple[int, int] | None = (27, 1)  # (день, месяц) владельца
+    owner_name: str = "1DEX1"
 
     @property
     def tz(self) -> dt.tzinfo:
@@ -118,4 +120,22 @@ def load_config() -> Config:
         log_level=os.getenv("LOG_LEVEL", "INFO").strip().upper() or "INFO",
         tz_offset_hours=max(-12.0, min(_float("TZ_OFFSET", 3.0), 14.0)),
         weather_city=os.getenv("WEATHER_CITY", "").strip(),
+        birthday=_birthday(os.getenv("BIRTHDAY", "27.01")),
+        owner_name=os.getenv("OWNER_NAME", "1DEX1").strip() or "1DEX1",
     )
+
+
+def _birthday(raw: str) -> tuple[int, int] | None:
+    """'27.01' -> (27, 1). Пусто или 'off' — выключено."""
+    raw = raw.strip().lower()
+    if not raw or raw in {"off", "0", "нет"}:
+        return None
+    match = re.fullmatch(r"(\d{1,2})[./-](\d{1,2})", raw)
+    if not match:
+        raise SystemExit(f"❌ BIRTHDAY должен быть в формате ДД.ММ, например 27.01, а там: {raw}")
+    day, month = int(match.group(1)), int(match.group(2))
+    try:
+        dt.date(2000, month, day)  # 2000 — високосный, 29.02 тоже можно
+    except ValueError:
+        raise SystemExit(f"❌ BIRTHDAY: такой даты нет — {raw}") from None
+    return day, month
