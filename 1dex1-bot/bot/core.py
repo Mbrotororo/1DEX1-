@@ -66,6 +66,7 @@ class App:
         self.config = config
         self.bot_id: int = 0
         self.bot_username: str = "my1dex1_bot"
+        self.inline_enabled: bool = False  # включён ли inline-режим в @BotFather (getMe)
         # долгие задачи (спам / анимации / загрузки) по чатам — чтобы .stop мог их отменить
         self._chat_tasks: dict[tuple[int, int], set[asyncio.Task[Any]]] = {}
         # сильные ссылки на все фоновые задачи (иначе asyncio может их собрать GC)

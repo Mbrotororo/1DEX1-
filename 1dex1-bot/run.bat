@@ -68,6 +68,11 @@ if errorlevel 1 echo Не удалось обновить yt-dlp - работа�
 :run
 echo Бот запускается... Закрой окно или нажми Ctrl+C, чтобы остановить.
 python -m bot
+if errorlevel 78 if not errorlevel 79 (
+    echo Ошибка в настройках .env - перезапуск не поможет. Исправь и запусти снова.
+    pause
+    exit /b 78
+)
 if errorlevel 1 (
     if "%AUTORESTART%"=="1" (
         echo Бот упал. Перезапуск через 5 секунд... Ctrl+C - остановить.

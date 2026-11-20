@@ -360,9 +360,10 @@ class Database:
     async def cache_message(self, owner_id: int, chat_id: int, message_id: int,
                             from_id: int | None, text: str | None,
                             media_type: str | None, file_id: str | None,
-                            date: float | None = None) -> None:
+                            date: float | None = None, replace: bool = True) -> None:
+        verb = "INSERT OR REPLACE" if replace else "INSERT OR IGNORE"
         await self.db.execute(
-            """INSERT OR REPLACE INTO messages
+            f"""{verb} INTO messages
                (owner_id, chat_id, message_id, from_id, text, media_type, file_id, date)
                VALUES (?,?,?,?,?,?,?,?)""",
             (owner_id, chat_id, message_id, from_id, text, media_type, file_id,
@@ -456,9 +457,13 @@ class Database:
                 last_ts, last_from_owner = None, None
             else:
                 last_ts, last_from_owner = row["last_ts"], row["last_from_owner"]
+            # сообщения могут обрабатываться не по порядку: «якорь» двигаем только вперёд
+            advance = last_ts is None or ts >= last_ts
+            anchor_ts = ts if advance else last_ts
+            anchor_from = int(from_owner) if advance else last_from_owner
             reply_sql = ""
             params: list[object] = []
-            if (last_ts is not None and last_from_owner is not None
+            if (advance and last_ts is not None and last_from_owner is not None
                     and bool(last_from_owner) != from_owner and 0 <= ts - last_ts <= MAX_REPLY_GAP):
                 reply_sql = f", {side}_reply_sum = {side}_reply_sum + ?, {side}_reply_n = {side}_reply_n + 1"
                 params.append(ts - last_ts)
@@ -472,7 +477,7 @@ class Database:
                       {side}_media = {side}_media + ?, {side}_voice = {side}_voice + ?,
                       {side}_stickers = {side}_stickers + ? {reply_sql}
                     WHERE owner_id=? AND chat_id=?""",
-                (ts, int(from_owner), chars, media, voice, sticker, *params, owner_id, chat_id),
+                (anchor_ts, anchor_from, chars, media, voice, sticker, *params, owner_id, chat_id),
             )
             await self.db.execute(
                 f"""INSERT INTO chat_days (owner_id, chat_id, day, {side}_msgs) VALUES (?,?,?,1)

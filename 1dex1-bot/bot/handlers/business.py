@@ -100,16 +100,19 @@ async def handle_incoming_message(message: Message, conn: Connection, app: App) 
             return
         await expire_mute(app, conn.user_id, chat_id, mute)
 
-    await _record_stat(app, conn, message, from_owner=False)
-    await track_congrats(app, conn, message)
     kind = media_kind(message)
+    # кэшируем первым делом и без перезаписи: если правка этого сообщения уже успела
+    # обработаться, её текст не должен затереться исходным
     await app.db.cache_message(
         conn.user_id, chat_id, message.message_id,
         message.from_user.id if message.from_user else None,
         message_text(message) or None,
         kind[0] if kind else None, kind[1] if kind else None,
         message.date.timestamp() if message.date else None,
+        replace=False,
     )
+    await _record_stat(app, conn, message, from_owner=False)
+    await track_congrats(app, conn, message)
 
 
 async def handle_owner_message(message: Message, conn: Connection, app: App) -> None:
@@ -185,8 +188,16 @@ async def cmd_mute(command: Command, message: Message, conn: Connection, app: Ap
     await app.db.set_mute(conn.user_id, chat_id, until, None, conn.id)
 
     duration = "" if seconds is None else " на " + human_duration(seconds, accusative=True)
-    status_id = await app.respond(conn, message, texts.MUTE_STATUS.format(duration=duration),
-                                  reply_markup=unmute_keyboard(conn.user_id, chat_id))
+    try:
+        status_id = await app.respond(conn, message, texts.MUTE_STATUS.format(duration=duration),
+                                      reply_markup=unmute_keyboard(conn.user_id, chat_id))
+    except TelegramAPIError:
+        # показать плашку не вышло (например, 24-часовое окно) — не оставляем «тихий» мут
+        if old is not None:
+            await app.db.set_mute(conn.user_id, chat_id, old.until, old.status_msg_id, old.connection_id)
+        else:
+            await app.db.remove_mute(conn.user_id, chat_id)
+        raise
     await app.db.set_mute_status_msg(conn.user_id, chat_id, status_id)
 
     if old is not None and old.status_msg_id and old.status_msg_id != status_id:
@@ -299,9 +310,15 @@ async def cmd_unmuteme(command: Command, message: Message, conn: Connection, app
         await app.db.set_antimute(conn.user_id, chat_id, False)
         await app.flash(conn, message, texts.ANTIMUTE_OFF)
         return
+    was_on = app.db.has_antimute(conn.user_id, chat_id)
     await app.db.set_antimute(conn.user_id, chat_id, True)
     # чужой мут-бот может снести наше сообщение-команду, поэтому плашку шлём новым сообщением
-    await app.respond(conn, message, texts.ANTIMUTE_ON, prefer_edit=False)
+    try:
+        await app.respond(conn, message, texts.ANTIMUTE_ON, prefer_edit=False)
+    except TelegramAPIError:
+        if not was_on:
+            await app.db.set_antimute(conn.user_id, chat_id, False)
+        raise
     if not conn.can_delete_all:
         fresh = await app.get_connection(conn.id, refresh=True)
         if fresh is None or not fresh.can_delete_all:
@@ -573,7 +590,7 @@ async def cmd_weather(command: Command, message: Message, conn: Connection, app:
         try:
             card = await fetch_weather(city)
         except WeatherError as e:
-            await _status_failed(app, conn, message.chat.id, status_id, str(e))
+            await _status_failed(app, conn, message.chat.id, status_id, str(e), escaped=True)
             return
         if status_id is not None:
             await app.edit(conn, message.chat.id, status_id, card)
@@ -582,8 +599,8 @@ async def cmd_weather(command: Command, message: Message, conn: Connection, app:
 
 
 async def _status_failed(app: App, conn: Connection, chat_id: int, status_id: int | None,
-                         error: str) -> None:
-    text = "❌ " + esc(error)
+                         error: str, escaped: bool = False) -> None:
+    text = "❌ " + (error if escaped else esc(error))
     if status_id and await app.edit(conn, chat_id, status_id, text):
         await asyncio.sleep(8)
         await app.delete(conn, chat_id, status_id)

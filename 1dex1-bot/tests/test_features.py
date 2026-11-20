@@ -395,3 +395,68 @@ async def test_deleted_batch_with_foreign_ids_does_not_resurrect_copies(h: Harne
         message_ids=[*copy_ids, other.message_id]))
     await h.settle()
     assert not [c for c in h.session.of("SendMessage") if c.chat_id == FRIEND.id]
+
+
+
+# ------------------------------------------------------------------ исправления после второго ревью
+
+async def test_mute_rolled_back_when_banner_cannot_be_shown(h: Harness) -> None:
+    await h.friend_says("подключение")
+    h.session.fail["EditMessageText"] = bad_request("Bad Request: BUSINESS_PEER_USAGE_MISSING")
+    h.session.fail["SendMessage"] = lambda m: (
+        bad_request("Bad Request: BUSINESS_PEER_USAGE_MISSING")(m) if m.business_connection_id else None)
+    await h.owner_says(".mute")
+    assert h.app.db.get_mute(OWNER.id, FRIEND.id) is None
+    await h.owner_says(".unmuteme")
+    assert not h.app.db.has_antimute(OWNER.id, FRIEND.id)
+
+
+async def test_late_incoming_does_not_overwrite_edit(h: Harness) -> None:
+    m = h.msg(FRIEND, "кадр 1")
+    edited = h.msg(FRIEND, "финальный текст", message_id=m.message_id, edit_date=1)
+    await h.feed(edited_business_message=edited)  # правка обработалась раньше
+    await h.feed(business_message=m)              # а само сообщение — позже
+    await h.settle()
+    cached = await h.app.db.get_message(OWNER.id, FRIEND.id, m.message_id)
+    assert cached is not None and cached.text == "финальный текст"
+
+
+async def test_stats_anchor_does_not_go_back(h: Harness) -> None:
+    db = h.app.db
+    await db.record_message(OWNER.id, 5, True, 101, "d", 1, None)
+    await db.record_message(OWNER.id, 5, False, 100, "d", 1, None)   # пришло позже, но старее
+    await db.record_message(OWNER.id, 5, True, 3600, "d", 1, None)
+    stats = await db.chat_stats(OWNER.id, 5, "d", ["d"])
+    assert stats.owner_reply_n == 0 and stats.total == 3
+
+
+async def test_weather_error_not_double_escaped(h: Harness, monkeypatch: pytest.MonkeyPatch) -> None:
+    from bot.weather import WeatherError
+
+    async def fake(city: str) -> str:
+        raise WeatherError("Не нашёл город «A&amp;B»")
+
+    async def no_sleep(_s: float) -> None:
+        return None
+
+    monkeypatch.setattr(business, "fetch_weather", fake)
+    monkeypatch.setattr(business.asyncio, "sleep", no_sleep)
+    await h.owner_says(".weather A&B")
+    await h.settle()
+    assert any("A&amp;B" in e.text and "&amp;amp;" not in e.text for e in h.session.of("EditMessageText"))
+
+
+def test_currency_thousands_and_cases() -> None:
+    from bot.currency import parse_query
+    assert parse_query("$1,000").amount == 1000
+    assert parse_query("10,000.50 usd").amount == 10000.5
+    assert parse_query("1,5 usd").amount == 1.5
+    assert parse_query("100 usd в сумах").codes == ["USD", "UZS"]
+    assert parse_query("50 евро в лирах").codes == ["EUR", "TRY"]
+
+
+def test_tz_offset_parsing() -> None:
+    from bot.config import _tz_offset
+    assert _tz_offset("5:30") == 5.5 and _tz_offset("UTC+5") == 5 and _tz_offset("GMT-3:30") == -3.5
+    with pytest.raises(SystemExit):
+        _tz_offset("Москва")

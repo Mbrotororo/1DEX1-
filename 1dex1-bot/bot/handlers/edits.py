@@ -55,6 +55,14 @@ async def on_edited_business_message(message: Message, app: App) -> None:
         if pending is None and cached is not None and (old_text or "") == new_text:
             return  # текст не менялся (Telegram шлёт правки и при смене реакций/медиа)
 
+        # сначала обновляем «ожидающее» уведомление, потом пишем в базу (await) —
+        # чтобы таймер не успел отправить уведомление без этой правки
+        is_new = pending is None
+        if pending is not None:
+            pending.latest = new_text
+            pending.sender = sender
+        else:
+            _pending(app)[key] = _PendingEdit(conn, sender, old_text, cached is not None, new_text)
         kind = media_kind(message)
         await app.db.cache_message(
             conn.user_id, chat_id, message.message_id, sender.id, new_text or None,
@@ -62,17 +70,14 @@ async def on_edited_business_message(message: Message, app: App) -> None:
             kind[1] if kind else (cached.file_id if cached else None),
             cached.date if cached else None,
         )
-        if pending is not None:
-            pending.latest = new_text
-            pending.sender = sender
-            return
-        _pending(app)[key] = _PendingEdit(conn, sender, old_text, cached is not None, new_text)
-    app.spawn(_flush_later(app, key))
+    if is_new:
+        app.spawn(_flush_later(app, key))
 
 
 async def _flush_later(app: App, key: tuple[int, int, int]) -> None:
     await asyncio.sleep(EDIT_DEBOUNCE)
-    pending = _pending(app).pop(key, None)
+    async with app.chat_lock(key[0], key[1]):
+        pending = _pending(app).pop(key, None)
     if pending is None:
         return
     if pending.original_known and (pending.original or "") == pending.latest:

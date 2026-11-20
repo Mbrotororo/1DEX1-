@@ -133,6 +133,7 @@ async def main() -> None:
             log.warning("ALLOWED_USER_IDS пустой — ботом может пользоваться любой, кто его подключит. "
                         "Впиши свой ID (бот покажет его по /start) в .env.")
         app.bot_id, app.bot_username = me.id, me.username or app.bot_username
+        app.inline_enabled = bool(me.supports_inline_queries)
         log.info("Бот @%s (id %s) запускается", me.username, me.id)
         if not me.can_connect_to_business:
             log.warning(
@@ -162,10 +163,21 @@ async def main() -> None:
         await bot.session.close()
 
 
+# Код выхода «ошибка настроек»: run.sh/run.bat --forever по нему НЕ перезапускают бота
+# (перезапуск не поможет — нужно поправить .env).
+EXIT_CONFIG = 78
+
 if __name__ == "__main__":
+    import sys
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         pass
     except TelegramUnauthorizedError:
-        raise SystemExit("❌ Telegram не принял BOT_TOKEN — проверь токен в файле .env") from None
+        print("❌ Telegram не принял BOT_TOKEN — проверь токен в файле .env", file=sys.stderr)
+        sys.exit(EXIT_CONFIG)
+    except SystemExit as e:
+        if isinstance(e.code, str):  # понятная ошибка настроек из config.py
+            print(e.code, file=sys.stderr)
+            sys.exit(EXIT_CONFIG)
+        raise

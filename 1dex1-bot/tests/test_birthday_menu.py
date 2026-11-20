@@ -25,7 +25,8 @@ def ts(day: int, month: int, hour: int = 12, year: int = 2027) -> float:
 # ------------------------------------------------------------------ день рождения
 
 @pytest.mark.parametrize("text", ["С днём рождения!!!", "с днем рождения бро", "с др", "Сдр 🎉",
-                                  "с днюхой", "Happy birthday!", "hbd", "поздравляю тебя"])
+                                  "с днюхой", "Happy birthday!", "hbd", "поздравляю тебя",
+                                  "С днём рожденья!", "happy bday", "с д.р.", "С Днюшечкой"])
 def test_congrats_detected(text: str) -> None:
     assert birthday.is_congrats(text)
 
@@ -36,6 +37,7 @@ def test_not_congrats(text: str) -> None:
 
 
 async def test_birthday_flow(h: Harness, monkeypatch: pytest.MonkeyPatch) -> None:
+    h.app.config = replace(h.app.config, allowed_user_ids=frozenset({OWNER.id}))
     await h.friend_says("подключение")  # чтобы бот узнал подключение
     clock = {"now": ts(27, 1, 0)}
     monkeypatch.setattr(birthday.time, "time", lambda: clock["now"])
@@ -64,8 +66,14 @@ async def test_birthday_flow(h: Harness, monkeypatch: pytest.MonkeyPatch) -> Non
     wishes = await h.app.db.bday_wishes(OWNER.id, 2027)
     assert [w[1] for w in wishes] == ["Есюша", "Вася Пупкин"]
 
-    # 23:00 — итоги дня
+    # в 23:00 итогов ещё нет — вдруг кто-то поздравит перед полуночью
     clock["now"] = ts(27, 1, 23)
+    h.session.clear()
+    await birthday.birthday_tick(h.app)
+    await h.settle()
+    assert not [c for c in h.session.of("SendMessage") if c.chat_id == OWNER_DM]
+    # после полуночи — итоги дня
+    clock["now"] = ts(28, 1, 0)
     h.session.clear()
     await birthday.birthday_tick(h.app)
     summary = [c for c in h.session.of("SendMessage") if c.chat_id == OWNER_DM]
@@ -78,6 +86,7 @@ async def test_birthday_flow(h: Harness, monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 async def test_no_birthday_on_other_days(h: Harness, monkeypatch: pytest.MonkeyPatch) -> None:
+    h.app.config = replace(h.app.config, allowed_user_ids=frozenset({OWNER.id}))
     await h.friend_says("подключение")
     monkeypatch.setattr(birthday.time, "time", lambda: ts(26, 1, 23))
     h.session.clear()
@@ -211,3 +220,37 @@ async def test_wave2_animations_run(h: Harness, name: str) -> None:
     edits = h.session.of("EditMessageText")
     assert [e.text for e in edits] == ANIMATIONS[name]("привет")
     assert all(e.message_id == cmd.message_id for e in edits)
+
+
+async def test_birthday_only_for_listed_owner(h: Harness, monkeypatch: pytest.MonkeyPatch) -> None:
+    # ALLOWED_USER_IDS пустой — ботом может пользоваться кто угодно, поздравлять некого
+    await h.friend_says("подключение")
+    monkeypatch.setattr(birthday.time, "time", lambda: ts(27, 1, 10))
+    h.session.clear()
+    await birthday.birthday_tick(h.app)
+    await h.settle()
+    assert not h.session.calls
+
+
+async def test_birthday_greeting_retried_after_failure(h: Harness, monkeypatch: pytest.MonkeyPatch) -> None:
+    from .conftest import bad_request
+    h.app.config = replace(h.app.config, allowed_user_ids=frozenset({OWNER.id}))
+    await h.friend_says("подключение")
+    monkeypatch.setattr(birthday.time, "time", lambda: ts(27, 1, 0))
+    h.session.fail["SendMessage"] = bad_request("Bad Request: chat not found")
+    await birthday.birthday_tick(h.app)
+    assert await h.app.db.kv_get(f"bday_greet:{OWNER.id}:2027") is None
+    h.session.fail.clear()
+    await birthday.birthday_tick(h.app)
+    await h.settle()
+    assert await h.app.db.kv_get(f"bday_greet:{OWNER.id}:2027") == "1"
+
+
+def test_birthday_summary_is_chunked() -> None:
+    wishes = [(i, "Очень Длинное Имя Человека " * 2, "с днём рождения, " + "желаю " * 30)
+              for i in range(120)]
+    chunks = birthday.render_summary("1DEX1", wishes)
+    assert len(chunks) > 1
+    assert all(len(c) <= 4096 for c in chunks)
+    joined = "".join(chunks)
+    assert "120. " in joined and "поздравили <b>120</b> человек" in chunks[0]

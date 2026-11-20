@@ -489,6 +489,7 @@ def _download_audio_sync(query: str, cfg: Config, cancel: threading.Event) -> Do
     guard = _Guard(cancel, max_minutes * 60)
     try:
         last_error: Exception | None = None
+        answered_empty = False
         info: dict[str, Any] | None = None
         for target in targets:
             guard.check()
@@ -525,12 +526,15 @@ def _download_audio_sync(query: str, cfg: Config, cancel: threading.Event) -> Do
                 raise DownloadError("Это прямой эфир — его скачать нельзя.")
             info = _first_entry(result)
             if info is None:
+                answered_empty = True
                 continue  # поиск ничего не нашёл — пробуем следующий источник
             break
 
         if info is None:
-            if url is None:
+            if url is None and (answered_empty or last_error is None):
                 raise DownloadError(f"Ничего не нашёл по запросу «{query[:100]}».")
+            if url is None and last_error is not None:
+                raise DownloadError(_friendly(last_error, "Трек"))
             if last_error is not None:
                 if _is_format_unavailable(last_error):
                     raise DownloadError("По ссылке нет звука, который можно скачать.")

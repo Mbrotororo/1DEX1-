@@ -69,6 +69,10 @@ while true; do
     echo "Остановлено."
     exit "$code"
   fi
+  if [ "$code" -eq 78 ]; then
+    echo "Ошибка в настройках (.env) — перезапуск не поможет. Исправь и запусти снова."
+    exit "$code"
+  fi
   echo "Бот упал (код $code). Перезапуск через 5 секунд... (Ctrl+C — остановить)"
   sleep 5
 done

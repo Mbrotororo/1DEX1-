@@ -92,19 +92,19 @@ _WORDS: list[tuple[re.Pattern[str], str]] = [
         (r"гривн\w*|гривен|грн|hryvn\w*", "UAH"),
         (r"фунт\w*|pounds?|sterling", "GBP"),
         (r"[йи]ен\w*|yen", "JPY"),
-        (r"лир[аыуе]?|lira", "TRY"),
-        (r"сум(?:а|ов|ы)?", "UZS"),
-        (r"драм(?:а|ов|ы)?", "AMD"),
+        (r"лир(?:а|ы|у|е|ой|ам|ах|ами)?|lira", "TRY"),
+        (r"сум(?:а|ов|ы|ам|ах|ами)?", "UZS"),
+        (r"драм(?:а|ов|ы|ам|ах|ами)?", "AMD"),
         (r"лари", "GEL"),
         (r"злот\w*|zloty", "PLN"),
         (r"франк\w*|francs?", "CHF"),
-        (r"вон[аыу]?", "KRW"),
+        (r"вон(?:а|ы|у|е|ой|ам|ах|ами)?", "KRW"),
         (r"рупи\w*|rupees?", "INR"),
         (r"сомони", "TJS"),
-        (r"сом(?:а|ов|ы)?", "KGS"),
+        (r"сом(?:а|ов|ы|ам|ах|ами)?", "KGS"),
         (r"манат\w*", "AZN"),
         (r"дирхам\w*", "AED"),
-        (r"бат(?:а|ов|ы)?|baht", "THB"),
+        (r"бат(?:а|ов|ы|ам|ах|ами)?|baht", "THB"),
     )
 ]
 
@@ -128,6 +128,11 @@ _NUMBER = re.compile(
     r"(?:\s*(кк|kk|к|k|тыс\w*|тыщ\w*|млн\w*|миллион\w*|млрд\w*|миллиард\w*|m)(?![a-zа-я]))?"
 )
 _ISO = re.compile(r"[a-z]{3}")
+# Число с разделителями тысяч: 1-3 цифры, затем группы «,ddd» или «.ddd» одним и тем же
+# разделителем, и необязательная дробь другим разделителем.
+_THOUSANDS = re.compile(
+    r"(?<![\d.,])((?:[1-9]\d{0,2})(?:,\d{3})+|(?:[1-9]\d{0,2})(?:\.\d{3}){2,})((?:\.\d{1,2})?)(?![\d,]|\.\d)"
+)
 
 
 def _multiplier(suffix: str | None) -> float:
@@ -170,6 +175,9 @@ def parse_query(query: str | None) -> Query:
     for pattern, code in _PHRASES:
         text = pattern.sub(f" {code} ", text)
     text = _DIGIT_SPACE.sub("", text)
+    # «1,000» / «1.000.000» / «10,000.50» — разделители тысяч (группы ровно по 3 цифры),
+    # а «1,5» / «2.75» — дробь
+    text = _THOUSANDS.sub(lambda m: re.sub(r"[.,]", "", m.group(1)) + (m.group(2) or "").replace(",", "."), text)
     text = re.sub(r"(?<=\d),(?=\d)", ".", text)
 
     numbers = list(_NUMBER.finditer(text))

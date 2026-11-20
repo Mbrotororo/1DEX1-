@@ -118,11 +118,34 @@ def load_config() -> Config:
         tiktok_hd=_bool("TIKTOK_HD", False),
         set_bot_profile=_bool("SET_BOT_PROFILE", True),
         log_level=os.getenv("LOG_LEVEL", "INFO").strip().upper() or "INFO",
-        tz_offset_hours=max(-12.0, min(_float("TZ_OFFSET", 3.0), 14.0)),
+        tz_offset_hours=_tz_offset(os.getenv("TZ_OFFSET", "3")),
         weather_city=os.getenv("WEATHER_CITY", "").strip(),
         birthday=_birthday(os.getenv("BIRTHDAY", "27.01")),
         owner_name=os.getenv("OWNER_NAME", "1DEX1").strip() or "1DEX1",
     )
+
+
+def _tz_offset(raw: str) -> float:
+    """'3', '+3', '5:30', 'UTC+5', 'GMT-3:30', '5.5' -> часы."""
+    text = raw.strip().upper().replace("UTC", "").replace("GMT", "").replace("МСК", "+3").strip()
+    if not text:
+        return 3.0
+    match = re.fullmatch(r"([+-−]?)\s*(\d{1,2})(?:[:.,](\d{1,2}))?", text)
+    if not match:
+        raise SystemExit(f"❌ TZ_OFFSET должен быть как 3, -5, 5:30 или UTC+3, а там: {raw}")
+    sign = -1 if match.group(1) in ("-", "−") else 1
+    hours = int(match.group(2))
+    frac = match.group(3)
+    if frac is None:
+        minutes = 0
+    elif ":" in text:
+        minutes = int(frac)
+    else:  # 5.5 / 5,5 — доли часа
+        minutes = round(float("0." + frac) * 60)
+    value = sign * (hours + minutes / 60)
+    if not -12 <= value <= 14 or minutes >= 60:
+        raise SystemExit(f"❌ TZ_OFFSET вне диапазона −12…+14: {raw}")
+    return value
 
 
 def _birthday(raw: str) -> tuple[int, int] | None:
