@@ -450,3 +450,16 @@ async def test_removed_commands_are_plain_messages(h: Harness, cmd: str) -> None
     await h.owner_says(cmd)
     await h.settle()
     assert not h.session.of("EditMessageText") and not h.session.of("SendMessage")
+
+
+
+async def test_status_and_help_in_bot_chat(h: Harness) -> None:
+    from aiogram.types import Message
+    from .conftest import NOW
+    await h.friend_says("подключение")
+    for cmd in ("/status", "/start", "/help"):
+        h.session.clear()
+        await h.feed(message=Message(message_id=1, date=NOW, chat=Chat(id=OWNER.id, type="private"),
+                                     from_user=OWNER, text=cmd))
+        sent = h.session.of("SendMessage")
+        assert sent and sent[0].chat_id == OWNER.id, cmd

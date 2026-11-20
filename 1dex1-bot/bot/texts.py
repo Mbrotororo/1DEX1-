@@ -61,6 +61,18 @@ def start_text(name: str, user_id: int, connected: bool, cache_days: int = 7) ->
     )
 
 
+
+def rights_text(can_reply: bool, can_read: bool, can_delete_all: bool) -> str:
+    def mark(ok: bool) -> str:
+        return "✅" if ok else "❌"
+
+    return (
+        f"{mark(can_reply)} отвечать на сообщения — нужно для всех команд\n"
+        f"{mark(can_delete_all)} удалять все сообщения — нужно для .mute, .unmuteme и чтобы команды исчезали\n"
+        f"{mark(can_read)} читать сообщения"
+    )
+
+
 CONNECTED = "✅ <b>Бот подключён!</b>\n\nПрава:\n{rights}\n\n{warn}Пиши <code>.help</code> в любой переписке, чтобы увидеть команды."
 MISSING_RIGHTS_WARN = (
     "⚠️ Не хватает прав — зайди в Настройки → Автоматизация чатов → "
