@@ -122,10 +122,10 @@ async def test_stats_counts_both_sides(h: Harness) -> None:
     edit = h.session.of("EditMessageText")[0]
     assert edit.message_id == cmd.message_id
     text = edit.text
-    assert "Статистика переписки с Вася Пупкин" in text
+    assert "Статистика переписки с Вася" in text
     assert "Всего: <b>4</b>" in text
     assert "Ты: <b>2</b> (50%)" in text
-    assert "Фото/видео: ты 0 · Вася Пупкин 1" in text
+    assert "Фото/видео: ты 0 · Вася 1" in text
     # команда .stats сама в статистику не попадает
     stats = await h.app.db.chat_stats(OWNER.id, FRIEND.id, business._day(h.app, time.time()), [])
     assert stats is not None and stats.total == 4

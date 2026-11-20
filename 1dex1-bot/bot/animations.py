@@ -634,8 +634,8 @@ def rain_frames(text: str | None = None) -> list[str]:
     drops = _rain_drops()
     for t in range(RAIN_EMIT + 2):
         rows = [[dark] * COLS for _ in RAIN_AIR]
-        for i, _row_no in enumerate(RAIN_AIR):
-            born = t - i  # капли в этом ряду «родились» под тучей i кадров назад
+        for i in range(len(RAIN_AIR)):
+            born = t - i  # капли в i-м ряду «воздуха» вылетели из тучи i кадров назад
             if 0 <= born < RAIN_EMIT:
                 for c in drops[born]:
                     rows[i][c] = DROP
