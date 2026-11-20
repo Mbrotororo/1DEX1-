@@ -344,15 +344,15 @@ def _heart(mask: tuple[str, ...], paint: Callable[[int, int], str], upto: int | 
 
 
 def _ring(r: int, c: int) -> int:
-    """Номер «кольца» вокруг центра сердца — для радужных кругов."""
-    return max(abs(c - HEART_COLS // 2), abs(2 * r - 5) // 2)
+    """Номер «кольца»-ромба вокруг центра сердца (ряды 2–3, средняя колонка) — для радужных кругов."""
+    return abs(c - HEART_COLS // 2) + abs(2 * r - 5) // 2
 
 
 def heart_frames(text: str | None = None) -> list[str]:
     """Большое пиксельное сердце ❤️ на белом фоне 🤍: рисуется по рядам, от центра расходятся
     радужные круги, потом два удара сердца. Последний кадр — красное сердце; если передан
     текст, он печатается отдельной строкой под сердцем."""
-    text = _normalize(text, MAX_GRID_TEXT) if text else ""
+    text = _normalize(text, MAX_GRID_TEXT)
 
     def red(_r: int, _c: int) -> str:
         return HEART_RED
@@ -417,7 +417,10 @@ ZALGO = tuple(chr(c) for c in range(0x0300, 0x0370) if c not in (0x0333, 0x033F,
 
 def _noise(cell: str, chaos: float, rng: random.Random) -> str:
     """«Испорченная» версия символа. Всегда отличается от исходного."""
-    if rng.random() < 0.15 + 0.6 * chaos:
+    if not cell[0].isalnum():
+        # эмодзи и знаки препинания с «залго» выглядят как мусорные кружки — только блоки и символы
+        out = rng.choice(GLITCH_BLOCKS if rng.random() < 0.5 + 0.4 * chaos else GLITCH_GLYPHS)
+    elif rng.random() < 0.15 + 0.6 * chaos:
         out = rng.choice(GLITCH_BLOCKS)
     else:
         low = cell.lower()
@@ -444,9 +447,10 @@ def glitch_frames(text: str, seed: int = 0) -> list[str]:
     letters = [i for i, cell in enumerate(cells) if not cell.isspace()]
 
     # шаг, на котором символ «встаёт на место»: в целом слева направо, но с разбросом
+    # (шаги 2…GLITCH_STEPS-1, так что первые два кадра — сплошной шум, а последний ещё «искрит»)
     lock: dict[int, int] = {}
     for rank, i in enumerate(letters):
-        lock[i] = 2 + rank * (GLITCH_STEPS - 5) // len(letters) + rng.randint(0, 2)
+        lock[i] = 2 + int((rank + rng.random()) / len(letters) * (GLITCH_STEPS - 3))
 
     def force(out: list[str]) -> None:
         i = rng.choice(letters)
@@ -474,8 +478,8 @@ def glitch_frames(text: str, seed: int = 0) -> list[str]:
 
     # чистый текст → короткий «сбой» → снова чистый текст
     shock = list(cells)
-    for i in rng.sample(letters, max(1, len(letters) // 6)):
-        shock[i] = _noise(cells[i], 0.5, rng)
+    for i in rng.sample(letters, min(len(letters), max(2, len(letters) // 5))):
+        shock[i] = _noise(cells[i], 0.7, rng)
     frames += [clean, "".join(shock), clean]
     return frames
 
