@@ -11,7 +11,7 @@ from aiogram.types import InlineQuery
 from bot import birthday, menu, texts
 from bot.handlers import business
 
-from .conftest import CONN_ID, FRIEND, OWNER, OWNER_DM, Harness
+from .conftest import FRIEND, OWNER, OWNER_DM, Harness
 
 pytestmark = pytest.mark.asyncio
 
@@ -131,7 +131,8 @@ def test_menu_search() -> None:
     assert menu.search("love я скучаю") == [(menu.search("love")[0][0], ".love я скучаю")]
     assert menu.search(".love")[0][1] == ".love"
     names = [item.name for item, _ in menu.search("m")]
-    assert {"mute", "mock", "music"} <= set(names)
+    assert {"mute", "music"} <= set(names)
+    assert not {"mock", "rain", "firework", "rainbow", "wave"} & {item.name for item in menu.MENU}
     assert menu.search("погода Москва")[0][1] == ".weather Москва"
     assert menu.search("spam")[0][1] == ".spam"  # без аргументов спам сам не запустится
     assert menu.search("zzz") == []
@@ -210,47 +211,3 @@ async def test_time_wiring(h: Harness, monkeypatch: pytest.MonkeyPatch) -> None:
     h.session.clear()
     await h.owner_says(".time")
     assert h.session.of("EditMessageText")[0].text == texts.TIME_USAGE
-
-
-@pytest.mark.parametrize("name", ["rain", "firework", "rainbow", "wave"])
-async def test_wave2_animations_run(h: Harness, name: str) -> None:
-    from bot.animations import ANIMATIONS
-    cmd = await h.owner_says(f".{name} привет")
-    await h.settle()
-    edits = h.session.of("EditMessageText")
-    assert [e.text for e in edits] == ANIMATIONS[name]("привет")
-    assert all(e.message_id == cmd.message_id for e in edits)
-
-
-async def test_birthday_only_for_listed_owner(h: Harness, monkeypatch: pytest.MonkeyPatch) -> None:
-    # ALLOWED_USER_IDS пустой — ботом может пользоваться кто угодно, поздравлять некого
-    await h.friend_says("подключение")
-    monkeypatch.setattr(birthday.time, "time", lambda: ts(27, 1, 10))
-    h.session.clear()
-    await birthday.birthday_tick(h.app)
-    await h.settle()
-    assert not h.session.calls
-
-
-async def test_birthday_greeting_retried_after_failure(h: Harness, monkeypatch: pytest.MonkeyPatch) -> None:
-    from .conftest import bad_request
-    h.app.config = replace(h.app.config, allowed_user_ids=frozenset({OWNER.id}))
-    await h.friend_says("подключение")
-    monkeypatch.setattr(birthday.time, "time", lambda: ts(27, 1, 0))
-    h.session.fail["SendMessage"] = bad_request("Bad Request: chat not found")
-    await birthday.birthday_tick(h.app)
-    assert await h.app.db.kv_get(f"bday_greet:{OWNER.id}:2027") is None
-    h.session.fail.clear()
-    await birthday.birthday_tick(h.app)
-    await h.settle()
-    assert await h.app.db.kv_get(f"bday_greet:{OWNER.id}:2027") == "1"
-
-
-def test_birthday_summary_is_chunked() -> None:
-    wishes = [(i, "Очень Длинное Имя Человека " * 2, "с днём рождения, " + "желаю " * 30)
-              for i in range(120)]
-    chunks = birthday.render_summary("1DEX1", wishes)
-    assert len(chunks) > 1
-    assert all(len(c) <= 4096 for c in chunks)
-    joined = "".join(chunks)
-    assert "120. " in joined and "поздравили <b>120</b> человек" in chunks[0]

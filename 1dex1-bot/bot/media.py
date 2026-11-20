@@ -6,7 +6,6 @@ import io
 import logging
 from typing import Any
 
-from aiogram.exceptions import TelegramAPIError
 from aiogram.types import BufferedInputFile, LinkPreviewOptions, Message, ReplyParameters
 
 from .core import App, retry_flood

@@ -1,4 +1,4 @@
-"""Новые функции: удалённые сообщения, статистика, .mock, .weather, .music, анимации, миграции."""
+"""Новые функции: удалённые сообщения, статистика, .weather, .music, анимации, миграции."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import pytest
 from aiogram.types import BusinessMessagesDeleted, Chat
 
 from bot import texts
-from bot.animations import ANIMATIONS, love_frames, mock_text
+from bot.animations import ANIMATIONS, love_frames
 from bot.db import Database
 from bot.handlers import business, edits
 
@@ -190,25 +190,6 @@ async def test_stop_cancels_animation_before_first_frame(h: Harness) -> None:
     await h.owner_says(".stop")  # прилетело сразу же
     await h.settle()
     assert len(h.session.of("EditMessageText")) <= 1
-
-
-# ------------------------------------------------------------------ .mock
-
-async def test_mock_reply(h: Harness) -> None:
-    target = await h.friend_says("привет как дела")
-    h.session.clear()
-    cmd = await h.owner_says(".mock", reply_to_message=target)
-    edit = h.session.of("EditMessageText")[0]
-    assert edit.message_id == cmd.message_id
-    assert edit.text == mock_text("привет как дела") and edit.parse_mode is None
-
-
-async def test_mock_args_and_usage(h: Harness) -> None:
-    await h.owner_says(".mock ну ты и клоун")
-    assert h.session.of("EditMessageText")[0].text == mock_text("ну ты и клоун")
-    h.session.clear()
-    await h.owner_says(".mock")
-    assert h.session.of("EditMessageText")[0].text == texts.MOCK_USAGE
 
 
 # ------------------------------------------------------------------ .weather
@@ -460,3 +441,12 @@ def test_tz_offset_parsing() -> None:
     assert _tz_offset("5:30") == 5.5 and _tz_offset("UTC+5") == 5 and _tz_offset("GMT-3:30") == -3.5
     with pytest.raises(SystemExit):
         _tz_offset("Москва")
+
+
+
+@pytest.mark.parametrize("cmd", [".rain", ".firework", ".rainbow привет", ".wave привет", ".mock привет",
+                                 ".дождь", ".салют", ".радуга", ".волна", ".мок"])
+async def test_removed_commands_are_plain_messages(h: Harness, cmd: str) -> None:
+    await h.owner_says(cmd)
+    await h.settle()
+    assert not h.session.of("EditMessageText") and not h.session.of("SendMessage")

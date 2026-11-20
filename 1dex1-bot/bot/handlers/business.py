@@ -23,7 +23,7 @@ from aiogram.types import (
 )
 
 from .. import texts
-from ..animations import ANIMATIONS, mock_text
+from ..animations import ANIMATIONS
 from ..core import App, retry_flood
 from ..db import CachedMessage, ChatStats, Connection, Mute
 from ..downloader import DownloadError, detect_site, download_audio, download_video, extract_url
@@ -532,15 +532,12 @@ async def _link_failed(app: App, conn: Connection, chat_id: int, status_id: int 
 
 # ------------------------------------------------------------------- анимации
 
-ANIMATION_USAGE = {"type": texts.TYPE_USAGE, "glitch": texts.GLITCH_USAGE,
-                   "rainbow": texts.RAINBOW_USAGE, "wave": texts.WAVE_USAGE}
-ANIMATION_NAMES = ("love", "rose", "fire", "heart", "type", "glitch", "loading",
-                   "rain", "firework", "rainbow", "wave")
+ANIMATION_USAGE = {"type": texts.TYPE_USAGE, "glitch": texts.GLITCH_USAGE}
+ANIMATION_NAMES = ("love", "rose", "fire", "heart", "type", "glitch", "loading")
 
 
 async def cmd_animation(command: Command, message: Message, conn: Connection, app: App) -> None:
-    """.love .rose .fire .heart .type .glitch .loading .rain .firework .rainbow .wave —
-    сообщение-команда превращается в анимацию."""
+    """.love .rose .fire .heart .type .glitch .loading — сообщение-команда превращается в анимацию."""
     if command.name in ANIMATION_USAGE and not command.args:
         await app.flash(conn, message, ANIMATION_USAGE[command.name])
         return
@@ -562,19 +559,6 @@ async def animate(app: App, conn: Connection, message: Message, frames: list[str
         await asyncio.sleep(app.config.love_frame_delay)
         if not await app.edit(conn, chat_id, target, frame, parse_mode=None):
             return  # сообщение удалили или правка запрещена
-
-
-# ------------------------------------------------------------------- .mock
-
-async def cmd_mock(command: Command, message: Message, conn: Connection, app: App) -> None:
-    source = command.args
-    if not source and message.reply_to_message is not None:
-        source = message_text(message.reply_to_message)
-    if not source:
-        await app.flash(conn, message, texts.MOCK_USAGE)
-        return
-    # команда-ответ превращается в «пРиКоЛ» и остаётся ответом на то сообщение
-    await app.respond(conn, message, mock_text(source)[:4096], parse_mode=None)
 
 
 # ------------------------------------------------------------------- .weather
@@ -833,7 +817,6 @@ COMMANDS = {
     "link": cmd_link,
     "save": cmd_save,
     "help": cmd_help,
-    "mock": cmd_mock,
     "weather": cmd_weather,
     "music": cmd_music,
     "stats": cmd_stats,

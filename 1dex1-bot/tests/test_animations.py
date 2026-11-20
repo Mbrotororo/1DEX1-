@@ -1,5 +1,5 @@
-"""Тесты кадров анимаций (.rose, .fire, .heart, .type, .glitch, .loading, .rain, .firework,
-.rainbow, .wave), поздравления с днём рождения и mock_text."""
+"""Тесты кадров анимаций (.love, .rose, .fire, .heart, .type, .glitch, .loading)
+и поздравления с днём рождения."""
 
 from __future__ import annotations
 
@@ -22,16 +22,10 @@ from bot.animations import (
     CURSOR,
     DEFAULT_BIRTHDAY_NAME,
     DEFAULT_FIRE_TEXT,
-    DEFAULT_FIREWORK_TEXT,
     DEFAULT_GLITCH_TEXT,
     DEFAULT_LOADING_DONE,
-    DEFAULT_RAIN_TEXT,
-    DEFAULT_RAINBOW_TEXT,
     DEFAULT_ROSE_TEXT,
     DEFAULT_TYPE_TEXT,
-    DEFAULT_WAVE_TEXT,
-    FW_MID,
-    FW_ROWS,
     HEART_BIG,
     HEART_COLS,
     HEART_ROWS,
@@ -41,25 +35,17 @@ from bot.animations import (
     MID,
     MIN_FRAMES,
     ROWS,
-    RAINBOW_BAND_MAX,
-    SQUARES,
-    WAVE_STEPS,
     ZALGO,
     _graphemes,
     birthday_frames,
     fire_frames,
-    firework_frames,
     loading_bar,
     glitch_frames,
     heart_frames,
     loading_frames,
     love_frames,
-    mock_text,
-    rainbow_frames,
-    rain_frames,
     rose_frames,
     type_frames,
-    wave_frames,
 )
 
 FAMILY = "👨\u200d👩\u200d👧\u200d👦"  # 7 code points, один видимый символ
@@ -109,10 +95,6 @@ GENERATORS: dict[str, Callable[[str | None], list[str]]] = {
     "glitch": lambda t: glitch_frames(t or ""),
     "glitch7": lambda t: glitch_frames(t or "", seed=7),
     "loading": loading_frames,
-    "rain": rain_frames,
-    "firework": firework_frames,
-    "rainbow": lambda t: rainbow_frames(t or ""),
-    "wave": lambda t: wave_frames(t or ""),
     "birthday": lambda t: birthday_frames(t or ""),
 }
 
@@ -178,8 +160,7 @@ def test_registry(name: str, text: str | None) -> None:
 
 
 def test_registry_contents() -> None:
-    assert set(ANIMATIONS) == {"love", "rose", "fire", "heart", "type", "glitch", "loading",
-                               "rain", "firework", "rainbow", "wave"}
+    assert set(ANIMATIONS) == {"love", "rose", "fire", "heart", "type", "glitch", "loading"}
     assert "birthday" not in ANIMATIONS  # поздравление — не команда чата
     assert ANIMATIONS["love"](None) == love_frames()
     assert ANIMATIONS["love"]("") == love_frames()
@@ -192,14 +173,6 @@ def test_registry_contents() -> None:
     assert ANIMATIONS["glitch"](None)[-1] == DEFAULT_GLITCH_TEXT
     assert ANIMATIONS["loading"](None)[-1] == DEFAULT_LOADING_DONE
     assert ANIMATIONS["loading"]("готово") == loading_frames("готово")
-    assert ANIMATIONS["rain"](None) == rain_frames() == ANIMATIONS["rain"]("")
-    assert ANIMATIONS["rain"]("лужи") == rain_frames("лужи")
-    assert ANIMATIONS["firework"](None) == firework_frames() == ANIMATIONS["firework"]("")
-    assert ANIMATIONS["firework"]("салют") == firework_frames("салют")
-    assert ANIMATIONS["rainbow"](None) == rainbow_frames("") == rainbow_frames(DEFAULT_RAINBOW_TEXT)
-    assert ANIMATIONS["rainbow"]("цвет") == rainbow_frames("цвет")
-    assert ANIMATIONS["wave"](None) == wave_frames("") == wave_frames(DEFAULT_WAVE_TEXT)
-    assert ANIMATIONS["wave"]("море") == wave_frames("море")
 
 
 def test_determinism_across_processes() -> None:
@@ -450,42 +423,6 @@ def test_loading_custom_text() -> None:
     assert len(loading_frames("z" * 1000)[-1]) == 300
 
 
-# ------------------------------------------------------------------ mock_text
-
-@pytest.mark.parametrize(
-    ("raw", "expected"),
-    [
-        ("привет мир", "пРиВеТ мИр"),
-        ("Hello, World!", "hElLo, WoRlD!"),  # очередь не сбрасывается между словами
-        ("HELLO", "hElLo"),
-        ("ab12cd", "aB12cD"),
-        ("abвг", "aBвГ"),
-        ("ёжик Ёж", "ёЖиК ёЖ"),
-        ("a, b. c! d?", "a, B. c! D?"),
-        ("😎 ok 😎 да", "😎 oK 😎 дА"),
-        ("aßb", "aßB"),
-        ("αβγ abc", "αβγ aBc"),
-        ("  много   пробелов \n тут ", "мНоГо ПрОбЕлОв ТуТ"),
-        ("", ""),
-        ("   ", ""),
-        ("123 !!!", "123 !!!"),
-    ],
-)
-def test_mock_text(raw: str, expected: str) -> None:
-    assert mock_text(raw) == expected
-
-
-def test_mock_text_rules() -> None:
-    text = "Съешь же ещё этих мягких французских булок, да выпей чаю. The quick brown fox!"
-    mocked = mock_text(text)
-    assert mocked.lower() == text.lower()
-    letters = [ch for ch in mocked if ch.isalpha()]
-    assert all(ch.islower() for ch in letters[0::2])
-    assert all(ch.isupper() for ch in letters[1::2])
-    assert mock_text(mocked) == mocked
-    assert len(mock_text("a" * 1000)) == 300
-
-
 # ------------------------------------------------------------------ помощники
 
 def test_graphemes() -> None:
@@ -495,7 +432,7 @@ def test_graphemes() -> None:
     assert _graphemes("") == []
 
 
-# ------------------------------------------------------------------ сетки из эмодзи (.rain, .firework, торт)
+# ------------------------------------------------------------------ сетки из эмодзи (торт)
 
 def is_emoji_cell(cell: str) -> bool:
     """Клетка сетки — эмодзи-картинка (все одной ширины), а не буква или пробел."""
@@ -529,236 +466,6 @@ def typed_middles(frames: list[str], row: int, left: str, right: str) -> list[st
         if len(rows) > row and rows[row].startswith(left + " ") and rows[row].endswith(" " + right):
             out.append(rows[row][len(left) + 1: -len(right) - 1].strip())
     return out
-
-
-# ------------------------------------------------------------------ .rain
-
-RAIN_SCENE = 17  # кадров до появления текста: тучи (5) + ливень (7) + прояснение (5)
-
-
-def test_rain_default() -> None:
-    frames = rain_frames()
-    assert DEFAULT_RAIN_TEXT == "после дождя всегда солнце"
-    assert lines(frames[-1]) == [
-        "🌈🟦🟦☀️🟦🟦🌈",
-        "🟦" * COLS,
-        "☀️ после дождя всегда солнце ☀️",
-        "🌷🌼🌷🌻🌷🌼🌷",
-        "🟩" * COLS,
-    ]
-    for frame in frames:
-        assert len(lines(frame)) == ROWS
-        check_grid(frame, MID)
-        assert lines(frame)[-1] == "🟩" * COLS  # трава всегда внизу
-    # сначала солнечно, тучи собираются с краёв и закрывают солнце
-    tops = [lines(f)[0] for f in frames]
-    assert "☁️" not in tops[0] and "☀️" in tops[0]
-    clouds = [top.count("☁️") for top in tops[:5]]
-    assert clouds == sorted(clouds) and tops[4] == "☁️" * COLS
-    joined = "".join(frames)
-    for emoji in ("💧", "🌧️", "⛈️", "⚡", "⛅", "🌈", "🌱"):
-        assert emoji in joined, emoji
-
-
-def test_rain_drops_fall_down() -> None:
-    frames = rain_frames()
-    rainy = [i for i, f in enumerate(frames) if "💧" in f]
-    assert rainy == list(range(rainy[0], rainy[-1] + 1)) and len(rainy) >= 5  # ливень идёт подряд
-    for i in rainy:
-        drops = positions(frames[i], "💧")
-        below = positions(frames[i + 1], "💧") | positions(frames[i + 1], "⚡")
-        for r, c in drops:
-            assert 1 <= r <= 3  # капли только в «воздухе» между тучами и травой
-            if r < 3:
-                assert (r + 1, c) in below, (i, r, c)  # через кадр капля на ряд ниже
-    # после ливня — ни капель, ни молний, небо снова голубое
-    after = frames[rainy[-1] + 1:]
-    assert all("💧" not in f and "⚡" not in f for f in after)
-    assert "⬛" not in frames[-1] and "☁️" not in frames[-1]
-
-
-def test_rain_text_appears_after_rain() -> None:
-    a, b = rain_frames("a"), rain_frames("совсем другой текст")
-    assert a[:RAIN_SCENE] == b[:RAIN_SCENE]  # сцена не зависит от текста
-    assert all(" " not in f for f in a[:RAIN_SCENE])
-    middles = typed_middles(b, MID, "☀️", "☀️")
-    assert middles[0] == "" and middles[-1] == "совсем другой текст"
-    assert all("совсем другой текст".startswith(m) for m in middles)
-    assert 3 <= len(set(middles)) <= 6
-
-
-def test_rain_custom_text_and_clamp() -> None:
-    assert lines(rain_frames("  солнышко \n выглянуло ")[-1])[MID] == "☀️ солнышко выглянуло ☀️"
-    long = lines(rain_frames("x" * 500)[-1])[MID]
-    assert long == "☀️ " + "x" * 40 + " ☀️"
-    assert lines(rain_frames(FAMILY * 30)[-1])[MID] == f"☀️ {FAMILY * 5} ☀️"
-    assert lines(rain_frames(FLAG_RU + " ура")[-1])[MID] == f"☀️ {FLAG_RU} ура ☀️"
-    assert rain_frames("   ") == rain_frames() == rain_frames(None)
-
-
-# ------------------------------------------------------------------ .firework
-
-def test_firework_default() -> None:
-    frames = firework_frames()
-    assert DEFAULT_FIREWORK_TEXT == "УРА!"
-    final = lines(frames[-1])
-    assert len(final) == FW_ROWS == 7 and FW_MID == 3
-    assert final[FW_MID] == "🎆 УРА! 🎆"
-    assert final[-1] == "🌃" * COLS
-    for i, row in enumerate(final[:-1]):
-        if i != FW_MID:
-            assert set(_graphemes(row)) == {"🎆", "🎇"}
-    for frame in frames:
-        assert len(lines(frame)) == FW_ROWS
-        assert lines(frame)[-1] == "🌃" * COLS  # ночной город внизу
-        check_grid(frame, FW_MID)
-    assert "🚀" not in frames[-1] and "💥" not in frames[-1]
-
-
-def test_firework_rockets_and_bursts() -> None:
-    frames = firework_frames()
-    # первая ракета взлетает снизу вверх по одной колонке, за ней след ✨
-    rockets = [positions(f, "🚀") for f in frames[:3]]
-    assert [min(p)[0] for p in rockets] == [5, 4, 3]
-    assert len({c for p in rockets for _, c in p}) == 1
-    assert (5, 2) in positions(frames[1], "✨")
-    # взрыв: 💥 в точке взрыва, потом кольца 🎆 расходятся всё дальше
-    boom = positions(frames[3], "💥")
-    assert boom == {(2, 2)}
-    (r0, c0), = boom
-
-    def reach(frame: str, emoji: str) -> int:
-        return max(max(abs(r - r0), abs(c - c0)) for r, c in positions(frame, emoji))
-
-    assert reach(frames[4], "🎆") == 1 and reach(frames[5], "🎆") == 2
-    # вторая ракета другого цвета: «золотой» салют 🎇🌟 в другом месте неба
-    gold = [i for i, f in enumerate(frames) if "🌟" in f]
-    assert gold and gold[0] > 3
-    second_boom = [positions(f, "💥") for f in frames[4:11] if "💥" in f]
-    assert second_boom and second_boom[0] != boom
-    assert any("🔥" in f for f in frames[:8])  # след второй ракеты
-    # перед текстом — финальный залп на всё небо
-    assert any(set(_graphemes("".join(lines(f)[:-1]))) == {"🎆", "🎇"} for f in frames[:-1])
-
-
-def test_firework_custom_text_and_clamp() -> None:
-    frames = firework_frames("  с новым   годом ")
-    assert lines(frames[-1])[FW_MID] == "🎆 с новым годом 🎆"
-    middles = typed_middles(frames, FW_MID, "🎆", "🎆")
-    assert middles[0] == "" and middles[-1] == "с новым годом"
-    assert all("с новым годом".startswith(m) for m in middles)
-    assert lines(firework_frames("я" * 500)[-1])[FW_MID] == "🎆 " + "я" * 40 + " 🎆"
-    assert lines(firework_frames("🌹" * 50)[-1])[FW_MID] == "🎆 " + "🌹" * 40 + " 🎆"
-    # сцена с ракетами не зависит от текста
-    assert firework_frames("a")[:13] == firework_frames("bbb")[:13]
-
-
-# ------------------------------------------------------------------ .rainbow
-
-def canonical_band(width: int) -> str:
-    return "".join(SQUARES[i % len(SQUARES)] for i in range(width))
-
-
-def test_rainbow_default() -> None:
-    frames = rainbow_frames("")
-    assert DEFAULT_RAINBOW_TEXT == "радуга"
-    assert frames[-1] == "🟥🟧🟨🟩🟦🟪\n🌈 радуга 🌈\n🟥🟧🟨🟩🟦🟪"
-    assert rainbow_frames("   ") == frames == rainbow_frames(None)  # type: ignore[arg-type]
-    for frame in frames:
-        top, middle, bottom = lines(frame)
-        assert set(_graphemes(top)) <= set(SQUARES) and set(_graphemes(bottom)) <= set(SQUARES)
-        assert len(_graphemes(top)) == len(_graphemes(bottom))
-        assert " " in middle
-    # по бокам переливаются сердечки всех цветов радуги
-    joined = "".join(frames[:-1])
-    for heart in ("❤️", "🧡", "💛", "💚", "💙", "💜"):
-        assert heart in joined
-
-
-def test_rainbow_paint_and_flow() -> None:
-    frames = rainbow_frames("привет мир")
-    width = len(_graphemes(lines(frames[-1])[0]))
-    assert lines(frames[-1]) == [canonical_band(width), "🌈 привет мир 🌈", canonical_band(width)]
-    # 1) краска идёт слева направо: полоса растёт, текст проявляется
-    paint = [f for f in frames if len(_graphemes(lines(f)[0])) < width]
-    assert paint == frames[: len(paint)] and len(paint) >= 3
-    widths = [len(_graphemes(lines(f)[0])) for f in paint]
-    assert widths == sorted(widths) and widths[0] == 1
-    for frame in paint:
-        top, middle, _ = lines(frame)
-        assert top == canonical_band(len(_graphemes(top)))
-        heart = _graphemes(middle)[0]
-        assert "привет мир".startswith(middle.removeprefix(heart + " ").removesuffix(" " + heart))
-    # 2) цвета бегут: верхняя полоса сдвигается вправо, нижняя влево
-    flow = [f for f in frames[len(paint):-1] if "привет мир" in f]
-    assert len(flow) >= 6
-    for a, b in zip(flow, flow[1:]):
-        ta, tb = _graphemes(lines(a)[0]), _graphemes(lines(b)[0])
-        assert tb[1:] == ta[:-1]
-        ba, bb = _graphemes(lines(a)[2]), _graphemes(lines(b)[2])
-        assert bb[:-1] == ba[1:]
-
-
-def test_rainbow_band_fits_text_and_clamp() -> None:
-    sizes = [len(_graphemes(lines(rainbow_frames(t)[-1])[0]))
-             for t in ("a", "радуга", "привет мир", "после дождя всегда солнце", "x" * 40)]
-    assert sizes == sorted(sizes)
-    assert sizes[0] == 6 and sizes[-1] == RAINBOW_BAND_MAX == 12
-    assert lines(rainbow_frames("я" * 500)[-1])[1] == "🌈 " + "я" * 40 + " 🌈"
-    assert lines(rainbow_frames("  да   нет ")[-1])[1] == "🌈 да нет 🌈"
-    emoji = rainbow_frames("🌹" * 50)
-    assert lines(emoji[-1])[1] == "🌈 " + "🌹" * 40 + " 🌈"
-    assert len(_graphemes(lines(emoji[-1])[0])) == RAINBOW_BAND_MAX
-    assert lines(rainbow_frames(FAMILY * 30)[-1])[1] == f"🌈 {FAMILY * 5} 🌈"
-
-
-# ------------------------------------------------------------------ .wave
-
-def test_wave_default_and_final() -> None:
-    assert wave_frames("")[-1] == DEFAULT_WAVE_TEXT == "волна"
-    assert wave_frames("  \n ")[-1] == "волна"
-    assert wave_frames("  привет   мир ")[-1] == "привет мир"
-    assert wave_frames("ы" * 1000)[-1] == "ы" * 300
-    assert wave_frames("🌹 роза 🌹")[-1] == "🌹 роза 🌹"
-    for text in ("a", "волна", "привет мир", "x" * 300):
-        frames = wave_frames(text)
-        assert 12 <= len(frames) <= 18
-        assert len(frames) == WAVE_STEPS + 1
-
-
-def test_wave_structure() -> None:
-    frames = wave_frames("привет мир")
-    for frame in frames[:-1]:
-        text, sea = lines(frame)
-        assert text.lower() == "привет мир" and text != "привет мир"
-        assert len(_graphemes(sea)) == COLS and set(_graphemes(sea)) == {"〰️", "🌊"}
-    seas = [lines(f)[1] for f in frames[:-1]]
-    assert all(a != b for a, b in zip(seas, seas[1:]))  # море катится каждый кадр
-
-
-def test_wave_crest_moves_left_to_right() -> None:
-    text = "абвгдежзийклмнопрстуфхцчшщъыэюя"
-    frames = wave_frames(text)
-    firsts, lasts = [], []
-    for frame in frames[:-1]:
-        waved = lines(frame)[0]
-        upper = [i for i, ch in enumerate(waved) if ch.isupper()]
-        assert upper == list(range(upper[0], upper[-1] + 1))  # гребень — сплошной кусок
-        assert 1 <= len(upper) <= 6
-        firsts.append(upper[0])
-        lasts.append(upper[-1])
-    assert firsts == sorted(firsts) and lasts == sorted(lasts)
-    assert firsts[0] == 0 and lasts[-1] == len(text) - 1  # гребень заходит слева и уходит справа
-
-
-def test_wave_unicode() -> None:
-    frames = wave_frames(FAMILY + " ok " + FLAG_RU + " é")
-    for frame in frames:
-        assert FAMILY in frame and FLAG_RU in frame  # эмодзи не разрываются
-    assert frames[-1] == FAMILY + " ok " + FLAG_RU + " é"
-    no_letters = wave_frames("123 🌹 !!!")
-    check_frames(no_letters)  # кадры различаются за счёт моря
-    assert all(lines(f)[0] == "123 🌹 !!!" for f in no_letters[:-1])
 
 
 # ------------------------------------------------------------------ день рождения

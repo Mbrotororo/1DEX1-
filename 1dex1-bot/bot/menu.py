@@ -21,10 +21,6 @@ MENU: tuple[MenuItem, ...] = (
     MenuItem("rose", "🌹", "розы", "свой текст или пусто"),
     MenuItem("fire", "🔥", "огонь", "свой текст или пусто"),
     MenuItem("heart", "💗", "большое сердце", "свой текст или пусто"),
-    MenuItem("rainbow", "🌈", "радужный текст", "напиши текст", "радуга"),
-    MenuItem("wave", "🌊", "текст волной", "напиши текст", "волна"),
-    MenuItem("rain", "🌧", "дождь и солнце", "свой текст или пусто"),
-    MenuItem("firework", "🎆", "салют", "свой текст или пусто"),
     MenuItem("type", "⌨️", "печатная машинка", "напиши текст", "печатаю…"),
     MenuItem("glitch", "👾", "глитч", "напиши текст", "ERROR 404"),
     MenuItem("loading", "⏳", "загрузка", "текст в конце или пусто"),
@@ -32,7 +28,6 @@ MENU: tuple[MenuItem, ...] = (
     MenuItem("unmute", "🔊", "размутить", ""),
     MenuItem("unmuteme", "🛡", "антимут", "off — выключить"),
     MenuItem("spam", "💥", "спам", "число и текст: 20 привет"),
-    MenuItem("mock", "🤪", "пЕрЕдРаЗнИлКа", "напиши текст"),
     MenuItem("music", "🎵", "найти трек", "название трека или ссылка"),
     MenuItem("link", "🎬", "видео без водяного знака", "ссылка TikTok / YouTube / VK"),
     MenuItem("weather", "🌤", "погода", "город"),
@@ -52,7 +47,7 @@ for _item in MENU:
 def search(query: str) -> list[tuple[MenuItem, str]]:
     """По тексту из строки ввода возвращает [(пункт меню, текст сообщения для отправки)].
 
-    'love я скучаю' -> [(love, '.love я скучаю')]; '' -> все команды; 'm' -> mute, mock, music…
+    'love я скучаю' -> [(love, '.love я скучаю')]; '' -> все команды; 'm' -> mute, music…
     """
     query = " ".join(query.split())
     head, _, rest = query.lstrip(".").partition(" ")
