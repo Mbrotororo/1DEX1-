@@ -41,7 +41,8 @@ def _settings_keyboard(app: App, user_id: int) -> InlineKeyboardMarkup:
 async def _status_text(app: App, user_id: int) -> str:
     conn = app.db.active_connection_of(user_id)
     if conn is None:
-        return "⚠️ Бот не подключён к твоему аккаунту.\n\n" + texts.HOW_TO_CONNECT
+        return ("⚠️ Бот не подключён к твоему аккаунту.\n\n" + texts.HOW_TO_CONNECT
+                + f"\n\nТвой ID: <code>{user_id}</code>")
     conn = await app.get_connection(conn.id, refresh=True) or conn
     stats = await app.db.stats(user_id)
     return (
@@ -50,7 +51,9 @@ async def _status_text(app: App, user_id: int) -> str:
         f"<b>Права бота:</b>\n{texts.rights_text(conn.can_reply, conn.can_read, conn.can_delete_all)}\n\n"
         f"🔇 Замучено чатов: <b>{stats['mutes']}</b>\n"
         f"🛡 Антимут включён в чатах: <b>{stats['antimute']}</b>\n"
-        f"💾 Сообщений в кэше: <b>{stats['cached']}</b> (хранятся {app.config.cache_days} дн.)\n\n"
+        f"💾 Сообщений в кэше: <b>{stats['cached']}</b>\n\n"
+        f"<i>{texts.PRIVACY.format(days=app.config.cache_days)}</i>\n"
+        f"Твой ID: <code>{user_id}</code>\n\n"
         "<b>Настройки</b> (нажми, чтобы переключить):"
     )
 
@@ -88,7 +91,7 @@ async def on_bday_test(message: Message, app: App) -> None:
 
 
 async def on_help(message: Message) -> None:
-    await message.answer(texts.COMMANDS_HELP + "\n\n" + texts.HOW_TO_CONNECT)
+    await message.answer(texts.COMMANDS_HELP)
 
 
 async def on_status(message: Message, app: App) -> None:
