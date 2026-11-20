@@ -7,6 +7,11 @@
 • .type    — печатная машинка с мигающим курсором;
 • .glitch  — «битый» текст, который собирается в чистый;
 • .loading — полоска загрузки 0…100%;
+• .rain    — тучи, ливень с молниями, потом солнце, радуга, цветы и текст;
+• .firework — салют над ночным городом, текст посередине;
+• .rainbow — радужные полосы «прокрашивают» текст, цвета бегут по кругу;
+• .wave    — по тексту бежит волна из ЗАГЛАВНЫХ букв, под ним море;
+• birthday_frames — поздравление владельцу в его день рождения (не команда);
 • mock_text — «пЕрЕдРаЗнИлКа» для .mock (это не анимация, а просто текст).
 
 Правила для всех генераторов кадров (их проверяют тесты):
@@ -20,6 +25,7 @@
 
 from __future__ import annotations
 
+import math
 import random
 import unicodedata
 from collections.abc import Callable
@@ -548,6 +554,408 @@ def mock_text(text: str) -> str:
     return "".join(out)
 
 
+# =================================================================== общие помощники сцен
+
+def _scene(rows: list[list[str]]) -> str:
+    """Сетка из клеток-эмодзи: список рядов → текст кадра."""
+    return "\n".join("".join(row) for row in rows)
+
+
+def _ceil_div(a: int, b: int) -> int:
+    return -(-a // b)
+
+
+# =================================================================== .rain
+
+SKY = "🟦"            # ясное небо
+STORM_SKY = "⬛"      # небо в грозу
+GRASS = "🟩"
+SUN = "☀️"
+SUN_CLOUD = "⛅"
+CLOUD = "☁️"
+RAIN_CLOUD = "🌧️"
+STORM_CLOUD = "⛈️"
+BOLT = "⚡"
+DROP = "💧"
+SPROUT = "🌱"
+RAINBOW_ARC = "🌈"
+FLOWER_ROW = ("🌷", "🌼", "🌷", "🌻", "🌷", "🌼", "🌷")
+DEFAULT_RAIN_TEXT = "после дождя всегда солнце"
+RAIN_EMIT = 5          # столько кадров тучи сыплют новые капли (потом ещё 2 кадра капли долетают)
+RAIN_AIR = (1, 2, 3)   # ряды, по которым падают капли (0 — небо с тучами, 4 — трава)
+_RAIN_SEED = "rain:1dex1"
+_RAIN_BOLTS = {2: 4, 3: 1}  # кадр ливня → колонка, в которую бьёт молния
+_SUN_COL = COLS // 2
+_CLEAR_TOP = SKY * 3 + SUN + SKY * 3
+_RAINBOW_TOP = RAINBOW_ARC + SKY * 2 + SUN + SKY * 2 + RAINBOW_ARC
+
+
+def _rain_drops() -> list[set[int]]:
+    """В каких колонках тучи «роняют» каплю на каждом кадре ливня: только под 🌧,
+    и не в тех же колонках, что кадром раньше (чтобы капли не слипались в столбики)."""
+    rng = random.Random(_RAIN_SEED)
+    out: list[set[int]] = []
+    for t in range(RAIN_EMIT):
+        free = [c for c in range(COLS) if (c + t) % 2 == 0 and (not out or c not in out[-1])]
+        out.append(set(rng.sample(free, min(len(free), 2 + t % 2))))
+    return out
+
+
+def _rain_frame(top: str, sky: list[str], third: list[str] | None = None) -> str:
+    """Кадр 7×5: ряд неба/туч, три ряда «воздуха» (sky — фон каждого ряда), трава."""
+    rows = [_graphemes(top)] + [[cell] * COLS for cell in sky]
+    if third is not None:
+        rows[3] = third
+    rows.append([GRASS] * COLS)
+    return _scene(rows)
+
+
+def rain_frames(text: str | None = None) -> list[str]:
+    """Дождь: тучи затягивают солнце, небо темнеет, капли 💧 падают сверху вниз (каждый
+    кадр на ряд ниже), бьют молнии; потом дождь стихает, выходит ☀️, появляются 🌈 и цветы,
+    а в середине печатается текст. Последний кадр — ясное небо, «☀️ текст ☀️» посередине,
+    ряд цветов и трава."""
+    text = _normalize(text, MAX_GRID_TEXT, DEFAULT_RAIN_TEXT)
+    dark, day = STORM_SKY, SKY
+    frames: list[str] = []
+
+    # 1) тучи собираются с краёв и закрывают солнце, небо темнеет сверху вниз
+    gather = (
+        (_CLEAR_TOP, 0),
+        (CLOUD + SKY * 2 + SUN + SKY * 2 + CLOUD, 0),
+        (CLOUD * 2 + SKY + SUN + SKY + CLOUD * 2, 1),
+        (CLOUD * 3 + SUN_CLOUD + CLOUD * 3, 2),
+        (CLOUD * COLS, 3),
+    )
+    for top, darkened in gather:
+        frames.append(_rain_frame(top, [dark] * darkened + [day] * (3 - darkened)))
+
+    # 2) ливень: капли каждый кадр сдвигаются на ряд вниз, иногда бьёт молния
+    drops = _rain_drops()
+    for t in range(RAIN_EMIT + 2):
+        rows = [[dark] * COLS for _ in RAIN_AIR]
+        for i, _row_no in enumerate(RAIN_AIR):
+            born = t - i  # капли в этом ряду «родились» под тучей i кадров назад
+            if 0 <= born < RAIN_EMIT:
+                for c in drops[born]:
+                    rows[i][c] = DROP
+        if t < RAIN_EMIT:
+            clouds = [RAIN_CLOUD if (c + t) % 2 == 0 else CLOUD for c in range(COLS)]
+        else:
+            clouds = [CLOUD] * COLS  # дождь стих, последние капли долетают до земли
+        bolt = _RAIN_BOLTS.get(t)
+        if bolt is not None:
+            clouds[bolt] = STORM_CLOUD
+            rows[0][bolt] = rows[1][bolt] = BOLT
+        frames.append(_scene([clouds] + rows + [[GRASS] * COLS]))
+
+    # 3) тучи расходятся, выходит солнце, небо светлеет, из травы лезут ростки
+    sprouts = [SPROUT if c % 2 == 0 else day for c in range(COLS)]
+    clearing = (
+        (CLOUD * 3 + SUN_CLOUD + CLOUD * 3, 0, None),
+        (CLOUD * 2 + SKY + SUN + SKY + CLOUD * 2, 1, None),
+        (CLOUD + SKY * 2 + SUN + SKY * 2 + CLOUD, 2, None),
+        (_CLEAR_TOP, 3, sprouts),
+        (_RAINBOW_TOP, 3, [SPROUT] * COLS),
+    )
+    for top, cleared, third in clearing:
+        frames.append(_rain_frame(top, [day] * cleared + [dark] * (3 - cleared), third))
+
+    # 4) середина раскрывается и печатается текст, цветы распускаются от центра к краям
+    parts = [""] + _typing_parts(text, 5)
+    for j, part in enumerate(parts):
+        radius = 1 + 3 * j // len(parts)
+        bloom = [FLOWER_ROW[c] if abs(c - _SUN_COL) < radius else SPROUT for c in range(COLS)]
+        frames.append(_rain_text_frame(_text_row(part, SUN, SUN), bloom))
+
+    # 5) финал: всё распустилось
+    frames.append(_rain_text_frame(_text_row(text, SUN, SUN), list(FLOWER_ROW)))
+    return _dedupe(frames)
+
+
+def _rain_text_frame(text_row: str, flowers: list[str]) -> str:
+    return "\n".join([_RAINBOW_TOP, SKY * COLS, text_row, "".join(flowers), GRASS * COLS])
+
+
+# =================================================================== .firework
+
+NIGHT = "⬛"
+MOON = "🌙"
+CITY = "🌃"
+ROCKET = "🚀"
+BOOM = "💥"
+SPARK = "✨"
+FIREWORK = "🎆"
+SPARKLER = "🎇"
+GOLD_STAR = "🌟"
+FW_ROWS = 7                 # 6 рядов неба + ночной город внизу
+FW_SKY = FW_ROWS - 1
+FW_MID = FW_ROWS // 2
+DEFAULT_FIREWORK_TEXT = "УРА!"
+# Ракеты: колонка взлёта, ряд взрыва, кадр старта, след, (кольцо взрыва, затухающие искры)
+_ROCKETS = (
+    (2, 2, 0, SPARK, (FIREWORK, SPARK)),
+    (5, 1, 3, "🔥", (SPARKLER, GOLD_STAR)),  # вторая ракета — «золотой» салют
+)
+_BURST_STAGES = 5
+
+
+def _burst_ring(r: int, c: int, r0: int, c0: int) -> int:
+    return round(math.hypot(r - r0, c - c0))
+
+
+def _burst_cell(stage: int, ring: int, below: bool, palette: tuple[str, str]) -> str | None:
+    """Клетка взрыва на стадии stage: кольцо расходится от центра, за ним гаснут искры."""
+    main, fade = palette
+    if stage == 0:
+        return BOOM if ring == 0 else None
+    if stage < 3:
+        return {stage: main, stage - 1: fade}.get(ring)
+    if stage == 3:
+        return fade if ring == 2 and below else None  # искры осыпаются вниз
+    return fade if ring == 3 and below else None
+
+
+def _night_sky() -> list[list[str]]:
+    sky = [[NIGHT] * COLS for _ in range(FW_SKY)]
+    sky[0][COLS - 1] = MOON
+    return sky + [[CITY] * COLS]
+
+
+def _festive(phase: int) -> list[list[str]]:
+    """Всё небо в салютах: 🎆 и 🎇 в шахматном порядке, внизу город."""
+    pair = (FIREWORK, SPARKLER)
+    sky = [[pair[(r + c + phase) % 2] for c in range(COLS)] for r in range(FW_SKY)]
+    return sky + [[CITY] * COLS]
+
+
+def firework_frames(text: str | None = None) -> list[str]:
+    """Салют над ночным городом: ракета 🚀 взлетает снизу, взрывается 💥 и кольца 🎆✨
+    расходятся от точки взрыва; вторая ракета даёт «золотой» салют 🎇🌟; потом всё небо
+    в салютах и посередине печатается текст. Последний кадр — сетка 🎆🎇 7×7 с городом 🌃
+    внизу и строкой «🎆 текст 🎆» посередине."""
+    text = _normalize(text, MAX_GRID_TEXT, DEFAULT_FIREWORK_TEXT)
+    frames: list[str] = []
+
+    # 1) две ракеты: взлёт и взрыв (кадры второй накладываются на затухание первой)
+    for t in range(11):
+        cells = _night_sky()
+        for col, burst_row, start, trail, palette in _ROCKETS:
+            rise = FW_SKY - 1 - burst_row  # сколько кадров ракета летит
+            age = t - start
+            if 0 <= age < rise:
+                row = FW_SKY - 1 - age
+                cells[row][col] = ROCKET
+                if row + 1 < FW_SKY:
+                    cells[row + 1][col] = trail
+            elif rise <= age < rise + _BURST_STAGES:
+                for r in range(FW_SKY):
+                    for c in range(COLS):
+                        cell = _burst_cell(age - rise, _burst_ring(r, c, burst_row, col), r > burst_row, palette)
+                        if cell:
+                            cells[r][c] = cell
+        frames.append(_scene(cells))
+
+    # 2) финальный залп: салюты зажигаются через клетку, потом всё небо
+    sparse = _night_sky()
+    for r in range(FW_SKY):
+        for c in range(COLS):
+            if (r + c) % 2 == 0:
+                sparse[r][c] = FIREWORK
+    frames.append(_scene(sparse))
+    frames.append(_scene(_festive(0)))
+
+    # 3) середина раскрывается и печатается текст, салюты мерцают
+    parts = [""] + _typing_parts(text, 5)
+    for j, part in enumerate(parts):
+        rows = [_scene([row]) for row in _festive((len(parts) - j) % 2)]
+        rows[FW_MID] = _text_row(part, FIREWORK, FIREWORK)
+        frames.append("\n".join(rows))
+
+    # 4) финал
+    rows = [_scene([row]) for row in _festive(0)]
+    rows[FW_MID] = _text_row(text, FIREWORK, FIREWORK)
+    frames.append("\n".join(rows))
+    return _dedupe(frames)
+
+
+# =================================================================== .rainbow
+
+SQUARES = ("🟥", "🟧", "🟨", "🟩", "🟦", "🟪")
+DEFAULT_RAINBOW_TEXT = "радуга"
+RAINBOW_BAND_MIN = len(SQUARES)
+RAINBOW_BAND_MAX = 12     # шире полоса на телефоне уже переносится на вторую строку
+RAINBOW_PAINT_STEPS = 8
+RAINBOW_FLOW_STEPS = len(SQUARES)
+
+
+def _cell_width(cell: str) -> int:
+    """Примерная ширина символа в двенадцатых долях эмодзи (буква ≈ 5/12, пробел ≈ 3/12)."""
+    if cell.isspace():
+        return 3
+    if (
+        "️" in cell
+        or _is_regional(cell[0])
+        or unicodedata.east_asian_width(cell[0]) in ("W", "F")
+    ):
+        return 12
+    return 5
+
+
+def _rainbow_band_width(text: str) -> int:
+    """Сколько квадратиков в полосе, чтобы она была примерно шириной строки «🌈 текст 🌈»."""
+    units = 2 * 12 + 2 * 3 + sum(_cell_width(cell) for cell in _graphemes(text))
+    return max(RAINBOW_BAND_MIN, min(RAINBOW_BAND_MAX, _ceil_div(units, 12)))
+
+
+def _band(width: int, shift: int = 0) -> str:
+    return "".join(SQUARES[(c - shift) % len(SQUARES)] for c in range(width))
+
+
+def rainbow_frames(text: str) -> list[str]:
+    """Радуга: полосы 🟥🟧🟨🟩🟦🟪 над и под текстом «прокрашивают» его слева направо
+    (текст проявляется вместе с краской), потом цвета бегут по кругу — верхняя полоса
+    вправо, нижняя влево, сердечки по бокам переливаются. Последний кадр — «🌈 текст 🌈»
+    между двумя полосами 🟥🟧🟨🟩🟦🟪…, подогнанными под ширину текста."""
+    text = _normalize(text, MAX_GRID_TEXT, DEFAULT_RAINBOW_TEXT)
+    cells = _graphemes(text)
+    width = _rainbow_band_width(text)
+    steps = min(width, RAINBOW_PAINT_STEPS)
+    frames: list[str] = []
+
+    # 1) краска идёт слева направо и «проявляет» текст
+    for i in range(1, steps + 1):
+        band = _band(_ceil_div(width * i, steps))
+        part = "".join(cells[: _ceil_div(len(cells) * i, steps)]).rstrip(_TG_EDGE)
+        heart = RAINBOW[(i - 1) % len(RAINBOW)]
+        frames.append(f"{band}\n{_text_row(part, heart, heart)}\n{band}")
+
+    # 2) цвета бегут по кругу
+    for k in range(1, RAINBOW_FLOW_STEPS + 1):
+        heart = RAINBOW[(steps - 1 + k) % len(RAINBOW)]
+        frames.append(f"{_band(width, k)}\n{_text_row(text, heart, heart)}\n{_band(width, -k)}")
+
+    # 3) финал
+    band = _band(width)
+    frames.append(f"{band}\n{_text_row(text, RAINBOW_ARC, RAINBOW_ARC)}\n{band}")
+    return _dedupe(frames)
+
+
+# =================================================================== .wave
+
+DEFAULT_WAVE_TEXT = "волна"
+WAVE_STEPS = 14   # кадров с волной; плюс финальный кадр — чистый текст
+SEA = "〰️"
+WAVE = "🌊"
+
+
+def _sea(step: int) -> str:
+    """Полоска моря под текстом: гребни 🌊 каждый кадр сдвигаются на клетку вправо."""
+    return "".join(WAVE if (c - step) % 3 == 0 else SEA for c in range(COLS))
+
+
+def wave_frames(text: str) -> list[str]:
+    """Волна: по тексту слева направо бежит «гребень» из ЗАГЛАВНЫХ букв, под текстом
+    катится море 〰️🌊. Короткий текст волна пробегает несколько раз, длинный — один раз
+    крупными шагами. Последний кадр — ровно исходный (нормализованный) текст."""
+    text = _normalize(text, MAX_LONG_TEXT, DEFAULT_WAVE_TEXT)
+    cells = _graphemes(text)
+    crest = max(3, (len(cells) + 3) // 6)    # ширина гребня
+    track = len(cells) + crest - 1            # положения гребня: от входа слева до выхода справа
+    frames: list[str] = []
+    for step in range(WAVE_STEPS):
+        if track >= WAVE_STEPS:
+            start = (track - 1) * step // (WAVE_STEPS - 1)
+        else:
+            start = step % track
+        start -= crest - 1
+        waved = "".join(
+            cell.upper() if start <= i < start + crest else cell for i, cell in enumerate(cells)
+        )
+        frames.append(f"{waved}\n{_sea(step)}")
+    frames.append(text)
+    return frames
+
+
+# =================================================================== день рождения владельца
+
+DEFAULT_BIRTHDAY_NAME = "1DEX1"
+CANDLE = "🕯️"
+FLAME = "🔥"
+BALLOON = "🎈"
+PARTY_POPPER = "🎉"
+CONFETTI = "🎊"
+CAKE_EMOJI = "🎂"
+CAKE_LAYERS = (            # торт сверху вниз: крем с клубникой, шоколад, крем, шоколад
+    "🍓⬜🍓⬜🍓⬜🍓",
+    "🟫🟫🟫🟫🟫🟫🟫",
+    "🟨🟨🟨🟨🟨🟨🟨",
+    "🟫🟫🟫🟫🟫🟫🟫",
+)
+CANDLE_COLS = (1, 3, 5)
+PARTY_TOP = ("🎉🎈🎊🎈🎉", "🎊🎈🎉🎈🎊")
+BIRTHDAY_WISHES = (
+    "Пусть каждое видео залетает в рекомендации, а подписчиков становится всё больше! 💎⛏️",
+    "Счастья, здоровья, алмазного настроения и побольше крутых идей — в игре и в жизни ✨",
+    "С праздником! 🥳🎁",
+)
+
+
+def _cake(flames: int, sky: list[str] | None, side: str | None, flame_side: str | None) -> str:
+    """Торт со свечами: flames — сколько свечей горит; sky — ряд над тортом (или None);
+    side/flame_side — что стоит по краям ряда свечей и ряда огоньков (шарики, конфетти)."""
+    dark = STORM_SKY
+    candles = [CANDLE if c in CANDLE_COLS else dark for c in range(COLS)]
+    fire = [FLAME if c in CANDLE_COLS[:flames] else dark for c in range(COLS)]
+    if side:
+        candles[0] = candles[-1] = side
+    if flame_side:
+        fire[0] = fire[-1] = flame_side
+    rows = [fire, candles] + [_graphemes(layer) for layer in CAKE_LAYERS]
+    if sky is not None:
+        rows.insert(0, sky)
+    return _scene(rows)
+
+
+def birthday_frames(name: str = DEFAULT_BIRTHDAY_NAME) -> list[str]:
+    """Поздравление владельцу в полночь в его день рождения (это не команда чата).
+    Торт собирается по слоям, свечи 🕯 зажигаются по одной 🔥, взлетают шарики 🎈,
+    взрывается конфетти 🎉🎊, потом печатается поздравление. Последний кадр:
+    «🎉🎈🎊🎈🎉», «🎂 С днём рождения, {name}! 🎂» и пожелания."""
+    name = _normalize(name, MAX_GRID_TEXT, DEFAULT_BIRTHDAY_NAME)
+    dark = STORM_SKY
+    # первый кадр видно в уведомлении — пусть это будет большой анимированный 🎂
+    frames: list[str] = [CAKE_EMOJI]
+
+    # 1) торт собирается снизу вверх
+    for count in range(1, len(CAKE_LAYERS) + 1):
+        frames.append("\n".join(CAKE_LAYERS[-count:]))
+    candles = [CANDLE if c in CANDLE_COLS else dark for c in range(COLS)]
+    frames.append(_scene([candles] + [_graphemes(layer) for layer in CAKE_LAYERS]))
+
+    # 2) свечи зажигаются по одной, по бокам взлетают шарики
+    frames.append(_cake(1, None, None, None))
+    frames.append(_cake(2, None, BALLOON, None))
+    frames.append(_cake(3, None, None, BALLOON))
+    frames.append(_cake(3, [BALLOON] + [dark] * (COLS - 2) + [BALLOON], BALLOON, None))
+
+    # 3) конфетти
+    frames.append(_cake(3, [BALLOON, dark, dark, PARTY_POPPER, dark, dark, BALLOON], None, BALLOON))
+    frames.append(_cake(3, _graphemes("🎈🎊✨🎉✨🎊🎈"), CONFETTI, SPARK))
+    frames.append(_cake(3, _graphemes("🎊🎉🎊🎉🎊🎉🎊"), SPARK, CONFETTI))
+
+    # 4) поздравление печатается, конфетти сверху мигает
+    headline = f"С днём рождения, {name}!"
+    parts = _typing_parts(headline, 3)
+    for j, part in enumerate(parts):
+        frames.append(f"{PARTY_TOP[(j + 1) % 2]}\n{_text_row(part, CAKE_EMOJI, CAKE_EMOJI)}")
+    title = _text_row(headline, CAKE_EMOJI, CAKE_EMOJI)
+    for i in range(1, len(BIRTHDAY_WISHES) + 1):
+        top = PARTY_TOP[(len(BIRTHDAY_WISHES) - i) % 2]  # последний кадр — PARTY_TOP[0]
+        frames.append("\n\n".join([f"{top}\n{title}", *BIRTHDAY_WISHES[:i]]))
+    return _dedupe(frames)
+
+
 # =================================================================== реестр
 
 ANIMATIONS: dict[str, Callable[[str | None], list[str]]] = {
@@ -558,4 +966,8 @@ ANIMATIONS: dict[str, Callable[[str | None], list[str]]] = {
     "type": lambda text: type_frames(text or DEFAULT_TYPE_TEXT),
     "glitch": lambda text: glitch_frames(text or DEFAULT_GLITCH_TEXT),
     "loading": lambda text: loading_frames(text or None),
+    "rain": lambda text: rain_frames(text or None),
+    "firework": lambda text: firework_frames(text or None),
+    "rainbow": lambda text: rainbow_frames(text or DEFAULT_RAINBOW_TEXT),
+    "wave": lambda text: wave_frames(text or DEFAULT_WAVE_TEXT),
 }

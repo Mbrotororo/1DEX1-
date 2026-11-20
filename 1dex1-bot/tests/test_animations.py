@@ -1,4 +1,5 @@
-"""Тесты кадров анимаций (.rose, .fire, .heart, .type, .glitch, .loading) и mock_text."""
+"""Тесты кадров анимаций (.rose, .fire, .heart, .type, .glitch, .loading, .rain, .firework,
+.rainbow, .wave), поздравления с днём рождения и mock_text."""
 
 from __future__ import annotations
 
@@ -15,13 +16,22 @@ import pytest
 
 from bot.animations import (
     ANIMATIONS,
+    BIRTHDAY_WISHES,
+    CANDLE_COLS,
     COLS,
     CURSOR,
+    DEFAULT_BIRTHDAY_NAME,
     DEFAULT_FIRE_TEXT,
+    DEFAULT_FIREWORK_TEXT,
     DEFAULT_GLITCH_TEXT,
     DEFAULT_LOADING_DONE,
+    DEFAULT_RAIN_TEXT,
+    DEFAULT_RAINBOW_TEXT,
     DEFAULT_ROSE_TEXT,
     DEFAULT_TYPE_TEXT,
+    DEFAULT_WAVE_TEXT,
+    FW_MID,
+    FW_ROWS,
     HEART_BIG,
     HEART_COLS,
     HEART_ROWS,
@@ -31,17 +41,25 @@ from bot.animations import (
     MID,
     MIN_FRAMES,
     ROWS,
+    RAINBOW_BAND_MAX,
+    SQUARES,
+    WAVE_STEPS,
     ZALGO,
     _graphemes,
+    birthday_frames,
     fire_frames,
+    firework_frames,
     loading_bar,
     glitch_frames,
     heart_frames,
     loading_frames,
     love_frames,
     mock_text,
+    rainbow_frames,
+    rain_frames,
     rose_frames,
     type_frames,
+    wave_frames,
 )
 
 FAMILY = "👨\u200d👩\u200d👧\u200d👦"  # 7 code points, один видимый символ
@@ -91,6 +109,11 @@ GENERATORS: dict[str, Callable[[str | None], list[str]]] = {
     "glitch": lambda t: glitch_frames(t or ""),
     "glitch7": lambda t: glitch_frames(t or "", seed=7),
     "loading": loading_frames,
+    "rain": rain_frames,
+    "firework": firework_frames,
+    "rainbow": lambda t: rainbow_frames(t or ""),
+    "wave": lambda t: wave_frames(t or ""),
+    "birthday": lambda t: birthday_frames(t or ""),
 }
 
 
@@ -155,7 +178,9 @@ def test_registry(name: str, text: str | None) -> None:
 
 
 def test_registry_contents() -> None:
-    assert set(ANIMATIONS) == {"love", "rose", "fire", "heart", "type", "glitch", "loading"}
+    assert set(ANIMATIONS) == {"love", "rose", "fire", "heart", "type", "glitch", "loading",
+                               "rain", "firework", "rainbow", "wave"}
+    assert "birthday" not in ANIMATIONS  # поздравление — не команда чата
     assert ANIMATIONS["love"](None) == love_frames()
     assert ANIMATIONS["love"]("") == love_frames()
     assert ANIMATIONS["love"]("споки") == love_frames("споки")
@@ -167,14 +192,22 @@ def test_registry_contents() -> None:
     assert ANIMATIONS["glitch"](None)[-1] == DEFAULT_GLITCH_TEXT
     assert ANIMATIONS["loading"](None)[-1] == DEFAULT_LOADING_DONE
     assert ANIMATIONS["loading"]("готово") == loading_frames("готово")
+    assert ANIMATIONS["rain"](None) == rain_frames() == ANIMATIONS["rain"]("")
+    assert ANIMATIONS["rain"]("лужи") == rain_frames("лужи")
+    assert ANIMATIONS["firework"](None) == firework_frames() == ANIMATIONS["firework"]("")
+    assert ANIMATIONS["firework"]("салют") == firework_frames("салют")
+    assert ANIMATIONS["rainbow"](None) == rainbow_frames("") == rainbow_frames(DEFAULT_RAINBOW_TEXT)
+    assert ANIMATIONS["rainbow"]("цвет") == rainbow_frames("цвет")
+    assert ANIMATIONS["wave"](None) == wave_frames("") == wave_frames(DEFAULT_WAVE_TEXT)
+    assert ANIMATIONS["wave"]("море") == wave_frames("море")
 
 
 def test_determinism_across_processes() -> None:
     """Никакого hash()/глобального random: в другом процессе с другим PYTHONHASHSEED — те же кадры."""
     code = (
-        "import json; from bot.animations import ANIMATIONS, glitch_frames;"
+        "import json; from bot.animations import ANIMATIONS, birthday_frames, glitch_frames;"
         "print(json.dumps([ANIMATIONS[n]('тест 🌹') for n in sorted(ANIMATIONS)]"
-        " + [glitch_frames('abc', seed=3)]))"
+        " + [glitch_frames('abc', seed=3), birthday_frames('Тест 🌹')]))"
     )
     root = Path(__file__).resolve().parent.parent
     outputs = []
@@ -184,7 +217,8 @@ def test_determinism_across_processes() -> None:
                              capture_output=True, text=True, check=True, encoding="utf-8")
         outputs.append(json.loads(res.stdout))
     assert outputs[0] == outputs[1]
-    here = [ANIMATIONS[n]("тест 🌹") for n in sorted(ANIMATIONS)] + [glitch_frames("abc", seed=3)]
+    here = [ANIMATIONS[n]("тест 🌹") for n in sorted(ANIMATIONS)] + [
+        glitch_frames("abc", seed=3), birthday_frames("Тест 🌹")]
     assert outputs[0] == here
 
 
