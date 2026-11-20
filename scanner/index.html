@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#000000">
+  <meta name="color-scheme" content="dark">
+  <title>1DEX1 Сканер</title>
+  <meta name="description" content="Камера-сканер: захват цели, рост, возраст, скелет и сетка лица. Работает прямо на телефоне.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Fira+Sans+Extra+Condensed:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="preconnect" href="https://storage.googleapis.com" crossorigin>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ============================== ЭКРАН 1: старт -->
+<main id="intro" class="screen intro">
+  <header class="intro-top">
+    <span>1DEX1</span>
+    <span>СКАНЕР / v1.0</span>
+  </header>
+
+  <section class="intro-title">
+    <h1>СКАНЕР</h1>
+    <p class="lead">Камера телефона находит людей, берёт их в рамку и считает дистанцию, рост и возраст.</p>
+  </section>
+
+  <ol class="spec">
+    <li>
+      <span class="n">01</span>
+      <div>
+        <b>Захват цели</b>
+        <p>Ближе 5&nbsp;м — красная рамка. Дальше — зелёная.</p>
+      </div>
+      <span class="swatch"><i class="r"></i><i class="g"></i></span>
+    </li>
+    <li>
+      <span class="n">02</span>
+      <div>
+        <b>Рост и возраст</b>
+        <p>По камере и датчику наклона телефона.</p>
+      </div>
+    </li>
+    <li>
+      <span class="n">03</span>
+      <div>
+        <b>Сканирование лица</b>
+        <p>Поднеси камеру ближе — лицо покроется сеткой из 478 точек.</p>
+      </div>
+    </li>
+    <li>
+      <span class="n">04</span>
+      <div>
+        <b>Скелет</b>
+        <p>33 точки тела. Человек двигается — скелет повторяет.</p>
+      </div>
+    </li>
+  </ol>
+
+  <div class="intro-bottom">
+    <button id="btn-start" class="btn-primary" type="button">
+      <span>Запустить камеру</span>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+    </button>
+    <p class="fine">
+      Видео обрабатывается прямо на телефоне и никуда не отправляется.
+      Держи телефон вертикально на уровне груди; для роста человек должен быть в кадре целиком.
+      Цифры примерные.
+    </p>
+  </div>
+</main>
+
+<!-- ============================== ЭКРАН 2: загрузка -->
+<section id="loader" class="screen loader hidden" aria-live="polite">
+  <div class="load-box">
+    <p class="load-head">ИНИЦИАЛИЗАЦИЯ</p>
+    <ul class="steps">
+      <li data-step="camera"><span>Камера</span><i></i><span class="st">—</span></li>
+      <li data-step="runtime"><span>Движок</span><i></i><span class="st">—</span></li>
+      <li data-step="pose"><span>Модель тела</span><i></i><span class="st">—</span></li>
+      <li data-step="face"><span>Модель лица</span><i></i><span class="st">—</span></li>
+      <li data-step="age"><span>Модель возраста</span><i></i><span class="st">ПОТОМ</span></li>
+    </ul>
+    <div class="load-fail">
+      <p class="load-error"></p>
+      <button id="btn-retry" class="btn-line" type="button">Повторить</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== ЭКРАН 3: сканер -->
+<section id="app" class="screen app hidden">
+  <video id="video" playsinline muted autoplay></video>
+  <canvas id="view"></canvas>
+
+  <nav class="controls" aria-label="Управление">
+    <button id="btn-flip" class="ctl" type="button" aria-label="Сменить камеру">
+      <svg viewBox="0 0 24 24"><path d="M4 9a8 8 0 0 1 14.3-3.5M20 5v4h-4M20 15a8 8 0 0 1-14.3 3.5M4 19v-4h4"/></svg>
+      <span>Камера</span>
+    </button>
+    <button id="btn-shot" class="ctl" type="button" aria-label="Снимок">
+      <svg viewBox="0 0 24 24"><rect x="3.5" y="6.5" width="17" height="13"/><path d="M8.5 6.5 10 4h4l1.5 2.5"/><circle cx="12" cy="13" r="3.5"/></svg>
+      <span>Снимок</span>
+    </button>
+    <button id="btn-rec" class="ctl rec" type="button" aria-label="Запись видео">
+      <span class="rec-dot"></span>
+      <span>Запись</span>
+    </button>
+    <button id="btn-settings" class="ctl" type="button" aria-label="Настройки">
+      <svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><rect x="14" y="5" width="4" height="4"/><rect x="6" y="15" width="4" height="4"/></svg>
+      <span>Настройки</span>
+    </button>
+  </nav>
+
+  <div id="sheet" class="sheet" role="dialog" aria-modal="true" aria-label="Настройки">
+    <div class="sheet-body">
+      <header class="sheet-head">
+        <span>НАСТРОЙКИ</span>
+        <button id="sheet-close" class="x" type="button" aria-label="Закрыть">
+          <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </header>
+
+      <div class="row">
+        <label for="set-height">Высота телефона над землёй</label>
+        <output id="out-height"></output>
+        <input id="set-height" type="range" min="60" max="200" step="1">
+        <p class="hint">Главное для точного роста. Держишь на уровне груди — примерно 130–145 см.</p>
+      </div>
+
+      <div class="row">
+        <label for="set-fov">Угол обзора камеры</label>
+        <output id="out-fov"></output>
+        <input id="set-fov" type="range" min="40" max="110" step="1">
+        <p class="hint">Для основной камеры S25 Ultra около 70°. Если дистанция занижена — уменьши.</p>
+      </div>
+
+      <div class="row">
+        <label for="set-threshold">Зона захвата</label>
+        <output id="out-threshold"></output>
+        <input id="set-threshold" type="range" min="1" max="15" step="0.5">
+      </div>
+
+      <div class="row inline">
+        <label for="set-mono">Чёрно-белое видео</label>
+        <input id="set-mono" type="checkbox" class="switch">
+      </div>
+
+      <div class="row calib">
+        <label for="set-known">Калибровка по известному росту</label>
+        <p class="hint">Поставь человека целиком в кадр, введи его рост и нажми «Откалибровать».</p>
+        <div class="calib-line">
+          <input id="set-known" type="number" inputmode="numeric" min="80" max="230" placeholder="180">
+          <span class="unit">см</span>
+          <button id="btn-calib" class="btn-line" type="button">Откалибровать</button>
+        </div>
+      </div>
+
+      <button id="btn-reset" class="btn-text" type="button">Сбросить настройки</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status"></div>
+</section>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
