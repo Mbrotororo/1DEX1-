@@ -4,33 +4,40 @@ from __future__ import annotations
 
 BOT_NAME = "1DEX1"
 
-SHORT_DESCRIPTION = "Личный бот 1DEX1 для переписок"
-DESCRIPTION = (
-    "Мут, антимут, удалённые и изменённые сообщения, одноразки, видео без вотермарки, музыка."
-)
+SHORT_DESCRIPTION = "Личный бот для чатов."
+DESCRIPTION = "Личный бот для чатов."
 
 # Короткий список — в /start
 COMMANDS_SHORT = (
-    ".mute [10m] · .unmute · .unmuteme\n"
-    ".love · .rose · .fire · .heart · .type · .glitch · .loading\n"
-    ".link · .music · .weather · .currency · .time · .stats\n"
-    ".spam · .save · .stop"
+    "Команды пишутся прямо в переписке с человеком.\n\n"
+    "🔇 <b>Мут</b>\n"
+    "<code>.mute</code> — его сообщения сразу удаляются\n"
+    "<code>.mute 10m</code> — на время: 30s, 10m, 2h, 1d\n"
+    "<code>.unmute</code> — снять мут\n"
+    "<code>.unmuteme</code> — если тебя замутили чужим ботом, твои сообщения всё равно дойдут\n\n"
+    "✨ <b>Анимации</b>\n"
+    "<code>.love</code> <code>.rose</code> <code>.fire</code> <code>.heart</code> "
+    "<code>.type</code> <code>.glitch</code> <code>.loading</code>\n"
+    "Можно со своим текстом: <code>.love я скучаю</code>\n\n"
+    "🎬 <b>Скачать</b>\n"
+    "<code>.link ссылка</code> — видео из TikTok, YouTube или VK без вотермарки\n"
+    "<code>.music название</code> — трек в mp3\n\n"
+    "🧰 <b>Полезное</b>\n"
+    "<code>.weather Москва</code> — погода\n"
+    "<code>.currency 100 usd</code> — курс валют\n"
+    "<code>.time Токио</code> — сколько там времени\n"
+    "<code>.stats</code> — статистика переписки\n"
+    "<code>.save</code> — ответь на фото или видео, и оно придёт сюда\n\n"
+    "💥 <b>Ещё</b>\n"
+    "<code>.spam 20 текст</code> — отправить текст 20 раз\n"
+    "<code>.stop</code> — остановить спам или анимацию\n\n"
+    "👀 <b>Работает само</b>\n"
+    "Если собеседник изменит или удалит сообщение — пришлю сюда, что там было.\n"
+    "Одноразовое фото или видео — ответь на него до открытия, и я пришлю копию."
 )
 
 # Подробнее, по строке на команду — в /help и .help
-COMMANDS_HELP = (
-    ".mute — мут (.mute 10m — на время)\n"
-    ".unmute — снять мут\n"
-    ".unmuteme — антимут (off — выключить)\n"
-    ".love .rose .fire .heart .type .glitch .loading — анимации, можно с текстом\n"
-    ".link ссылка — видео TikTok/YouTube/VK\n"
-    ".music название — трек\n"
-    ".weather город · .currency 100 usd · .time город\n"
-    ".stats — статистика чата\n"
-    ".save — ответом на медиа, сохранить\n"
-    ".spam 20 текст · .stop\n\n"
-    "Правки, удалённые сообщения и одноразки (ответь до открытия) приходят сюда."
-)
+COMMANDS_HELP = COMMANDS_SHORT
 
 HOW_TO_CONNECT = (
     "<b>Подключение</b>\n"
@@ -44,17 +51,13 @@ PRIVACY = (
 )
 
 def start_text(name: str, user_id: int, connected: bool, cache_days: int = 7) -> str:
-    status = "✅ Подключён" if connected else "⚠️ Не подключён"
-    return f"<b>{BOT_NAME}</b> · {status}\n\n{COMMANDS_SHORT}\n\nПодробно — /help, настройки — /status"
-
-def rights_text(can_reply: bool, can_read: bool, can_delete_all: bool) -> str:
-    def mark(ok: bool) -> str:
-        return "✅" if ok else "❌"
-
+    status = "✅ Бот подключён" if connected else (
+        "⚠️ Бот не подключён: Настройки → Автоматизация чатов → @my1dex1_bot, включи все права"
+    )
     return (
-        f"{mark(can_reply)} отвечать на сообщения — нужно для всех команд\n"
-        f"{mark(can_delete_all)} удалять все сообщения — нужно для .mute, .unmuteme и чтобы команды исчезали\n"
-        f"{mark(can_read)} читать сообщения"
+        f"<b>{BOT_NAME}</b> — личный бот для чатов.\n{status}\n\n"
+        f"{COMMANDS_SHORT}\n\n"
+        "Настройки — /status"
     )
 
 
