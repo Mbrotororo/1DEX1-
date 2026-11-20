@@ -19,6 +19,7 @@ export class Renderer {
   }
 
   resize() {
+    if (this.frozen) return; // во время записи размер кадра не меняем
     this.dpr = Math.min(window.devicePixelRatio || 1, 2);
     const w = Math.round(window.innerWidth * this.dpr);
     const h = Math.round(window.innerHeight * this.dpr);
@@ -26,6 +27,21 @@ export class Renderer {
       this.canvas.width = w;
       this.canvas.height = h;
     }
+  }
+
+  // границы для подписей: ниже текста HUD и выше панели кнопок
+  beginFrame(controlsTop, rec) {
+    const ch = this.canvas.height;
+    this.hudTop = (rec ? 86 : 72) * this.dpr;
+    this.bottom = Math.min(ch, isFinite(controlsTop) ? controlsTop : ch - 90 * this.dpr) - 6 * this.dpr;
+    this.placed = [];
+  }
+
+  _free(r) {
+    for (const q of this.placed) {
+      if (r.x < q.x + q.w && r.x + r.w > q.x && r.y < q.y + q.h && r.y + r.h > q.y) return false;
+    }
+    return true;
   }
 
   setView(W, H, mirror) {
@@ -92,6 +108,7 @@ export class Renderer {
     ctx.lineJoin = 'round';
     // свечение: широкая полупрозрачная линия под яркой
     const passes = [
+      [4.5 * dpr, 'rgba(0,0,0,0.45)'], // тёмная кромка — видно на светлом фоне
       [10 * dpr, 'rgba(255,255,255,0.10)'],
       [5 * dpr, 'rgba(255,255,255,0.28)'],
       [2.2 * dpr, '#ffffff'],
@@ -179,15 +196,20 @@ export class Renderer {
   // ---------------------------------------------------------------- цель
   drawTarget(track, now, threshold) {
     const { ctx, dpr } = this;
+    const cw = this.canvas.width;
+    const M = 4 * dpr;
+    const top = this.hudTop ?? 72 * dpr;
+    const bottom = this.bottom ?? this.canvas.height - 96 * dpr;
+    // рамка в пределах видимой части экрана
     const b = this.mapBox(track.box);
-    const cw = this.canvas.width, ch = this.canvas.height;
+    b.x0 = Math.max(M, b.x0); b.x1 = Math.min(cw - M, b.x1);
+    b.y0 = Math.max(M, b.y0); b.y1 = Math.min(bottom, b.y1);
+    const w = b.x1 - b.x0, h = b.y1 - b.y0;
+    if (w < 6 * dpr || h < 6 * dpr) return;
     const locked = track.locked;
     const col = locked ? COLORS.red : COLORS.green;
-    const w = b.x1 - b.x0, h = b.y1 - b.y0;
-    if (w < 4 || h < 4) return;
 
     ctx.save();
-    // рамка
     ctx.strokeStyle = col;
     ctx.globalAlpha = 0.55;
     ctx.lineWidth = 1 * dpr;
@@ -202,7 +224,8 @@ export class Renderer {
     }
     const pad = k * Math.min(w, h) * 0.25;
     const L = Math.max(10 * dpr, Math.min(w, h) * 0.16);
-    const X0 = b.x0 - pad, Y0 = b.y0 - pad, X1 = b.x1 + pad, Y1 = b.y1 + pad;
+    const X0 = Math.max(M, b.x0 - pad), Y0 = Math.max(M, b.y0 - pad);
+    const X1 = Math.min(cw - M, b.x1 + pad), Y1 = Math.min(bottom, b.y1 + pad);
     ctx.lineWidth = 3 * dpr;
     ctx.lineCap = 'square';
     ctx.beginPath();
@@ -212,60 +235,75 @@ export class Renderer {
     ctx.moveTo(X0 + L, Y1); ctx.lineTo(X0, Y1); ctx.lineTo(X0, Y1 - L);
     ctx.stroke();
 
-    // метка над рамкой
+    const clampX = (x, ww) => Math.max(M, Math.min(cw - ww - M, x));
+    const clampY = (y, hh) => Math.max(top, Math.min(bottom - hh, y));
+    const pick = (cands) => cands.find((r) => this._free(r)) || cands[0];
+
+    // метка: над рамкой, иначе внутри у верхнего края
     const id = String(track.id).padStart(2, '0');
     const tag = locked ? `ЦЕЛЬ ${id} · ЗАХВАТ` : `ЦЕЛЬ ${id} · НАБЛЮДЕНИЕ`;
     ctx.font = this.font(10.5, 600);
     ctx.letterSpacing = `${1.2 * dpr}px`;
     const tw = ctx.measureText(tag).width + 12 * dpr;
     const th = 18 * dpr;
-    let tx = b.x0, ty = b.y0 - th - 4 * dpr;
-    if (ty < 70 * dpr) ty = b.y0 + 4 * dpr;
-    tx = Math.max(4 * dpr, Math.min(cw - tw - 4 * dpr, tx));
+    const tagCands = [];
+    if (b.y0 - th - 4 * dpr >= top) tagCands.push({ x: clampX(b.x0, tw), y: b.y0 - th - 4 * dpr, w: tw, h: th });
+    tagCands.push({ x: clampX(b.x0 + 4 * dpr, tw), y: clampY(b.y0 + 4 * dpr, th), w: tw, h: th });
+    tagCands.push({ x: clampX(b.x0 + 4 * dpr, tw), y: clampY(b.y1 - th - 4 * dpr, th), w: tw, h: th });
+    const T = pick(tagCands);
+    this.placed.push(T);
     const flash = locked && now - track.lockedAt < 1300 && Math.floor(now / 260) % 2 === 0;
     if (flash) {
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
-      ctx.fillRect(tx, ty, tw, th);
+      ctx.fillRect(T.x, T.y, tw, th);
       ctx.strokeStyle = col;
       ctx.lineWidth = 1 * dpr;
-      ctx.strokeRect(tx + 0.5 * dpr, ty + 0.5 * dpr, tw - dpr, th - dpr);
+      ctx.strokeRect(T.x + 0.5 * dpr, T.y + 0.5 * dpr, tw - dpr, th - dpr);
       ctx.fillStyle = col;
     } else {
       ctx.fillStyle = col;
-      ctx.fillRect(tx, ty, tw, th);
+      ctx.fillRect(T.x, T.y, tw, th);
       ctx.fillStyle = '#000';
     }
     ctx.textBaseline = 'middle';
-    ctx.fillText(tag, tx + 6 * dpr, ty + th / 2 + 0.5 * dpr);
+    ctx.fillText(tag, T.x + 6 * dpr, T.y + th / 2 + 0.5 * dpr);
 
     // данные
     const dist = track.dist.value;
     const height = track.height.value;
     const age = track.age.value;
+    const rough = { approx: 1, flat: 1, tilt: 1 };
     const rows = [
-      ['ДИСТ', dist != null ? `${dist.toFixed(dist < 10 ? 1 : 0)} м` : '—', track.distSrc === 'body' ? '≈' : ''],
-      ['РОСТ', height != null && track.height.count >= 3 ? `${Math.round(height * 100)} см` : '—', track.heightSrc === 'approx' || track.heightSrc === 'flat' ? '≈' : ''],
-      ['ВОЗР', age != null && track.age.count >= 2 ? `${Math.round(age)}` : '—', age != null ? '~' : ''],
+      ['ДИСТ', dist != null ? `${dist.toFixed(dist < 10 ? 1 : 0)} м` : '—', dist != null && track.distSrc === 'body' ? '≈' : ''],
+      ['РОСТ', height != null && track.height.count >= 3 ? `${Math.round(height * 100)} см` : '—', height != null && track.height.count >= 3 && rough[track.heightSrc] ? '≈' : ''],
+      ['ВОЗР', age != null && track.age.count >= 2 ? `${Math.round(age)}` : '—', age != null && track.age.count >= 2 ? '~' : ''],
     ];
     ctx.font = this.font(11, 500);
     ctx.letterSpacing = `${1 * dpr}px`;
     const lh = 16 * dpr;
-    const pw = 118 * dpr, ph = rows.length * lh + 10 * dpr;
-    let px = b.x1 + 8 * dpr, py = b.y0;
-    if (px + pw > cw - 4 * dpr) px = b.x0 - pw - 8 * dpr;
-    if (px < 4 * dpr) { px = Math.max(4 * dpr, b.x0); py = Math.min(b.y1 + 8 * dpr, ch - ph - 90 * dpr); }
-    py = Math.max(70 * dpr, Math.min(py, ch - ph - 90 * dpr));
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillRect(px, py, pw, ph);
+    const pw = 122 * dpr, ph = (rows.length + 1) * lh + 8 * dpr;
+    const pc = [];
+    const py0 = clampY(Math.max(b.y0, T.y), ph);
+    if (b.x1 + 8 * dpr + pw <= cw - M) pc.push({ x: b.x1 + 8 * dpr, y: py0, w: pw, h: ph });
+    if (b.x0 - 8 * dpr - pw >= M) pc.push({ x: b.x0 - 8 * dpr - pw, y: py0, w: pw, h: ph });
+    pc.push({ x: clampX(b.x0 + 6 * dpr, pw), y: clampY(T.y + th + 4 * dpr, ph), w: pw, h: ph });
+    if (b.y1 + 6 * dpr + ph <= bottom) pc.push({ x: clampX(b.x0, pw), y: b.y1 + 6 * dpr, w: pw, h: ph });
+    pc.push({ x: clampX(b.x0 + 6 * dpr, pw), y: clampY(b.y1 - ph - 6 * dpr, ph), w: pw, h: ph });
+    const R = pick(pc);
+    this.placed.push(R);
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(R.x, R.y, pw, ph);
     ctx.fillStyle = col;
-    ctx.fillRect(px, py, 2 * dpr, ph);
+    ctx.fillRect(R.x, R.y, 2 * dpr, ph);
     ctx.textBaseline = 'middle';
+    const y0 = R.y + 4 * dpr + lh / 2;
+    ctx.fillText(`ЦЕЛЬ ${id}`, R.x + 9 * dpr, y0);
     rows.forEach(([k2, v, mark], i) => {
-      const y = py + 5 * dpr + lh * i + lh / 2;
-      ctx.fillStyle = 'rgba(255,255,255,0.55)';
-      ctx.fillText(k2, px + 9 * dpr, y);
+      const y = y0 + lh * (i + 1);
+      ctx.fillStyle = 'rgba(255,255,255,0.72)';
+      ctx.fillText(k2, R.x + 9 * dpr, y);
       ctx.fillStyle = '#fff';
-      ctx.fillText(`${mark}${v}`, px + 52 * dpr, y);
+      ctx.fillText(`${mark}${v}`, R.x + 54 * dpr, y);
     });
 
     // перекрестие на корпусе при захвате
@@ -294,6 +332,17 @@ export class Renderer {
   }
 
   // ---------------------------------------------------------------- HUD
+  // затемнение под текстом HUD сверху — читается на ярком небе и снегу
+  drawScrim() {
+    const { ctx, dpr } = this;
+    const sh = 100 * dpr;
+    const grd = ctx.createLinearGradient(0, 0, 0, sh);
+    grd.addColorStop(0, 'rgba(0,0,0,0.55)');
+    grd.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, 0, this.canvas.width, sh);
+  }
+
   drawHud(info) {
     const { ctx, dpr } = this;
     const cw = this.canvas.width, ch = this.canvas.height;
@@ -342,25 +391,29 @@ export class Renderer {
 
     // текст
     ctx.textBaseline = 'top';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.lineWidth = 3 * dpr;
+    const text = (str, x, y) => { ctx.strokeText(str, x, y); ctx.fillText(str, x, y); };
     ctx.letterSpacing = `${1.6 * dpr}px`;
     const tx = m + 10 * dpr, ty = m + 8 * dpr;
     ctx.font = this.font(12, 700);
     ctx.fillStyle = '#fff';
-    ctx.fillText('1DEX1 // СКАНЕР', tx, ty);
+    text('1DEX1 // СКАНЕР', tx, ty);
     ctx.font = this.font(10, 500);
     ctx.fillStyle = 'rgba(255,255,255,0.7)';
-    ctx.fillText(info.clock, tx, ty + 18 * dpr);
-    ctx.fillText(`ЦЕЛИ ${info.targets} · ЗАХВАТ ${info.locked}`, tx, ty + 32 * dpr);
+    text(info.clock, tx, ty + 18 * dpr);
+    text(`ЦЕЛИ ${info.targets} · ЗАХВАТ ${info.locked}`, tx, ty + 32 * dpr);
 
     ctx.textAlign = 'right';
     const rx = cw - m - 10 * dpr;
-    ctx.fillText(`${info.fps} FPS`, rx, ty);
-    ctx.fillText(info.pitch != null ? `НАКЛОН ${info.pitch > 0 ? '−' : '+'}${Math.abs(info.pitch).toFixed(0)}°` : 'НАКЛОН —', rx, ty + 14 * dpr);
-    ctx.fillText(`ЗОНА ≤ ${info.threshold} М`, rx, ty + 28 * dpr);
+    text(`${info.fps} FPS`, rx, ty);
+    text(info.pitch != null ? `НАКЛОН ${info.pitch > 0 ? '−' : '+'}${Math.abs(info.pitch).toFixed(0)}°` : 'НАКЛОН —', rx, ty + 14 * dpr);
+    text(`ЗОНА ≤ ${info.threshold} М`, rx, ty + 28 * dpr);
     if (info.rec) {
       const blink = Math.floor(info.now / 500) % 2 === 0;
       ctx.fillStyle = blink ? COLORS.red : 'rgba(255,43,43,0.4)';
-      ctx.fillText(`● REC ${info.rec}`, rx, ty + 46 * dpr);
+      text(`● REC ${info.rec}`, rx, ty + 46 * dpr);
     }
     ctx.textAlign = 'left';
 
@@ -371,7 +424,7 @@ export class Renderer {
       ctx.textBaseline = 'middle';
       const blink = Math.floor(info.now / 600) % 2 === 0;
       ctx.fillStyle = blink ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.45)';
-      ctx.fillText(info.status, cx, cy + 44 * dpr);
+      text(info.status, cx, cy + 44 * dpr);
     }
     ctx.restore();
   }

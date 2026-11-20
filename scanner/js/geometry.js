@@ -4,6 +4,7 @@
 // Координаты устройства (W3C): x вправо, y вверх, z из экрана к пользователю.
 
 const DEG = Math.PI / 180;
+const vis = (p, t = 0.5) => p && (p.visibility === undefined || p.visibility >= t);
 
 // Антропометрия (средние значения для взрослых)
 export const IRIS_DIAMETER_M = 0.0117;   // диаметр радужки почти одинаков у всех людей
@@ -33,8 +34,11 @@ export class Tilt {
     window.addEventListener('devicemotion', this._onMotion);
   }
 
+  // Chrome шлёт deviceorientation только при изменении угла ≥ 0.1°, поэтому
+  // тишина означает «телефон неподвижен», а не «датчик пропал».
   get available() {
-    return this.up !== null && performance.now() - this.lastUpdate < 1500;
+    if (this.up === null) return false;
+    return this._gotOrientation || performance.now() - this.lastUpdate < 1500;
   }
 
   _blend(v) {
@@ -60,15 +64,18 @@ export class Tilt {
     this._gotOrientation = true;
     // R = Rz(alpha)·Rx(beta)·Ry(gamma); «вверх» в координатах устройства = Rᵀ·(0,0,1)
     const b = e.beta * DEG, g = e.gamma * DEG;
-    this._blend({
+    this._raw = {
       x: -Math.sin(g) * Math.cos(b),
       y: Math.sin(b),
       z: Math.cos(g) * Math.cos(b),
-    });
+    };
+    this._blend(this._raw);
   }
 
   _onMotion(e) {
-    if (this._gotOrientation) return; // ориентация точнее и стабильнее
+    // ориентация точнее; devicemotion (60 Гц) только «досглаживает» последнее значение,
+    // чтобы фильтр не застревал с отставанием, когда телефон замер
+    if (this._gotOrientation) { if (this._raw) this._blend(this._raw); return; }
     const a = e.accelerationIncludingGravity;
     if (!a || a.x == null) return;
     // В покое ускорение с учётом гравитации направлено «вверх»
@@ -123,18 +130,46 @@ export function irisDistance(face, cam) {
   if (!face || face.length < 478) return null;
   const W = cam.w, H = cam.h;
   const P = (k) => ({ x: face[k].x * W, y: face[k].y * H });
-  // 468–472 и 473–477: центр + 4 точки по краю радужки
-  const diam = (a, b, d, e) => {
+  // 468–472 и 473–477: центр + 4 точки по краю (469/471 — по горизонтали, 470/472 — по вертикали).
+  // Берём диаметр в направлении, перпендикулярном лучу от центра кадра: вдоль него
+  // проекция круга не растягивается, и диаметр ≈ f·S/Z, где Z — глубина.
+  const diam = (c, a, b, d, e) => {
     const h = Math.hypot(P(a).x - P(d).x, P(a).y - P(d).y);
     const v = Math.hypot(P(b).x - P(e).x, P(b).y - P(e).y);
-    return Math.max(h, v);
+    const C = P(c);
+    const rx = C.x - cam.cx, ry = C.y - cam.cy;
+    const r = Math.hypot(rx, ry);
+    if (r < 0.02 * cam.f || h < 1e-3 || v < 1e-3) return (h + v) / 2;
+    const tx = -ry / r, ty = rx / r; // касательное направление
+    return (h * v) / Math.sqrt(v * v * tx * tx + h * h * ty * ty);
   };
-  const dpx = Math.max(diam(469, 470, 471, 472), diam(474, 475, 476, 477));
+  const dpx = Math.max(diam(468, 469, 470, 471, 472), diam(473, 474, 475, 476, 477));
   if (!(dpx > 2.5)) return null;
-  const range = (cam.f * IRIS_DIAMETER_M) / dpx;
+  const Z = (cam.f * IRIS_DIAMETER_M) / dpx;
   const c = P(168); // переносица
-  const el = cam.upCam ? elevation(c.x, c.y, cam) : 0;
-  return range * Math.cos(el);
+  const x = (c.x - cam.cx) / cam.f, y = (c.y - cam.cy) / cam.f;
+  if (!cam.upCam) return Z * Math.hypot(x, 1); // считаем камеру горизонтальной
+  const U = cam.upCam;
+  const a = x * U.x + y * U.y + U.z; // вертикальная составляющая (в долях Z)
+  return Z * Math.sqrt(Math.max(0, x * x + y * y + 1 - a * a));
+}
+
+// Человек стоит прямо? Нужны выпрямленные ноги (угол в колене > 160°) и бёдра выше колен.
+// Иначе рост не считаем: в приседе, выпаде или прыжке он получится неверным.
+export function isStanding(pose, world) {
+  if (!world) return false;
+  const ids = [23, 24, 25, 26, 27, 28];
+  if (!ids.every((i) => vis(pose[i], 0.5))) return false;
+  const ang = (a, b, c) => {
+    const u = { x: world[a].x - world[b].x, y: world[a].y - world[b].y, z: world[a].z - world[b].z };
+    const v = { x: world[c].x - world[b].x, y: world[c].y - world[b].y, z: world[c].z - world[b].z };
+    const d = (u.x * v.x + u.y * v.y + u.z * v.z) / (Math.hypot(u.x, u.y, u.z) * Math.hypot(v.x, v.y, v.z) || 1);
+    return Math.acos(Math.max(-1, Math.min(1, d))) / DEG;
+  };
+  if (ang(23, 25, 27) < 160 || ang(24, 26, 28) < 160) return false;
+  // в мировых координатах MediaPipe ось y направлена вниз
+  const hipY = (world[23].y + world[24].y) / 2, kneeY = (world[25].y + world[26].y) / 2;
+  return kneeY - hipY > 0.3;
 }
 
 // ---------------------------------------------------------------------------
@@ -142,15 +177,13 @@ export function irisDistance(face, cam) {
 // pose: 33 точки (норм. координаты), world: 33 точки в метрах,
 // face: 478 точек лица или null.
 // ---------------------------------------------------------------------------
-const NOSE = 0, L_EYE = 2, R_EYE = 5, L_SH = 11, R_SH = 12, L_HIP = 23, R_HIP = 24;
+const L_EYE = 2, R_EYE = 5;
 const L_ANKLE = 27, R_ANKLE = 28, L_HEEL = 29, R_HEEL = 30, L_FOOT = 31, R_FOOT = 32;
-
-const vis = (p, t = 0.5) => p && (p.visibility === undefined || p.visibility >= t);
 
 export function measure(pose, world, face, cam, settings) {
   const W = cam.w, H = cam.h;
   const px = (p) => ({ x: p.x * W, y: p.y * H });
-  const out = { dist: null, distSrc: null, height: null, heightSrc: null, eyeRay: null };
+  const out = { dist: null, distSrc: null, height: null, heightSrc: null };
 
   // Точка глаз (середина)
   const eyesVisible = vis(pose[L_EYE], 0.6) && vis(pose[R_EYE], 0.6);
@@ -158,9 +191,6 @@ export function measure(pose, world, face, cam, settings) {
   if (eyesVisible) {
     const a = px(pose[L_EYE]), b = px(pose[R_EYE]);
     eye = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-  } else if (vis(pose[NOSE], 0.6)) {
-    const n = px(pose[NOSE]);
-    eye = { x: n.x, y: n.y - 0.02 * H };
   }
 
   // Точка стоп: нижняя из видимых пяток/носков, только если внутри кадра
@@ -218,18 +248,26 @@ export function measure(pose, world, face, cam, settings) {
   else if (dBody) { out.dist = dBody; out.distSrc = 'body'; }
 
   // --- Рост ---
-  if (eye && out.dist) {
+  const standing = isStanding(pose, world);
+  out.standing = standing;
+  if (eye && out.dist && (standing || !foot)) {
     if (tiltOk) {
       const elEye = elevation(eye.x, eye.y, cam);
-      if (dIris && foot && elFoot !== null) {
+      if (dIris && foot && standing && elFoot !== null) {
         // не зависит от высоты телефона
         const eyeH = dIris * (Math.tan(elEye) - Math.tan(elFoot));
         out.height = eyeH / EYE_HEIGHT_RATIO;
         out.heightSrc = 'iris+feet';
-      } else if (out.distSrc !== 'body') {
+      } else if (out.distSrc !== 'body' && foot) {
         const eyeH = settings.phoneHeight + out.dist * Math.tan(elEye);
         out.height = eyeH / EYE_HEIGHT_RATIO;
-        out.heightSrc = foot ? 'ground' : 'tilt';
+        out.heightSrc = 'ground';
+      } else if (out.distSrc !== 'body' && out.dist > 1.5) {
+        // стоп не видно: считаем, что телефон на заданной высоте. Вблизи (скан лица)
+        // телефон обычно поднят к лицу, и такая оценка бессмысленна — пропускаем.
+        const eyeH = settings.phoneHeight + out.dist * Math.tan(elEye);
+        out.height = eyeH / EYE_HEIGHT_RATIO;
+        out.heightSrc = 'tilt';
       } else if (foot) {
         const eyeH = settings.phoneHeight + out.dist * Math.tan(elEye);
         out.height = eyeH / EYE_HEIGHT_RATIO;

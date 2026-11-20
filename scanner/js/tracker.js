@@ -23,6 +23,7 @@ class Smoother {
     return this.value;
   }
   get count() { return this.buf.length; }
+  reset() { this.buf = []; this.value = null; }
 }
 
 export class Track {
@@ -37,6 +38,7 @@ export class Track {
     this.age = new Smoother(9, 0.35);
     this.distSrc = null;
     this.heightSrc = null;
+    this.heightQ = -1;
     this.locked = false;
     this.lockedAt = 0;
     this.lastAgeAt = 0;

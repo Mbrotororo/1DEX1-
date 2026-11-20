@@ -7,12 +7,12 @@ import { AgeEstimator } from './age.js';
 // ------------------------------------------------------------------ настройки
 const DEFAULTS = {
   phoneHeight: 1.40,   // м, высота телефона над землёй
-  fovBack: 70,         // угол обзора длинной стороны кадра, тыльная камера
-  fovFront: 76,        // фронтальная
+  fovBack: 72,         // угол обзора длинной стороны кадра: основная камера S25 Ultra (24 мм, 85° по диагонали)
+  fovFront: 68,        // фронтальная (26 мм, 80° по диагонали)
   threshold: 5,        // м, зона захвата
   mono: true,          // ч/б видео
 };
-const STORE_KEY = '1dex1-scanner-v1';
+const STORE_KEY = '1dex1-scanner-v2';
 
 function loadSettings() {
   try {
@@ -80,9 +80,11 @@ function fail(msg) {
 }
 
 // ------------------------------------------------------------------ камера
+let camGen = 0;
 async function openCamera() {
-  if (stream) stream.getTracks().forEach((t) => t.stop());
-  stream = await navigator.mediaDevices.getUserMedia({
+  const gen = ++camGen;
+  if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
+  const s = await navigator.mediaDevices.getUserMedia({
     audio: false,
     video: {
       facingMode: { ideal: facing },
@@ -91,13 +93,16 @@ async function openCamera() {
       frameRate: { ideal: 30 },
     },
   });
+  if (gen !== camGen) { s.getTracks().forEach((t) => t.stop()); return; }
+  stream = s;
   video.srcObject = stream;
   await video.play();
   lastVideoTime = -1;
   tracker.reset();
   // фактическая камера могла оказаться другой
-  const s = stream.getVideoTracks()[0].getSettings ? stream.getVideoTracks()[0].getSettings() : {};
-  if (s.facingMode === 'user' || s.facingMode === 'environment') facing = s.facingMode;
+  const vt = stream.getVideoTracks()[0];
+  const st = vt && vt.getSettings ? vt.getSettings() : {};
+  if (st.facingMode === 'user' || st.facingMode === 'environment') facing = st.facingMode;
 }
 
 let wakeLock = null;
@@ -148,6 +153,7 @@ async function start() {
 
   loader.classList.add('hidden');
   app.classList.remove('hidden');
+  measureControls();
   running = true;
   keepAwake();
   requestAnimationFrame(loop);
@@ -258,6 +264,8 @@ function cameraModel() {
   };
 }
 
+const HEIGHT_Q = { 'iris+feet': 3, ground: 3, tilt: 2, flat: 1, approx: 0 };
+
 function updateMeasurements(tracks, cam, now) {
   const thr = settings.threshold;
   for (const t of tracks) {
@@ -271,13 +279,18 @@ function updateMeasurements(tracks, cam, now) {
     t.meas = m;
     t.dist.push(m.dist);
     if (m.distSrc) t.distSrc = m.distSrc;
-    if (m.height != null) { t.height.push(m.height); t.heightSrc = m.heightSrc; }
+    if (m.height != null) {
+      // более надёжный метод вытесняет менее надёжный, но не наоборот
+      const q = HEIGHT_Q[m.heightSrc] ?? 0;
+      if (q > t.heightQ) { t.height.reset(); t.heightQ = q; }
+      if (q >= t.heightQ) { t.height.push(m.height); t.heightSrc = m.heightSrc; }
+    }
 
     const d = t.dist.value;
     const wasLocked = t.locked;
     if (d == null) t.locked = false;
     else if (!wasLocked && d <= thr) t.locked = true;
-    else if (wasLocked && d > thr + 0.25) t.locked = false;
+    else if (wasLocked && d > thr + 0.1) t.locked = false;
     if (t.locked && !wasLocked) { t.lockedAt = now; buzz(); }
   }
 
@@ -326,6 +339,7 @@ function loop() {
     try {
       tracks = detect(now);
       updateMeasurements(tracks, cam, now);
+      if (calib) calibStep(cam, now);
     } catch (e) {
       console.error(e);
     }
@@ -337,7 +351,9 @@ function loop() {
   pitch = pd;
 
   // рисуем
+  renderer.beginFrame(controlsTop, !!recorder);
   renderer.drawVideo(video, settings.mono);
+  renderer.drawScrim();
   const visible = tracks.filter((t) => !t.stale);
   for (const t of visible) {
     t.meshOn = !!t.face && ((t.dist.value != null && t.dist.value < 1.3) || faceIsBig(t.face, cam));
@@ -346,10 +362,13 @@ function loop() {
   for (const t of visible) {
     if (t.meshOn) renderer.drawFace(t.face, models.FACE_TESSELATION, models.FACE_CONTOURS, now);
   }
-  for (const t of tracks) renderer.drawTarget(t, now, settings.threshold);
+  // сначала ближние цели: их подписи получают лучшие места
+  const order = [...tracks].sort((a, b) => (a.dist.value ?? 99) - (b.dist.value ?? 99));
+  for (const t of order) renderer.drawTarget(t, now, settings.threshold);
 
   let status = '';
   if (!visible.length) status = 'ПОИСК ЦЕЛЕЙ';
+  if (calib) status = 'КАЛИБРОВКА · НЕ ДВИГАЙ ТЕЛЕФОН';
   renderer.drawHud({
     clock: clock(),
     targets: visible.length,
@@ -391,9 +410,25 @@ function download(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
+let camBusy = false;
 $('#btn-flip').addEventListener('click', async () => {
+  if (camBusy) return;
+  if (recorder) { toast('Сначала останови запись'); return; }
+  const btn = $('#btn-flip');
+  camBusy = true;
+  btn.disabled = true;
+  const prev = facing;
   facing = facing === 'user' ? 'environment' : 'user';
-  try { await openCamera(); } catch (e) { toast('Не удалось переключить камеру'); }
+  try {
+    await openCamera();
+  } catch (e) {
+    facing = prev;
+    try { await openCamera(); } catch (_) { /* остаёмся без камеры */ }
+    toast('Не удалось переключить камеру');
+  } finally {
+    camBusy = false;
+    btn.disabled = false;
+  }
 });
 
 $('#btn-shot').addEventListener('click', () => {
@@ -401,7 +436,8 @@ $('#btn-shot').addEventListener('click', () => {
 });
 
 function pickMime() {
-  const list = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+  // avc3 хранит параметры кодека внутри потока — файл не ломается при смене размера
+  const list = ['video/mp4;codecs=avc3', 'video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
   for (const m of list) if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
   return '';
 }
@@ -411,10 +447,11 @@ $('#btn-rec').addEventListener('click', () => {
   if (recorder) { recorder.stop(); return; }
   if (!window.MediaRecorder || !canvas.captureStream) { toast('Запись не поддерживается в этом браузере'); return; }
   const mime = pickMime();
+  renderer.frozen = true; // размер холста не меняется во время записи
   const rs = canvas.captureStream(30);
   try {
     recorder = new MediaRecorder(rs, mime ? { mimeType: mime, videoBitsPerSecond: 8_000_000 } : { videoBitsPerSecond: 8_000_000 });
-  } catch (e) { recorder = null; toast('Запись не запустилась'); return; }
+  } catch (e) { recorder = null; renderer.frozen = false; toast('Запись не запустилась'); return; }
   recChunks = [];
   recorder.ondataavailable = (e) => { if (e.data && e.data.size) recChunks.push(e.data); };
   recorder.onstop = () => {
@@ -422,6 +459,9 @@ $('#btn-rec').addEventListener('click', () => {
     const ext = type.includes('mp4') ? 'mp4' : 'webm';
     download(new Blob(recChunks, { type }), `1dex1-scan-${stamp()}.${ext}`);
     recorder = null;
+    renderer.frozen = false;
+    renderer.resize();
+    measureControls();
     btn.classList.remove('on');
     rs.getTracks().forEach((t) => t.stop());
     toast('Видео сохранено');
@@ -454,7 +494,7 @@ inputs.threshold.addEventListener('input', () => { settings.threshold = Number(i
 inputs.mono.addEventListener('change', () => { settings.mono = inputs.mono.checked; saveSettings(); });
 
 function resetHeights() {
-  for (const t of tracker.tracks) { t.height.buf = []; t.height.value = null; t.dist.buf = []; t.dist.value = null; }
+  for (const t of tracker.tracks) { t.height.reset(); t.heightQ = -1; t.dist.reset(); }
 }
 
 $('#btn-settings').addEventListener('click', () => { syncSettingsUI(); sheet.classList.add('open'); });
@@ -467,32 +507,53 @@ $('#btn-reset').addEventListener('click', () => {
   toast('Настройки сброшены');
 });
 
-// Калибровка по известному росту: ставим человека целиком в кадр
+// Калибровка по известному росту: человек целиком в кадре, телефон неподвижен.
+// Собираем ~1.2 с кадров и берём медиану — один кадр слишком чувствителен к дрожанию.
+let calib = null;
 $('#btn-calib').addEventListener('click', () => {
   const cm = Number($('#set-known').value);
   if (!(cm >= 80 && cm <= 230)) { toast('Введи рост цели в сантиметрах, например 180'); return; }
-  const cam = cameraModel();
-  if (!cam.upCam) { toast('Нет данных датчика наклона — калибровка невозможна'); return; }
-  // цель ближе всего к центру кадра
+  if (!cameraModel().upCam) { toast('Нет данных датчика наклона — калибровка невозможна'); return; }
+  sheet.classList.remove('open');
+  calib = { height: cm / 100, until: performance.now() + 1200, samples: [] };
+});
+
+function calibStep(cam, now) {
+  // цель ближе всего к центру кадра, стоит прямо, видна от глаз до стоп
   let best = null, bestD = Infinity;
   for (const t of tracker.tracks) {
-    if (t.stale || !t.meas || !t.meas.eye || !t.meas.foot) continue;
+    if (t.stale || !t.meas || !t.meas.eye || !t.meas.foot || !t.meas.standing) continue;
     const cx = (t.box.x0 + t.box.x1) / 2 - cam.w / 2, cy = (t.box.y0 + t.box.y1) / 2 - cam.h / 2;
     const d = Math.hypot(cx, cy);
     if (d < bestD) { bestD = d; best = t; }
   }
-  if (!best) { toast('Нужен человек целиком в кадре: от макушки до стоп'); return; }
-  const h = solvePhoneHeight(cm / 100, best.meas.eye, best.meas.foot, cam);
-  if (!h) { toast('Не получилось. Отойди дальше, чтобы стопы были в кадре'); return; }
+  if (best && cam.upCam) {
+    const h = solvePhoneHeight(calib.height, best.meas.eye, best.meas.foot, cam);
+    if (h) calib.samples.push({ h, pitch: cameraPitchDown(cam.upCam) });
+  }
+  if (now < calib.until) return;
+  const smp = calib.samples;
+  calib = null;
+  if (smp.length < 8) { toast('Не получилось: нужен человек целиком в кадре, стоя прямо'); return; }
+  const pitches = smp.map((x) => x.pitch).sort((a, b) => a - b);
+  if (pitches[pitches.length - 1] - pitches[0] > 0.6) { toast('Телефон двигался. Держи ровно и повтори'); return; }
+  const hs = smp.map((x) => x.h).sort((a, b) => a - b);
+  const h = hs[hs.length >> 1];
   settings.phoneHeight = Math.round(h * 100) / 100;
   saveSettings(); syncSettingsUI(); resetHeights();
   toast(`Готово: телефон на высоте ${Math.round(h * 100)} см`);
-});
+}
 
 // ------------------------------------------------------------------ запуск
 $('#btn-start').addEventListener('click', start);
 $('#btn-retry').addEventListener('click', () => location.reload());
-window.addEventListener('resize', () => renderer.resize());
+// верх панели кнопок в пикселях холста — ниже него подписи целей не ставим
+let controlsTop = Infinity;
+function measureControls() {
+  const r = document.querySelector('.controls').getBoundingClientRect();
+  controlsTop = r.height ? r.top * renderer.dpr : Infinity;
+}
+window.addEventListener('resize', () => { renderer.resize(); measureControls(); });
 
 // Тестовый режим для проверки без камеры: ?test=URL видео
 const testSrc = new URLSearchParams(location.search).get('test');
