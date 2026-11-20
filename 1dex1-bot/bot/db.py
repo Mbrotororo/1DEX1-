@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -66,7 +67,49 @@ CREATE TABLE IF NOT EXISTS settings (
     notify_edits   INTEGER NOT NULL DEFAULT 1,
     save_view_once INTEGER NOT NULL DEFAULT 1
 );
+
+CREATE TABLE IF NOT EXISTS chat_stats (
+    owner_id        INTEGER NOT NULL,
+    chat_id         INTEGER NOT NULL,
+    first_ts        REAL NOT NULL,
+    last_ts         REAL,
+    last_from_owner INTEGER,
+    owner_msgs      INTEGER NOT NULL DEFAULT 0,
+    peer_msgs       INTEGER NOT NULL DEFAULT 0,
+    owner_chars     INTEGER NOT NULL DEFAULT 0,
+    peer_chars      INTEGER NOT NULL DEFAULT 0,
+    owner_media     INTEGER NOT NULL DEFAULT 0,
+    peer_media      INTEGER NOT NULL DEFAULT 0,
+    owner_voice     INTEGER NOT NULL DEFAULT 0,
+    peer_voice      INTEGER NOT NULL DEFAULT 0,
+    owner_stickers  INTEGER NOT NULL DEFAULT 0,
+    peer_stickers   INTEGER NOT NULL DEFAULT 0,
+    owner_reply_sum REAL NOT NULL DEFAULT 0,
+    owner_reply_n   INTEGER NOT NULL DEFAULT 0,
+    peer_reply_sum  REAL NOT NULL DEFAULT 0,
+    peer_reply_n    INTEGER NOT NULL DEFAULT 0,
+    peer_edits      INTEGER NOT NULL DEFAULT 0,
+    peer_deletes    INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (owner_id, chat_id)
+);
+
+CREATE TABLE IF NOT EXISTS chat_days (
+    owner_id   INTEGER NOT NULL,
+    chat_id    INTEGER NOT NULL,
+    day        TEXT NOT NULL,
+    owner_msgs INTEGER NOT NULL DEFAULT 0,
+    peer_msgs  INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (owner_id, chat_id, day)
+);
 """
+
+# Колонки, добавленные в новых версиях: старые базы (например, на телефоне) мигрируем на лету.
+MIGRATIONS: dict[str, dict[str, str]] = {
+    "settings": {"notify_deleted": "INTEGER NOT NULL DEFAULT 1"},
+}
+
+# Ответ позже этого не считаем «временем ответа» (человек просто спал или был занят).
+MAX_REPLY_GAP = 6 * 3600
 
 
 @dataclass
@@ -104,6 +147,36 @@ class CachedMessage:
 class Settings:
     notify_edits: bool = True
     save_view_once: bool = True
+    notify_deleted: bool = True
+
+
+@dataclass
+class ChatStats:
+    first_ts: float
+    owner_msgs: int = 0
+    peer_msgs: int = 0
+    owner_chars: int = 0
+    peer_chars: int = 0
+    owner_media: int = 0
+    peer_media: int = 0
+    owner_voice: int = 0
+    peer_voice: int = 0
+    owner_stickers: int = 0
+    peer_stickers: int = 0
+    owner_reply_sum: float = 0.0
+    owner_reply_n: int = 0
+    peer_reply_sum: float = 0.0
+    peer_reply_n: int = 0
+    peer_edits: int = 0
+    peer_deletes: int = 0
+    today: int = 0
+    week: int = 0
+    top_day: str | None = None
+    top_day_count: int = 0
+
+    @property
+    def total(self) -> int:
+        return self.owner_msgs + self.peer_msgs
 
 
 class Database:
@@ -115,6 +188,7 @@ class Database:
         self.mutes: dict[tuple[int, int], Mute] = {}
         self.antimute: set[tuple[int, int]] = set()
         self._settings: dict[int, Settings] = {}
+        self._stats_lock = asyncio.Lock()
 
     # ------------------------------------------------------------ lifecycle
     async def open(self) -> None:
@@ -122,8 +196,17 @@ class Database:
         self._db = await aiosqlite.connect(self.path)
         self._db.row_factory = aiosqlite.Row
         await self._db.executescript(SCHEMA)
+        await self._migrate()
         await self._db.commit()
         await self._load_caches()
+
+    async def _migrate(self) -> None:
+        for table, columns in MIGRATIONS.items():
+            async with self.db.execute(f"PRAGMA table_info({table})") as cur:
+                existing = {row["name"] async for row in cur}
+            for column, ddl in columns.items():
+                if column not in existing:
+                    await self.db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 
     async def close(self) -> None:
         if self._db is not None:
@@ -158,6 +241,7 @@ class Database:
                 self._settings[r["user_id"]] = Settings(
                     notify_edits=bool(r["notify_edits"]),
                     save_view_once=bool(r["save_view_once"]),
+                    notify_deleted=bool(r["notify_deleted"]),
                 )
 
     # ------------------------------------------------------------ connections
@@ -223,11 +307,18 @@ class Database:
         )
         await self.db.commit()
 
-    async def remove_mute(self, owner_id: int, chat_id: int) -> Mute | None:
-        mute = self.mutes.pop((owner_id, chat_id), None)
+    async def remove_mute(self, owner_id: int, chat_id: int,
+                          only_if: Mute | None = None) -> Mute | None:
+        """Снимает мут. С only_if — только если в чате всё ещё именно этот мут
+        (чтобы снятие просроченного мута не снесло новый, поставленный за это время)."""
+        key = (owner_id, chat_id)
+        current = self.mutes.get(key)
+        if current is None or (only_if is not None and current is not only_if):
+            return None
+        self.mutes.pop(key, None)
         await self.db.execute("DELETE FROM mutes WHERE owner_id=? AND chat_id=?", (owner_id, chat_id))
         await self.db.commit()
-        return mute
+        return current
 
     def expired_mutes(self, now: float) -> list[tuple[int, int, Mute]]:
         return [(o, c, m) for (o, c), m in self.mutes.items() if m.expired(now)]
@@ -275,6 +366,20 @@ class Database:
             return None
         return CachedMessage(r["from_id"], r["text"], r["media_type"], r["file_id"], r["date"])
 
+    async def get_messages(self, owner_id: int, chat_id: int,
+                           message_ids: list[int]) -> dict[int, CachedMessage]:
+        if not message_ids:
+            return {}
+        marks = ",".join("?" * len(message_ids))
+        async with self.db.execute(
+            f"SELECT message_id, from_id, text, media_type, file_id, date FROM messages "
+            f"WHERE owner_id=? AND chat_id=? AND message_id IN ({marks})",
+            (owner_id, chat_id, *message_ids),
+        ) as cur:
+            rows = await cur.fetchall()
+        return {r["message_id"]: CachedMessage(r["from_id"], r["text"], r["media_type"],
+                                               r["file_id"], r["date"]) for r in rows}
+
     async def update_message_text(self, owner_id: int, chat_id: int, message_id: int,
                                   text: str | None) -> None:
         await self.db.execute(
@@ -310,11 +415,89 @@ class Database:
         new = Settings(**{**current.__dict__, field: not getattr(current, field)})
         self._settings[user_id] = new
         await self.db.execute(
-            "INSERT OR REPLACE INTO settings (user_id, notify_edits, save_view_once) VALUES (?,?,?)",
-            (user_id, int(new.notify_edits), int(new.save_view_once)),
+            "INSERT OR REPLACE INTO settings (user_id, notify_edits, save_view_once, notify_deleted) "
+            "VALUES (?,?,?,?)",
+            (user_id, int(new.notify_edits), int(new.save_view_once), int(new.notify_deleted)),
         )
         await self.db.commit()
         return new
+
+    # ------------------------------------------------------------ статистика переписки
+    async def record_message(self, owner_id: int, chat_id: int, from_owner: bool, ts: float,
+                             day: str, chars: int, kind: str | None) -> None:
+        """Учитывает сообщение в статистике переписки (+ время ответа)."""
+        side = "owner" if from_owner else "peer"
+        async with self._stats_lock:
+            async with self.db.execute(
+                "SELECT last_ts, last_from_owner FROM chat_stats WHERE owner_id=? AND chat_id=?",
+                (owner_id, chat_id),
+            ) as cur:
+                row = await cur.fetchone()
+            if row is None:
+                await self.db.execute(
+                    "INSERT INTO chat_stats (owner_id, chat_id, first_ts) VALUES (?,?,?)",
+                    (owner_id, chat_id, ts),
+                )
+                last_ts, last_from_owner = None, None
+            else:
+                last_ts, last_from_owner = row["last_ts"], row["last_from_owner"]
+            reply_sql = ""
+            params: list[object] = []
+            if (last_ts is not None and last_from_owner is not None
+                    and bool(last_from_owner) != from_owner and 0 <= ts - last_ts <= MAX_REPLY_GAP):
+                reply_sql = f", {side}_reply_sum = {side}_reply_sum + ?, {side}_reply_n = {side}_reply_n + 1"
+                params.append(ts - last_ts)
+            media = int(kind is not None and kind not in ("voice", "video_note", "sticker"))
+            voice = int(kind in ("voice", "video_note"))
+            sticker = int(kind == "sticker")
+            await self.db.execute(
+                f"""UPDATE chat_stats SET
+                      last_ts = ?, last_from_owner = ?,
+                      {side}_msgs = {side}_msgs + 1, {side}_chars = {side}_chars + ?,
+                      {side}_media = {side}_media + ?, {side}_voice = {side}_voice + ?,
+                      {side}_stickers = {side}_stickers + ? {reply_sql}
+                    WHERE owner_id=? AND chat_id=?""",
+                (ts, int(from_owner), chars, media, voice, sticker, *params, owner_id, chat_id),
+            )
+            await self.db.execute(
+                f"""INSERT INTO chat_days (owner_id, chat_id, day, {side}_msgs) VALUES (?,?,?,1)
+                    ON CONFLICT(owner_id, chat_id, day) DO UPDATE SET {side}_msgs = {side}_msgs + 1""",
+                (owner_id, chat_id, day),
+            )
+            await self.db.commit()
+
+    async def record_peer_event(self, owner_id: int, chat_id: int, event: str, count: int = 1) -> None:
+        """event: 'edits' или 'deletes' — сколько раз собеседник правил/удалял сообщения."""
+        if event not in ("edits", "deletes") or count <= 0:
+            return
+        async with self._stats_lock:
+            await self.db.execute(
+                f"UPDATE chat_stats SET peer_{event} = peer_{event} + ? WHERE owner_id=? AND chat_id=?",
+                (count, owner_id, chat_id),
+            )
+            await self.db.commit()
+
+    async def chat_stats(self, owner_id: int, chat_id: int, today: str,
+                         week_days: list[str]) -> ChatStats | None:
+        async with self.db.execute(
+            "SELECT * FROM chat_stats WHERE owner_id=? AND chat_id=?", (owner_id, chat_id)
+        ) as cur:
+            row = await cur.fetchone()
+        if row is None:
+            return None
+        fields = {k: row[k] for k in row.keys()
+                  if k in ChatStats.__dataclass_fields__}
+        stats = ChatStats(**fields)
+        async with self.db.execute(
+            "SELECT day, owner_msgs + peer_msgs AS n FROM chat_days WHERE owner_id=? AND chat_id=?",
+            (owner_id, chat_id),
+        ) as cur:
+            days = {r["day"]: r["n"] async for r in cur}
+        stats.today = days.get(today, 0)
+        stats.week = sum(days.get(d, 0) for d in week_days)
+        if days:
+            stats.top_day, stats.top_day_count = max(days.items(), key=lambda kv: (kv[1], kv[0]))
+        return stats
 
     # ------------------------------------------------------------ maintenance
     async def purge_old(self, max_age_seconds: float) -> None:

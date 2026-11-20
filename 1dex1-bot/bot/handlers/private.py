@@ -7,17 +7,18 @@ import asyncio
 from aiogram import F, Router
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramAPIError
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import CallbackQuery, FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from .. import texts
 from ..core import App, retry_flood
-from ..downloader import DownloadError, detect_site, download_video, extract_url
+from ..downloader import DownloadError, detect_site, download_audio, download_video, extract_url
 from ..utils import esc, user_full_name
 
 SETTING_NAMES = {
     "notify_edits": "✏️ Уведомлять об изменённых сообщениях",
     "save_view_once": "🔥 Сохранять одноразовые медиа",
+    "notify_deleted": "🗑 Уведомлять об удалённых сообщениях",
 }
 
 
@@ -106,9 +107,11 @@ async def on_private_text(message: Message, app: App) -> None:
             await status.edit_text(texts.LINK_FAILED.format(error=esc(str(e))))
             return
         try:
-            await retry_flood(lambda: message.answer_video(
-                FSInputFile(video.path), supports_streaming=True, width=video.width,
-                height=video.height, duration=video.duration, request_timeout=600))
+            # через bot.send_video: у шорткатов Message.answer_* request_timeout не работает
+            await retry_flood(lambda: app.bot.send_video(
+                chat_id=message.chat.id, video=FSInputFile(video.path), supports_streaming=True,
+                width=video.width, height=video.height, duration=video.duration,
+                request_timeout=600))
         except TelegramAPIError as e:
             await status.edit_text(texts.LINK_FAILED.format(error=esc(f"Telegram не принял видео: {e}")))
             return
@@ -119,13 +122,48 @@ async def on_private_text(message: Message, app: App) -> None:
             video.cleanup()
 
 
-async def _keep_upload_action(app: App, chat_id: int) -> None:
+async def _keep_upload_action(app: App, chat_id: int, action: str = "upload_video") -> None:
     while True:
         try:
-            await app.bot.send_chat_action(chat_id=chat_id, action="upload_video")
+            await app.bot.send_chat_action(chat_id=chat_id, action=action)
         except TelegramAPIError:
             pass
         await asyncio.sleep(4.5)
+
+
+async def on_music(message: Message, command: CommandObject, app: App) -> None:
+    """/music название — трек прямо в личку с ботом."""
+    user = message.from_user
+    if user is None or not app.config.is_allowed(user.id):
+        return
+    query = (command.args or "").strip()
+    if not query:
+        await message.answer(texts.MUSIC_USAGE.replace(".music", "/music"))
+        return
+    status = await message.answer(texts.MUSIC_LOADING)
+    action = asyncio.ensure_future(_keep_upload_action(app, message.chat.id, "upload_document"))
+    audio = None
+    try:
+        try:
+            audio = await download_audio(query[:200], app.config)
+        except DownloadError as e:
+            await status.edit_text(texts.LINK_FAILED.format(error=esc(str(e))))
+            return
+        thumb = FSInputFile(audio.thumbnail) if audio.thumbnail else None
+        try:
+            await retry_flood(lambda: app.bot.send_audio(
+                chat_id=message.chat.id, audio=FSInputFile(audio.path),
+                title=audio.title[:64] if audio.title else None,
+                performer=(audio.performer or "")[:64] or None,
+                duration=audio.duration, thumbnail=thumb, request_timeout=600))
+        except TelegramAPIError as e:
+            await status.edit_text(texts.LINK_FAILED.format(error=esc(f"Telegram не принял трек: {e}")))
+            return
+        await status.delete()
+    finally:
+        action.cancel()
+        if audio is not None:
+            audio.cleanup()
 
 
 def make_router() -> Router:
@@ -134,6 +172,7 @@ def make_router() -> Router:
     router.message(CommandStart())(on_start)
     router.message(Command("help"))(on_help)
     router.message(Command("status", "settings"))(on_status)
+    router.message(Command("music"))(on_music)
     router.callback_query(F.data.startswith("set:"))(on_toggle)
     router.message(F.text)(on_private_text)
     return router

@@ -7,10 +7,11 @@ import logging
 from typing import Any
 
 from aiogram.exceptions import TelegramAPIError
-from aiogram.types import BufferedInputFile, Message, ReplyParameters
+from aiogram.types import BufferedInputFile, LinkPreviewOptions, Message, ReplyParameters
 
 from .core import App, retry_flood
 from .db import Connection
+from .utils import is_self_destructing
 
 log = logging.getLogger(__name__)
 
@@ -50,12 +51,15 @@ async def resend_as_owner(app: App, conn: Connection, message: Message) -> Messa
         spoiler = {}
 
     async def call() -> Message | None:
+        if message.live_photo or message.dice or message.media_group_id:
+            # живое фото не переотправить как есть, кубик выпадет другим числом,
+            # альбом развалится на отдельные сообщения — такие оставляем как есть
+            return None
         if message.text is not None:
-            extra: dict[str, Any] = {}
-            if message.link_preview_options is not None:
-                extra["link_preview_options"] = message.link_preview_options
+            # у бота превью ссылок по умолчанию выключено — для копии берём как у оригинала
+            preview = message.link_preview_options or LinkPreviewOptions(is_disabled=False)
             return await bot.send_message(text=message.text, entities=message.entities,
-                                          parse_mode=None, **extra, **common)
+                                          parse_mode=None, link_preview_options=preview, **common)
         if message.photo:
             return await bot.send_photo(photo=message.photo[-1].file_id, **caption, **spoiler, **common)
         if message.video:
@@ -79,49 +83,53 @@ async def resend_as_owner(app: App, conn: Connection, message: Message) -> Messa
             return await bot.send_contact(phone_number=message.contact.phone_number,
                                           first_name=message.contact.first_name,
                                           last_name=message.contact.last_name, **common)
-        if message.dice:
-            return await bot.send_dice(emoji=message.dice.emoji, **common)
         return None
 
     return await retry_flood(call)
 
 
-async def send_media_to_owner(app: App, conn: Connection, source: Message, kind: str,
+async def send_media_to_owner(app: App, conn: Connection, source: Message | None, kind: str,
                               file_id: str, caption: str) -> None:
     """Присылает медиа владельцу в личку с ботом обычным (не одноразовым) сообщением.
 
-    Порядок: скачать (getFile, до 20 МБ) и залить заново — так получается независимая копия,
-    а одноразовое фото по file_id Telegram переотправить не даёт. Если файл больше 20 МБ
-    или скачать не вышло — пробуем переотправить по file_id (для видео/кружков/голосовых
-    это работает и без лимита размера).
+    • одноразовое (тип файла внутри file_id) — скачиваем (getFile, до 20 МБ) и заливаем заново:
+      по file_id Telegram одноразовое фото переотправить не даёт;
+    • обычное — сначала по file_id (быстро, без лимита размера, сохраняется имя файла),
+      а если не вышло — скачиваем и заливаем заново.
     """
     chat_id = conn.user_chat_id
     if kind in NO_CAPTION_KINDS:
         # у кружков и стикеров нет подписи — подпись отдельным сообщением, один раз
         await retry_flood(lambda: app.bot.send_message(chat_id=chat_id, text=caption))
 
+    size = _file_size(source, kind) if source is not None else None
+    filename = _file_name(source, kind) if source is not None else None
+    prefer_download = is_self_destructing(file_id) is not False
+
+    async def by_id() -> None:
+        await _send_by_file(app, chat_id, kind, file_id, caption)
+
+    async def by_download() -> None:
+        if size and size > GETFILE_LIMIT:
+            raise RuntimeError("файл больше 20 МБ — Bot API не даёт его скачать")
+        buf = io.BytesIO()
+        await app.bot.download(file_id, destination=buf)
+        data = buf.getvalue()
+        if not data:
+            raise RuntimeError("Telegram вернул пустой файл")
+        name = filename or f"{kind}.{EXTENSIONS.get(kind, 'bin')}"
+        await _send_by_file(app, chat_id, kind, BufferedInputFile(data, filename=name), caption)
+
+    attempts = (by_download, by_id) if prefer_download else (by_id, by_download)
     errors: list[str] = []
-    size = _file_size(source, kind)
-    if size is None or size <= GETFILE_LIMIT:
+    for attempt in attempts:
         try:
-            buf = io.BytesIO()
-            await app.bot.download(file_id, destination=buf)
-            data = buf.getvalue()
-            if not data:
-                raise RuntimeError("Telegram вернул пустой файл")
-            upload = BufferedInputFile(data, filename=f"{kind}.{EXTENSIONS.get(kind, 'bin')}")
-            await _send_by_file(app, chat_id, kind, upload, caption)
+            await attempt()
             return
         except Exception as e:  # noqa: BLE001
-            log.info("download+upload failed (%s): %s", kind, e)
+            log.info("save media via %s failed (%s): %s", attempt.__name__, kind, e)
             errors.append(str(e))
-    try:
-        await _send_by_file(app, chat_id, kind, file_id, caption)
-    except TelegramAPIError as e:
-        errors.append(str(e))
-        if size and size > GETFILE_LIMIT:
-            errors.append("файл больше 20 МБ")
-        raise RuntimeError("; ".join(errors)) from e
+    raise RuntimeError("; ".join(errors))
 
 
 async def _send_by_file(app: App, chat_id: int, kind: str, file: Any, caption: str) -> None:
@@ -155,3 +163,9 @@ def _file_size(message: Message, kind: str) -> int | None:
     else:
         obj = getattr(message, kind, None)
     return getattr(obj, "file_size", None)
+
+
+def _file_name(message: Message, kind: str) -> str | None:
+    obj = getattr(message, kind, None) if kind != "photo" else None
+    return getattr(obj, "file_name", None)
+

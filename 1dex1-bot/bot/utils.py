@@ -21,6 +21,16 @@ COMMAND_ALIASES: dict[str, tuple[str, ...]] = {
     "unmuteme": ("unmuteme", "antimute", "антимут", "размутьменя"),
     "link": ("link", "линк", "ссылка", "dl", "скачать"),
     "love": ("love", "лав", "люблю"),
+    "rose": ("rose", "roses", "роза", "розы"),
+    "fire": ("fire", "огонь", "фаер"),
+    "heart": ("heart", "сердце", "сердечко"),
+    "type": ("type", "тайп", "печать"),
+    "glitch": ("glitch", "глитч"),
+    "loading": ("loading", "load", "загрузка"),
+    "mock": ("mock", "мок"),
+    "weather": ("weather", "погода"),
+    "music": ("music", "song", "музыка", "трек", "песня"),
+    "stats": ("stats", "stat", "стата", "статистика"),
     "save": ("save", "сохранить", "сейв"),
     "stop": ("stop", "стоп"),
     "help": ("help", "помощь", "команды"),
@@ -54,11 +64,13 @@ def parse_command(text: str | None) -> Command | None:
 
 _UNITS: dict[str, int] = {}
 for _seconds, _names in (
-    (1, ("s", "sec", "secs", "second", "seconds", "с", "сек", "секунд", "секунда", "секунды")),
-    (60, ("m", "min", "mins", "minute", "minutes", "м", "мин", "минут", "минута", "минуты")),
-    (3600, ("h", "hr", "hrs", "hour", "hours", "ч", "час", "часа", "часов")),
-    (86400, ("d", "day", "days", "д", "дн", "день", "дня", "дней")),
-    (604800, ("w", "week", "weeks", "н", "нед", "неделя", "недели", "недель")),
+    (1, ("s", "sec", "secs", "second", "seconds", "с", "сек", "секунд", "секунда", "секунды",
+         "секунду")),
+    (60, ("m", "min", "mins", "minute", "minutes", "м", "мин", "минут", "минута", "минуты",
+          "минуту", "минутка", "минутку")),
+    (3600, ("h", "hr", "hrs", "hour", "hours", "ч", "час", "часа", "часов", "часик")),
+    (86400, ("d", "day", "days", "д", "дн", "день", "дня", "дней", "сутки", "суток")),
+    (604800, ("w", "week", "weeks", "н", "нед", "неделя", "недели", "недель", "неделю")),
 ):
     for _n in _names:
         _UNITS[_n] = _seconds
@@ -94,6 +106,9 @@ def parse_duration(raw: str) -> int | None:
             raise DurationError(raw)
         number = float(match.group(1).replace(",", "."))
         unit = match.group(2)
+        pos_after = match.end()
+        if pos_after < len(text) and text[pos_after] == ".":  # «10 мин.»
+            pos_after += 1
         if unit == "":
             multiplier = 60  # просто число = минуты
         elif unit in _UNITS:
@@ -102,7 +117,7 @@ def parse_duration(raw: str) -> int | None:
             raise DurationError(raw)
         total += number * multiplier
         found = True
-        pos = match.end()
+        pos = pos_after
     if not found or total < 1:
         raise DurationError(raw)
     return int(min(total, MAX_MUTE_SECONDS))

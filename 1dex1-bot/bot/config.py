@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -35,11 +37,24 @@ def _bool(name: str, default: bool) -> bool:
 
 
 def _ids(name: str) -> frozenset[int]:
+    """Список ID. Опечатка не должна молча открыть бота всем — поэтому падаем с понятной ошибкой."""
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return frozenset()
     out: set[int] = set()
-    for part in os.getenv(name, "").replace(";", ",").split(","):
-        part = part.strip()
+    bad: list[str] = []
+    for part in re.split(r"[,;\s]+", raw):
+        if not part:
+            continue
         if part.lstrip("-").isdigit():
             out.add(int(part))
+        else:
+            bad.append(part)
+    if bad or not out:
+        raise SystemExit(
+            f"❌ В {name} должны быть только числовые ID через запятую, а там: {', '.join(bad) or raw}. "
+            "Свой ID бот показывает по команде /start."
+        )
     return frozenset(out)
 
 
@@ -55,11 +70,18 @@ class Config:
     cache_days: int
     max_video_mb: int
     max_video_minutes: int
+    max_audio_minutes: int
     ytdlp_cookies: Path | None
     ytdlp_js_runtime: str
     tiktok_hd: bool
     set_bot_profile: bool
     log_level: str
+    tz_offset_hours: float = 3.0
+    weather_city: str = ""
+
+    @property
+    def tz(self) -> dt.tzinfo:
+        return dt.timezone(dt.timedelta(hours=self.tz_offset_hours))
 
     def is_allowed(self, user_id: int) -> bool:
         return not self.allowed_user_ids or user_id in self.allowed_user_ids
@@ -85,11 +107,15 @@ def load_config() -> Config:
         spam_delay=max(0.05, _float("SPAM_DELAY", 0.5)),
         love_frame_delay=max(0.2, _float("LOVE_FRAME_DELAY", 0.7)),
         cache_days=max(1, _int("CACHE_DAYS", 7)),
-        max_video_mb=max(1, min(_int("MAX_VIDEO_MB", 50), 2000)),
+        # 50 МБ — потолок облачного Bot API на загрузку файлов ботом
+        max_video_mb=max(1, min(_int("MAX_VIDEO_MB", 50), 50)),
         max_video_minutes=max(1, _int("MAX_VIDEO_MINUTES", 20)),
+        max_audio_minutes=max(1, _int("MAX_AUDIO_MINUTES", 15)),
         ytdlp_cookies=Path(cookies) if cookies else None,
         ytdlp_js_runtime=os.getenv("YTDLP_JS_RUNTIME", "").strip(),
         tiktok_hd=_bool("TIKTOK_HD", False),
         set_bot_profile=_bool("SET_BOT_PROFILE", True),
         log_level=os.getenv("LOG_LEVEL", "INFO").strip().upper() or "INFO",
+        tz_offset_hours=max(-12.0, min(_float("TZ_OFFSET", 3.0), 14.0)),
+        weather_city=os.getenv("WEATHER_CITY", "").strip(),
     )

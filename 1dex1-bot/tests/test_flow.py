@@ -33,7 +33,7 @@ async def test_mute_deletes_friend_messages_instantly(h: Harness) -> None:
     edits = h.session.of("EditMessageText")
     assert edits and edits[0].message_id == cmd.message_id
     assert "на 10 минут" in edits[0].text
-    assert edits[0].reply_markup.inline_keyboard[0][0].callback_data == f"unmute:{FRIEND.id}"
+    assert edits[0].reply_markup.inline_keyboard[0][0].callback_data == f"unmute:{OWNER.id}:{FRIEND.id}"
     mute = h.app.db.get_mute(OWNER.id, FRIEND.id)
     assert mute is not None and mute.until and 590 < mute.until - time.time() <= 600
     assert mute.status_msg_id == cmd.message_id
@@ -49,7 +49,7 @@ async def test_mute_deletes_friend_messages_instantly(h: Harness) -> None:
 
 async def test_mute_forever_and_bad_duration(h: Harness) -> None:
     await h.owner_says(".mute")
-    assert "навсегда" in h.session.of("EditMessageText")[0].text
+    assert h.session.of("EditMessageText")[0].text == "🔇 <b>Собеседник в муте</b>"
     assert h.app.db.get_mute(OWNER.id, FRIEND.id).until is None
 
     await h.owner_says(".unmute")
@@ -98,12 +98,12 @@ async def test_friend_cannot_use_commands(h: Harness) -> None:
 async def test_unmute_button_only_for_owner(h: Harness) -> None:
     cmd = await h.owner_says(".mute")
     h.session.clear()
-    await h.press(FRIEND, f"unmute:{FRIEND.id}", cmd.message_id)
+    await h.press(FRIEND, f"unmute:{OWNER.id}:{FRIEND.id}", cmd.message_id)
     answer = h.session.of("AnswerCallbackQuery")[0]
     assert answer.text == texts.ONLY_OWNER_CAN_UNMUTE and answer.show_alert
     assert h.app.db.get_mute(OWNER.id, FRIEND.id) is not None
 
-    await h.press(OWNER, f"unmute:{FRIEND.id}", cmd.message_id)
+    await h.press(OWNER, f"unmute:{OWNER.id}:{FRIEND.id}", cmd.message_id)
     assert h.app.db.get_mute(OWNER.id, FRIEND.id) is None
     edit = h.session.of("EditMessageText")[-1]
     assert edit.text == texts.UNMUTED and edit.business_connection_id == CONN_ID

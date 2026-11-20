@@ -11,10 +11,15 @@ import time
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.exceptions import TelegramAPIError, TelegramUnauthorizedError
-from aiogram.types import BotCommand, BotCommandScopeAllPrivateChats
+from aiogram.exceptions import (
+    TelegramAPIError,
+    TelegramNetworkError,
+    TelegramServerError,
+    TelegramUnauthorizedError,
+)
+from aiogram.types import BotCommand, BotCommandScopeAllPrivateChats, User
 
-from . import texts
+from . import downloader, texts
 from .config import Config, load_config
 from .core import App
 from .db import Database
@@ -32,6 +37,7 @@ async def setup_bot_profile(bot: Bot) -> None:
                 BotCommand(command="start", description="Как подключить и все команды"),
                 BotCommand(command="status", description="Статус подключения и настройки"),
                 BotCommand(command="help", description="Шпаргалка по командам"),
+                BotCommand(command="music", description="Найти трек: /music название"),
             ],
             scope=BotCommandScopeAllPrivateChats(),
         )
@@ -41,15 +47,30 @@ async def setup_bot_profile(bot: Bot) -> None:
         log.warning("Не удалось обновить профиль бота: %s", e)
 
 
+async def _get_me_with_retry(bot: Bot, attempts: int = 8) -> User:
+    """На телефоне сеть может появиться не сразу — не падаем на первом же обрыве."""
+    delay = 2.0
+    for attempt in range(1, attempts + 1):
+        try:
+            return await bot.get_me()
+        except (TelegramNetworkError, TelegramServerError) as e:
+            if attempt == attempts:
+                raise
+            log.warning("Нет связи с Telegram (%s), пробую ещё раз через %.0f с…", e, delay)
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 60)
+    raise RuntimeError("unreachable")
+
+
 async def maintenance(app: App) -> None:
     """Фон: снятие мутов по таймеру, чистка старого кэша и временных файлов."""
     last_purge = 0.0
     while True:
         await asyncio.sleep(3)
         now = time.time()
-        for owner_id, chat_id, _mute in app.db.expired_mutes(now):
+        for owner_id, chat_id, mute in app.db.expired_mutes(now):
             try:
-                await expire_mute(app, owner_id, chat_id)
+                await expire_mute(app, owner_id, chat_id, mute)
             except Exception:  # noqa: BLE001
                 log.exception("expire_mute failed")
         if now - last_purge > 3600:
@@ -91,7 +112,12 @@ async def main() -> None:
         cfg.download_dir.mkdir(parents=True, exist_ok=True)
         _cleanup_downloads(cfg, max_age=0)
 
-        me = await bot.get_me()
+        me = await _get_me_with_retry(bot)
+        if cfg.allowed_user_ids:
+            log.info("Доступ только для ID: %s", ", ".join(map(str, sorted(cfg.allowed_user_ids))))
+        else:
+            log.warning("ALLOWED_USER_IDS пустой — ботом может пользоваться любой, кто его подключит. "
+                        "Впиши свой ID (бот покажет его по /start) в .env.")
         app.bot_id, app.bot_username = me.id, me.username or app.bot_username
         log.info("Бот @%s (id %s) запускается", me.username, me.id)
         if not me.can_connect_to_business:
@@ -117,6 +143,7 @@ async def main() -> None:
             with contextlib.suppress(asyncio.CancelledError):
                 await bg
         await app.shutdown()
+        downloader.shutdown()
         await db.close()
         await bot.session.close()
 

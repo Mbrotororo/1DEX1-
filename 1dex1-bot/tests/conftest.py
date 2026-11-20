@@ -118,6 +118,7 @@ def make_config(tmp_path: Path, **overrides: Any) -> Config:
         cache_days=7,
         max_video_mb=50,
         max_video_minutes=20,
+        max_audio_minutes=15,
         ytdlp_cookies=None,
         ytdlp_js_runtime="",
         tiktok_hd=False,
@@ -160,9 +161,19 @@ class Harness:
         await self.feed(business_message=m)
         return m
 
-    async def friend_edits(self, message_id: int, text: str) -> None:
+    async def friend_edits(self, message_id: int, text: str, settle: bool = True) -> None:
         m = self.msg(FRIEND, text, message_id=message_id, edit_date=int(NOW.timestamp()))
         await self.feed(edited_business_message=m)
+        if settle:
+            await self.settle()
+
+    async def friend_deletes(self, *message_ids: int) -> None:
+        from aiogram.types import BusinessMessagesDeleted
+        chat = Chat(id=FRIEND.id, type="private", first_name=FRIEND.first_name,
+                    last_name=FRIEND.last_name, username=FRIEND.username)
+        await self.feed(deleted_business_messages=BusinessMessagesDeleted(
+            business_connection_id=CONN_ID, chat=chat, message_ids=list(message_ids)))
+        await self.settle()
 
     async def press(self, user: User, data: str, message_id: int) -> None:
         cb = CallbackQuery(id="cb1", from_user=user, chat_instance="ci", data=data,
@@ -191,8 +202,11 @@ async def h(tmp_path: Path) -> AsyncGenerator[Harness, None]:
               default=DefaultBotProperties(parse_mode=ParseMode.HTML, link_preview_is_disabled=True))
     db = Database(tmp_path / "bot.sqlite3")
     await db.open()
+    from bot.handlers import edits as edits_module
+    edits_module.EDIT_DEBOUNCE = 0  # в тестах уведомления о правках приходят сразу
     app = App(bot, db, make_config(tmp_path))
     app.bot_id = BOT_ID
+    app.flash_seconds = 0
     dp = Dispatcher()
     dp["app"] = app
     dp.include_router(build_router())

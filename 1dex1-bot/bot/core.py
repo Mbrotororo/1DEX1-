@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from typing import Any, TypeVar
 
@@ -71,6 +72,10 @@ class App:
         self._all_tasks: set[asyncio.Task[Any]] = set()
         self._warned: set[tuple[int, str]] = set()
         self._conn_locks: dict[str, asyncio.Lock] = {}
+        # то, что удалил сам бот (мут, антимут, команды) — чтобы не слать «собеседник удалил»
+        self._self_deleted: dict[tuple[int, int, int], float] = {}
+        # очередь по чату: сообщения владельца обрабатываются строго по порядку
+        self._chat_locks: dict[tuple[int, int], asyncio.Lock] = {}
 
     # ------------------------------------------------------------ connections
     async def get_connection(self, connection_id: str | None, refresh: bool = False) -> Connection | None:
@@ -133,10 +138,25 @@ class App:
             log.info("edit %s/%s failed: %s", chat_id, message_id, e)
             return False
 
+    def chat_lock(self, owner_id: int, chat_id: int) -> asyncio.Lock:
+        return self._chat_locks.setdefault((owner_id, chat_id), asyncio.Lock())
+
+    def mark_self_deleted(self, owner_id: int, chat_id: int, message_ids: list[int]) -> None:
+        now = time.monotonic()
+        if len(self._self_deleted) > 5000:
+            self._self_deleted = {k: v for k, v in self._self_deleted.items() if now - v < 600}
+        for mid in message_ids:
+            self._self_deleted[(owner_id, chat_id, mid)] = now
+
+    def was_self_deleted(self, owner_id: int, chat_id: int, message_id: int) -> bool:
+        ts = self._self_deleted.pop((owner_id, chat_id, message_id), None)
+        return ts is not None and time.monotonic() - ts < 600
+
     async def delete(self, conn: Connection, chat_id: int, *message_ids: int | None) -> bool:
         ids = [m for m in message_ids if m]
         if not ids:
             return True
+        self.mark_self_deleted(conn.user_id, chat_id, ids)
         ok = True
         for start in range(0, len(ids), 100):
             batch = ids[start:start + 100]
@@ -163,20 +183,20 @@ class App:
             if await self.edit(conn, chat_id, message.message_id, text,
                                reply_markup=reply_markup, parse_mode=parse_mode):
                 return message.message_id
+        # сначала отправляем ответ и только потом убираем команду: если отправить нельзя
+        # (например, 24-часовое окно Telegram), команда останется, а ошибка дойдёт до владельца
+        sent = await self.send(conn, chat_id, text, reply_markup=reply_markup, parse_mode=parse_mode)
         await self.delete(conn, chat_id, message.message_id)
-        try:
-            sent = await self.send(conn, chat_id, text, reply_markup=reply_markup,
-                                   parse_mode=parse_mode)
-            return sent.message_id
-        except TelegramAPIError as e:
-            log.warning("respond failed in %s: %s", chat_id, e)
-            return None
+        return sent.message_id
 
-    async def flash(self, conn: Connection, message: Message, text: str, seconds: float = 6) -> None:
+    flash_seconds: float = 6.0
+
+    async def flash(self, conn: Connection, message: Message, text: str, seconds: float | None = None) -> None:
         """Временный ответ (ошибки/подсказки), который сам исчезнет из переписки."""
         msg_id = await self.respond(conn, message, text)
         if msg_id:
-            self.spawn(self._delete_later(conn, message.chat.id, msg_id, seconds))
+            delay = self.flash_seconds if seconds is None else seconds
+            self.spawn(self._delete_later(conn, message.chat.id, msg_id, delay))
 
     async def _delete_later(self, conn: Connection, chat_id: int, msg_id: int, seconds: float) -> None:
         await asyncio.sleep(seconds)
