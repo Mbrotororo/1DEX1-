@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Luma draws its own wallpaper full-screen, so the system wallpaper is NOT shown
+        behind the window. Bars are transparent; MainActivity calls enableEdgeToEdge().
+    -->
+    <style name="Base.Theme.Luma" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowShowWallpaper">false</item>
+        <item name="android:windowBackground">@color/luma_window_background</item>
+        <item name="android:colorBackground">@color/luma_window_background</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@color/luma_transparent</item>
+        <item name="android:navigationBarColor">@color/luma_transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowActivityTransitions">true</item>
+    </style>
+
+    <style name="Theme.Luma" parent="Base.Theme.Luma" />
+</resources>

@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Home -->
+    <string name="home_search">Поиск</string>
+    <string name="greeting_night">Доброй ночи</string>
+    <string name="greeting_morning">Доброе утро</string>
+    <string name="greeting_day">Добрый день</string>
+    <string name="greeting_evening">Добрый вечер</string>
+    <string name="greeting_with_name">%1$s, %2$s</string>
+    <string name="battery_percent">%1$d%%</string>
+    <string name="cd_battery">Заряд батареи %1$d%%</string>
+    <string name="cd_battery_charging">Заряд батареи %1$d%%, заряжается</string>
+    <string name="cd_dock">Док</string>
+    <string name="home_empty_hint">Удерживайте значок в списке приложений, чтобы добавить его на экран Домой</string>
+
+    <!-- Menus -->
+    <string name="menu_wallpaper">Обои</string>
+    <string name="menu_settings">Настройки Luma</string>
+    <string name="menu_remove_from_home">Убрать с экрана</string>
+    <string name="menu_add_to_home">На экран Домой</string>
+    <string name="menu_add_to_dock">В док</string>
+    <string name="menu_remove_from_dock">Убрать из дока</string>
+    <string name="menu_app_info">О приложении</string>
+    <string name="menu_uninstall">Удалить</string>
+    <string name="dock_full">В доке нет места: максимум 4 приложения</string>
+
+    <!-- Drawer -->
+    <string name="drawer_title">Приложения</string>
+    <string name="drawer_search_hint">Поиск приложений</string>
+    <string name="drawer_nothing_found">Ничего не найдено</string>
+    <string name="drawer_clear">Очистить</string>
+    <string name="drawer_count">Всего: %1$d</string>
+    <string name="drawer_found">Найдено: %1$d</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Настройки Luma</string>
+    <string name="settings_done">Готово</string>
+    <string name="settings_preview">Предпросмотр</string>
+    <string name="settings_preview_note">Все изменения видны сразу: стекло вокруг вас и есть предпросмотр.</string>
+
+    <string name="section_glass">Стиль стекла</string>
+    <string name="glass_blur">Размытие</string>
+    <string name="glass_transparency">Прозрачность</string>
+    <string name="glass_edge">Яркость края</string>
+    <string name="glass_corners">Скругление</string>
+    <string name="glass_tint">Оттенок</string>
+    <string name="glass_refraction">Жидкое преломление</string>
+    <string name="glass_refraction_note">Работает на Android 13 и новее</string>
+    <string name="glass_refraction_strength">Сила преломления</string>
+    <string name="glass_tilt">Блики при наклоне</string>
+    <string name="glass_tilt_note">Свет на стекле следует за наклоном телефона</string>
+    <string name="glass_custom">Свой</string>
+
+    <string name="section_wallpaper">Обои</string>
+    <string name="wallpaper_custom">Своё фото</string>
+    <string name="wallpaper_pick_photo">Выбрать фото</string>
+    <string name="wallpaper_set_system">Поставить как обои системы</string>
+    <string name="wallpaper_setting_system">Устанавливаем…</string>
+    <string name="wallpaper_applied">Обои установлены</string>
+    <string name="error_wallpaper_apply">Не удалось установить обои</string>
+    <string name="error_photo">Не удалось загрузить фото</string>
+    <string name="error_photo_picker">Не удалось открыть галерею</string>
+
+    <string name="section_icons">Значки</string>
+    <string name="icons_style">Стиль</string>
+    <string name="icons_style_original">Оригинал</string>
+    <string name="icons_style_glass">Стекло</string>
+    <string name="icons_style_clear">Прозрачные</string>
+    <string name="icons_size">Размер</string>
+    <string name="icons_labels">Подписи</string>
+    <string name="icons_columns">Колонки</string>
+
+    <string name="section_desktop">Рабочий стол</string>
+    <string name="desktop_name">Имя для приветствия</string>
+    <string name="desktop_name_hint">Ваше имя</string>
+    <string name="desktop_clock">Часы</string>
+    <string name="desktop_search">Поиск</string>
+
+    <string name="default_title">Рабочий стол по умолчанию</string>
+    <string name="default_make">Сделать Luma рабочим столом</string>
+    <string name="default_make_note">Тогда кнопка «Домой» будет открывать Luma.</string>
+    <string name="default_is_luma">Luma — ваш рабочий стол</string>
+    <string name="default_change">Выбрать другой рабочий стол</string>
+    <string name="default_open_settings">Открыть настройки рабочего стола</string>
+    <string name="error_open_settings">Не удалось открыть настройки</string>
+
+    <string name="section_about">О Luma</string>
+    <string name="about_version">Версия %1$s</string>
+    <string name="about_made_for">Сделано для 1DEX1</string>
+    <string name="about_tagline">Рабочий стол из жидкого стекла</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_title">Добро пожаловать в&#160;Luma</string>
+    <string name="onboarding_text">Рабочий стол из жидкого стекла: красивые обои, стеклянные значки и ничего лишнего. Сделайте Luma рабочим столом, чтобы она открывалась по кнопке «Домой».</string>
+    <string name="onboarding_make_default">Сделать рабочим столом</string>
+    <string name="onboarding_later">Позже</string>
+</resources>

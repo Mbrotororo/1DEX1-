@@ -1,0 +1,21 @@
+# Gradle / build output
+.gradle/
+build/
+app/build/
+.kotlin/
+
+# Local machine configuration (SDK path, signing passwords)
+local.properties
+
+# Signing keys - never commit
+*.jks
+*.keystore
+
+# IDE
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# NOTE: release/Luma.apk is intentionally NOT ignored.

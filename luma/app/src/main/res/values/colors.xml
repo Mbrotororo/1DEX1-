@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Deep night blue of the Luma icon; shown before Luma draws its own wallpaper. -->
+    <color name="luma_window_background">#FF020A3C</color>
+    <color name="luma_transparent">#00000000</color>
+</resources>

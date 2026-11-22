@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Base.V29.Theme.Luma" parent="Base.V28.Theme.Luma">
+        <item name="android:enforceStatusBarContrast">false</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
+    </style>
+
+    <style name="Theme.Luma" parent="Base.V29.Theme.Luma" />
+</resources>

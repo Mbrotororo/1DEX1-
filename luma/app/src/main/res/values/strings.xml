@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name" translatable="false">Luma</string>
+
+    <!-- AppRepository -->
+    <string name="error_open_app">Не удалось открыть приложение</string>
+    <string name="error_open_app_info">Не удалось открыть сведения о приложении</string>
+    <string name="error_uninstall">Не удалось удалить приложение</string>
+    <string name="error_uninstall_system">Системное приложение нельзя удалить</string>
+</resources>
