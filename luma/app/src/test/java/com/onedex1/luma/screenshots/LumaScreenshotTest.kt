@@ -260,6 +260,18 @@ class LumaScreenshotTest {
         capture("15_android12_settings_refraction_note")
     }
 
+    /**
+     * Android 8.1: plain path and the pre-P stacked drop shadow (no BlurMaskFilter) under layered glass.
+     * (The fake system-bar insets of this harness are not applied below API 30, so the clock starts at
+     * the very top here; on a device the status bar inset is used as usual.)
+     */
+    @Test
+    @Config(sdk = [27])
+    fun android8_home() {
+        render(base)
+        capture("16_android8_home")
+    }
+
     /** Sanity check: the AGSL source compiles on Robolectric's Skia (otherwise the fallback is used). */
     @Test
     fun liquid_shader_compiles_or_falls_back() {
