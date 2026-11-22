@@ -1,0 +1,17 @@
+{
+  "voice": "ru_RU-denis-medium",
+  "speed": 1.12,
+  "durations": {
+    "01-title": 5.584,
+    "02-wakeup": 5.12,
+    "03-tnt": 5.828,
+    "04-clowns": 4.992,
+    "05-github": 6.06,
+    "06-fps": 6.769,
+    "07-auction": 5.399,
+    "08-spleef": 5.271,
+    "09-wipe": 3.611,
+    "10-night": 4.876,
+    "11-outro": 6.536
+  }
+}

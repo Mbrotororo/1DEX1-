@@ -1,0 +1,30 @@
+{
+  "name": "zako-day-video",
+  "version": "1.0.0",
+  "private": true,
+  "description": "1DEX1 — один день из жизни Zako (Remotion + three.js, вертикальное видео для TikTok)",
+  "scripts": {
+    "sounds": "node scripts/fetch-sounds.mjs",
+    "voice": "python3 scripts/voice.py && python3 scripts/align.py",
+    "dev": "npm run sounds && remotion studio",
+    "render": "npm run sounds && remotion render ZakoDay out/zako-day.mp4",
+    "still": "remotion still ZakoDay out/frame.png",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fontsource/rubik": "^5.2.5",
+    "@react-three/fiber": "^9.8.2",
+    "@remotion/cli": "4.0.542",
+    "@remotion/three": "4.0.542",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "remotion": "4.0.542",
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/three": "^0.187.0",
+    "typescript": "^5.6.0"
+  }
+}
