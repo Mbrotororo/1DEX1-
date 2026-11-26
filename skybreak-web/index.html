@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#101519"><title>SKYBREAK — Воздушное крыло</title><link rel="icon" href="mark.svg" type="image/svg+xml"><link rel="stylesheet" href="style.css"></head>
+<body>
+<svg class="defs" xmlns="http://www.w3.org/2000/svg"><defs>
+<symbol id="wing" viewBox="0 0 48 42"><path fill="currentColor" d="M2 9 19 16 31 3 25 18 36 11 47 2 36 22 19 38 20 27 9 25 18 22 5 18 14 18Z"/></symbol>
+<symbol id="plane" viewBox="0 0 24 24"><path d="m12 2 1.6 7 7 5.2v2L14 14.1l-.6 4.1 2.1 1.8v1.4L12 20.1l-3.5 1.3V20l2.1-1.8-.6-4.1-6.6 2.1v-2l7-5.2Z"/></symbol>
+<symbol id="target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="1.5"/><path d="M12 1v5m0 12v5M1 12h5m12 0h5"/></symbol>
+<symbol id="pin" viewBox="0 0 24 24"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z"/><circle cx="12" cy="10" r="2.4"/></symbol>
+<symbol id="audio" viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3zM16 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></symbol>
+<symbol id="mute" viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3zM16 9l6 6m0-6-6 6"/></symbol>
+<symbol id="book" viewBox="0 0 24 24"><path d="M5 3h14v18H6a2 2 0 0 1-2-2V5a2 2 0 0 1 1-2ZM4 17h15M8 7h7m-7 4h5"/></symbol>
+<symbol id="help" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M5 9h2m2 0h2m2 0h2m2 0h2M5 12h2m2 0h2m2 0h2m2 0h2M8 15h8"/></symbol>
+<symbol id="medal" viewBox="0 0 24 24"><path d="M5 3h14l-3.5 8h-7ZM12 3v7"/><circle cx="12" cy="15" r="5"/></symbol>
+<symbol id="camera" viewBox="0 0 24 24"><path d="M3 7h4l2-3h6l2 3h4v13H3z"/><circle cx="12" cy="13" r="4"/></symbol>
+<symbol id="chev" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+<symbol id="pilot" viewBox="0 0 24 24"><path d="m3 6 9 5 9-5v4l-9 5-9-5zm2 8 7 4 7-4"/></symbol>
+<symbol id="boost" viewBox="0 0 24 24"><path d="m5 16 7-6 7 6M5 10l7-6 7 6"/></symbol>
+<symbol id="missile" viewBox="0 0 24 24"><path d="M8 16 5 19m1-6-3 2 4 2 2 4 2-3M8 15l1-4 7-7 5-1-1 5-7 7-4 1ZM14 6l3 3"/></symbol>
+<symbol id="check" viewBox="0 0 24 24"><path d="m5 12 4.5 4.5L19 7"/></symbol>
+</defs></svg>
+<div id="hangar">
+<header><div class="header-in"><a href="#" class="brand" id="home" aria-label="SKYBREAK — ангар"><svg><use href="#wing"/></svg><span>SKYBREAK</span></a>
+<nav><button class="nav active" id="navHangar"><svg class="ico"><use href="#plane"/></svg>Ангар</button><button class="nav" id="navLog"><svg class="ico"><use href="#book"/></svg>Журнал</button><button class="nav" id="navTree">Развитие</button><button class="nav" id="navSettings">Настройки</button></nav>
+<div class="header-end"><button id="sound" class="icon-btn" aria-label="Выключить звук"><svg class="ico"><use href="#audio"/></svg></button><i></i><span class="rank-icon"><svg class="ico"><use href="#pilot"/></svg></span><span id="rank">Кадет</span></div></div></header>
+<main>
+<section class="hero" aria-label="Ангар"><canvas id="showroom" tabindex="0" aria-label="Трёхмерная модель в ангаре. Проведи пальцем для поворота, сведи два пальца для изменения масштаба."></canvas><div class="shade"></div>
+<div class="view-tools"><button id="inspect" aria-pressed="false">Осмотреть</button><button id="zoomOut" aria-label="Отдалить самолёт">−</button><button id="zoomIn" aria-label="Приблизить самолёт">+</button><button id="viewHome" aria-label="Начальный ракурс">⟲</button></div>
+<div class="hero-content"><div class="op-code"><span class="dash"></span>АНГАР ЗВЕНА «ВЕКТОР»</div><h1><small id="heroCode">F-19</small><span id="heroName">Сокол</span></h1><div class="hero-info" id="heroRole">Истребитель</div>
+<div class="sortie-size" role="group" aria-label="Масштаб боя"><button id="wingSmall">Бой 3×3</button><button id="wingMass">25 самолётов</button></div><div class="hangar-actions"><button class="primary" id="launch"><span class="play"></span>В бой</button><button class="secondary" id="train">Учебный вылет</button></div></div></section>
+<section class="maps"><div class="fleet-head"><div><span class="section-icon"><svg class="ico"><use href="#pin"/></svg></span><h2>Карта вылета</h2></div><span class="mini">2 × 2 КМ</span></div><div id="mapCards"></div></section>
+<section class="fleet"><div class="fleet-head"><div><span class="section-icon"><svg class="ico"><use href="#plane"/></svg></span><h2>Авиапарк</h2></div><span class="mini">6 САМОЛЁТОВ</span></div><div id="cards"></div></section>
+<footer><button id="help"><svg class="ico"><use href="#help"/></svg>Управление</button><button id="about">Об игре</button><span><svg class="ico"><use href="#medal"/></svg>Лучший счёт <strong id="best">0</strong></span></footer>
+</main></div>
+<section id="game" hidden aria-label="Воздушный бой"><canvas id="world"></canvas><canvas id="overlay"></canvas><div id="flightTools"><button id="pause" aria-label="Пауза"><span class="pause-icon"></span></button><button id="cam" aria-label="Сменить камеру"><svg class="ico"><use href="#camera"/></svg></button></div>
+<div id="steer" aria-label="Поле управления полётом"></div>
+<div class="match-hud" aria-label="Счёт команд"><div class="team blue"><span>ВЕКТОР</span><b id="blueScore">0</b></div><div class="match-clock"><b id="matchTime">2:30</b><small id="scoreGoal">ДО 3</small></div><div class="team red"><b id="redScore">0</b><span>ГРИФ</span></div></div>
+<div class="flight-actions"><button id="boostBtn" aria-label="Форсаж" aria-pressed="false"><svg class="ico"><use href="#boost"/></svg><span>Форсаж</span></button><button id="cobraBtn" class="maneuver" hidden aria-label="Манёвр Кобра"><b>∿</b><span>Кобра</span></button><div class="arms"><button id="rocketBtn" aria-label="Пуск ракеты" aria-disabled="true"><svg class="ico"><use href="#missile"/></svg><span id="rocketCount">Ракета · 4</span></button><button id="fire" aria-label="Огонь"><svg class="ico"><use href="#target"/></svg><span>Огонь</span></button></div></div><div id="flightHint"></div></section>
+<dialog id="dialog"><div class="modalbody"><button class="close" aria-label="Закрыть">×</button><div id="dialogContent"></div></div></dialog>
+<script src="flanker.js"></script><script src="models.js"></script><script src="geography.js"></script><script src="surfaces.js"></script><script src="world.js"></script><script src="ui.js"></script><script src="career.js"></script><script src="dynamics.js"></script><script src="battle.js"></script><script src="flight.js"></script><script src="hall-model.js"></script><script src="showroom.js"></script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a60bee650ee674db',t:'MTc5NTcyNzk2NA=='};var l=window.parent.location,o;try{o=new URL(l.origin).origin}catch(e){try{o=new URL(new URL(l.href).origin).origin}catch(e){o=''}}var u='/cdn-cgi/challenge-platform/scripts/jsd/main.js?ray=a60bee650ee674db',a=document.createElement('script');a.src=o?new URL(u,o).href:u;document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body></html>

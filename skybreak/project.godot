@@ -1,0 +1,39 @@
+; Godot 4.4
+config_version=5
+
+[application]
+
+config/name="SKYBREAK"
+config/description="Воздушные бои против ботов"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.4", "GL Compatibility")
+
+[autoload]
+
+Data="*res://autoload/data.gd"
+Game="*res://autoload/game.gd"
+Profile="*res://autoload/profile.gd"
+Sfx="*res://autoload/sfx.gd"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/handheld/orientation=4
+
+[input_devices]
+
+pointing/emulate_touch_from_mouse=false
+
+[physics]
+
+common/physics_ticks_per_second=60
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/vram_compression/import_etc2_astc=true
+anti_aliasing/quality/msaa_3d=1
