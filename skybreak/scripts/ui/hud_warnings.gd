@@ -1,5 +1,6 @@
 extends Control
 ## Предупреждения по центру: сваливание, пожар, ракета, земля, граница, шасси, обслуживание.
+## Слева над полётными данными — плашка «В облаке», пока самолёт игрока в облаке.
 
 const D = preload("res://scripts/ui/hud_draw.gd")
 const UiStyle = preload("res://scripts/ui/ui_style.gd")
@@ -10,6 +11,7 @@ const BORDER_WARN := 250.0      # за сколько метров до края
 var hud = null
 var u: float = 1.0
 var items: Array = []           # [{text, level:"danger"|"warn"|"info", progress:float}]
+var in_cloud: bool = false      # самолёт игрока в облаке
 var _clock: float = 0.0
 
 
@@ -24,7 +26,20 @@ func tick(dt: float) -> void:
 
 func refresh(pl, battle) -> void:
 	items = collect(pl, battle, hud != null and bool(hud.touch_on))
+	in_cloud = player_in_cloud(pl, battle)
 	queue_redraw()
+
+
+## Самолёт в облаке: флаг Aircraft.in_cloud, а если его нет — плотность облака в точке.
+static func player_in_cloud(pl, battle) -> bool:
+	if not D.alive_node(pl):
+		return false
+	if "in_cloud" in pl:
+		return bool(pl.in_cloud)
+	var world = D.prop(battle, "world")
+	if world != null and world.has_method("cloud_density_at"):
+		return float(world.cloud_density_at(pl.global_position)) > 0.5
+	return false
 
 
 ## Список активных предупреждений (отдельно, чтобы проверять в тестах).
@@ -72,11 +87,13 @@ static func collect(pl, battle, touch: bool) -> Array:
 		var prog := clampf(float(D.prop(pl, "service_progress", 0.0)), 0.0, 1.0)
 		var repairing: bool = dmg != null and dmg.has_method("is_damaged") and bool(dmg.is_damaged())
 		var label := "Ремонт" if repairing else "Перезарядка"
-		out.append({"text": "%s %d%%" % [label, int(prog * 100.0)], "level": "info", "progress": prog})
+		out.append({"text": "%s %d %%" % [label, int(prog * 100.0)], "level": "info", "progress": prog})
 	return out
 
 
 func _draw() -> void:
+	if in_cloud:
+		_draw_cloud_tag()
 	if items.is_empty():
 		return
 	var y := size.y * 0.30
@@ -104,3 +121,21 @@ func _draw() -> void:
 				D.bar(self, pr, float(it.get("progress", 0.0)), UiStyle.GOOD)
 		D.text_mid(self, r.get_center(), String(it.text), fs, txt_col, 0, f, 0 if lvl == "danger" else 3)
 		y += h + 6.0 * u
+
+
+## Небольшая плашка «В облаке» у полётных данных (на сенсорном экране — под ними).
+func _draw_cloud_tag() -> void:
+	var text := "В облаке"
+	var fs := int(round(14.0 * u))
+	var f: Font = D.bold()
+	var tw := D.text_width(text, fs, f)
+	var h := 24.0 * u
+	var anchor := Rect2(16.0 * u, size.y * 0.5, 212.0 * u, 0.0)
+	if hud != null and hud.flight != null and hud.flight.has_method("panel_rect"):
+		anchor = hud.flight.panel_rect()
+	var touch := hud != null and bool(hud.touch_on)
+	var y := anchor.end.y + 8.0 * u if touch else anchor.position.y - h - 8.0 * u
+	var r := Rect2(anchor.position.x, y, tw + 30.0 * u, h)
+	draw_style_box(D.box(Color(0.05, 0.07, 0.09, 0.78), int(5 * u), Color(0.85, 0.9, 0.95, 0.45), 1), r)
+	draw_circle(Vector2(r.position.x + 11.0 * u, r.get_center().y), 3.5 * u, Color(0.85, 0.9, 0.95))
+	D.text_mid(self, Vector2(r.position.x + 19.0 * u, r.get_center().y), text, fs, UiStyle.TEXT, -1, f, 0)

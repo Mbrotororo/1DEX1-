@@ -2,6 +2,9 @@ class_name Showroom
 extends Node3D
 ## 3D-ангар для меню: здание, свет, самолёт на полу и орбитальная камера.
 ## Мышь или палец — вращение, колесо или щипок — приближение. Через 6 с без ввода камера медленно облетает самолёт.
+## set_view_rect(rect) — свободная часть экрана между панелями: самолёт ставится в её центр,
+## а дистанция (и при нужде угол обзора) подбирается по вершинам модели так, чтобы самолёт
+## при облёте под любым углом помещался в эту часть экрана.
 
 const Hall = preload("res://scripts/hangar/showroom_hall.gd")
 
@@ -15,6 +18,13 @@ const DEFAULT_PITCH := 0.2
 const FADE_OUT := 0.12
 const FADE_IN := 0.25
 const CAM_MAX_Y := 8.6
+const BASE_FOV := 46.0
+const MAX_FOV := 72.0
+const FIT_FILL := 0.96          # доля свободной области, которую может занять самолёт
+const FIT_MAX_DIST := 25.0      # дальше камера упирается в стены — тогда шире угол обзора
+const FIT_MIN_DIST := 7.0
+const FIT_YAWS := 16            # сколько направлений облёта проверять
+const FIT_POINTS := 1500        # сколько вершин модели брать для расчёта
 
 var camera: Camera3D
 var interactive := true
@@ -49,6 +59,8 @@ var _touches: Dictionary = {}
 var _pinch_start := 0.0
 var _pinch_dist := 0.0
 var _screen_offset := Vector2.ZERO
+var _view_rect := Rect2()             # свободная область экрана (координаты вьюпорта), пусто — весь экран
+var _fit_points := PackedVector3Array()   # вершины модели относительно точки, вокруг которой летает камера
 
 
 func _ready() -> void:
@@ -60,7 +72,7 @@ func _ready() -> void:
 	add_child(_holder)
 	camera = Camera3D.new()
 	camera.name = "Camera"
-	camera.fov = 46.0
+	camera.fov = BASE_FOV
 	camera.near = 0.1
 	camera.far = 600.0
 	add_child(camera)
@@ -170,6 +182,28 @@ func reset_view() -> void:
 ## Сдвиг самолёта на экране в долях ширины/высоты (например, 0.15 — правее, если слева панель).
 func set_screen_offset(offset: Vector2) -> void:
 	_screen_offset = offset
+
+
+## Свободная часть экрана (в координатах вьюпорта, как get_global_rect у Control).
+## Самолёт встаёт в её центр и целиком в неё помещается. Пустой Rect2 — весь экран.
+func set_view_rect(r: Rect2) -> void:
+	_view_rect = r
+	var vp := _viewport_size()
+	if r.size.x > 1.0 and r.size.y > 1.0:
+		var c := r.get_center()
+		_screen_offset = Vector2((c.x - vp.x * 0.5) / vp.x, (c.y - vp.y * 0.5) / vp.y)
+	else:
+		_screen_offset = Vector2.ZERO
+	_refit()
+
+
+func get_view_rect() -> Rect2:
+	return _view_rect
+
+
+## Расстояние камеры по умолчанию (после подгонки под свободную область).
+func default_distance() -> float:
+	return _dist_default
 
 
 func get_camera() -> Camera3D:
@@ -287,8 +321,10 @@ func _swap_model() -> void:
 	_dist_default = clampf(size * 0.82 + 2.4, 8.0, 24.0)
 	_dist_min = maxf(4.0, size * 0.45)
 	_dist_max = minf(30.0, size * 1.8 + 6.0)
-	_t_dist = _dist_default
 	_t_target = Vector3(0, gh * 0.75 + 0.3, 0)
+	_collect_fit_points()
+	_t_dist = _dist_default
+	_refit(true)
 
 
 func _process(dt: float) -> void:
@@ -328,3 +364,94 @@ func _update_camera(dt: float, snap: bool) -> void:
 	camera.position = pos
 	if not pos.is_equal_approx(look):
 		camera.look_at(look, Vector3.UP)
+
+
+
+# ------------------------------------------------------------------ подгонка под свободную область
+
+func _viewport_size() -> Vector2:
+	if is_inside_tree():
+		var vs := get_viewport().get_visible_rect().size
+		if vs.x > 1.0 and vs.y > 1.0:
+			return vs
+	return Vector2(1280, 720)
+
+
+## Вершины модели (с прореживанием) в координатах ангара; центр облёта — середина габаритов.
+func _collect_fit_points() -> void:
+	_fit_points = PackedVector3Array()
+	if model == null or not model.is_inside_tree():
+		return
+	var all := PackedVector3Array()
+	for n in model.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if mi == null or mi.mesh == null or not mi.is_visible_in_tree():
+			continue
+		var xf := _holder.global_transform.affine_inverse() * mi.global_transform
+		var faces := mi.mesh.get_faces()
+		for v in faces:
+			all.append(xf * v)
+	if all.is_empty():
+		return
+	var lo := all[0]
+	var hi := all[0]
+	for v in all:
+		lo = lo.min(v)
+		hi = hi.max(v)
+	var c := (lo + hi) * 0.5
+	_t_target = Vector3(c.x, maxf(c.y, 0.8), c.z)
+	var stride := maxi(1, all.size() / FIT_POINTS)
+	for i in range(0, all.size(), stride):
+		_fit_points.append(all[i] - _t_target)
+
+
+## Дистанция камеры и угол обзора, при которых самолёт помещается в свободную область
+## при облёте под любым курсом (наклон камеры — по умолчанию).
+static func fit_view(points: PackedVector3Array, frac: Vector2, aspect: float, pitch: float) -> Vector2:
+	if points.is_empty():
+		return Vector2(FIT_MIN_DIST, BASE_FOV)
+	var th_unit := aspect * frac.x * FIT_FILL     # tan(половины угла по горизонтали) на единицу tan(fov/2)
+	var tv_unit := frac.y * FIT_FILL
+	var t0 := tan(deg_to_rad(BASE_FOV) * 0.5)
+	var need := 0.0
+	var dirs: Array = []
+	for k in FIT_YAWS:
+		var yaw := DEFAULT_YAW + TAU * float(k) / float(FIT_YAWS)
+		var dir := Vector3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch))
+		var right := Vector3.UP.cross(-dir).normalized()
+		var up := (-dir).cross(right).normalized()
+		dirs.append([dir, right, up])
+		for q in points:
+			var d := q.dot(dir) + maxf(absf(q.dot(right)) / (t0 * th_unit), absf(q.dot(up)) / (t0 * tv_unit))
+			need = maxf(need, d)
+	if need <= FIT_MAX_DIST:
+		return Vector2(maxf(need, FIT_MIN_DIST), BASE_FOV)
+	# не помещается с базовым углом — камера у стены, угол обзора шире
+	var k_need := 0.0
+	for b in dirs:
+		var dir: Vector3 = b[0]
+		var right: Vector3 = b[1]
+		var up: Vector3 = b[2]
+		for q in points:
+			var depth := maxf(FIT_MAX_DIST - q.dot(dir), 0.5)
+			k_need = maxf(k_need, maxf(absf(q.dot(right)) / (depth * th_unit), absf(q.dot(up)) / (depth * tv_unit)))
+	var fov := clampf(rad_to_deg(2.0 * atan(k_need)), BASE_FOV, MAX_FOV)
+	return Vector2(FIT_MAX_DIST, fov)
+
+
+func _refit(force: bool = false) -> void:
+	if _fit_points.is_empty():
+		return
+	var vp := _viewport_size()
+	var frac := Vector2.ONE
+	if _view_rect.size.x > 1.0 and _view_rect.size.y > 1.0:
+		frac = Vector2(clampf(_view_rect.size.x / vp.x, 0.1, 1.0), clampf(_view_rect.size.y / vp.y, 0.1, 1.0))
+	var fit := fit_view(_fit_points, frac, vp.x / vp.y, DEFAULT_PITCH)
+	var was_default := absf(_t_dist - _dist_default) < 0.01
+	_dist_default = fit.x
+	_dist_max = clampf(maxf(_dist_max, _dist_default + 3.0), _dist_default, 30.0)
+	_dist_min = minf(_dist_min, _dist_default)
+	if camera != null:
+		camera.fov = fit.y
+	if force or was_default:
+		_t_dist = _dist_default

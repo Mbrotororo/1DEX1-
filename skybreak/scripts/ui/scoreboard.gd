@@ -5,7 +5,7 @@ extends Control
 const D = preload("res://scripts/ui/hud_draw.gd")
 const UiStyle = preload("res://scripts/ui/ui_style.gd")
 
-const HEADERS := ["Игрок", "Самолёт", "Сбито", "Земля", "Смерти", "Очки"]
+const HEADERS := ["Пилот", "Самолёт", "Сбито", "Цели", "Потери", "Очки"]
 const KEYS := ["name", "plane", "kills", "ground", "deaths", "score"]
 const COLS := [0.26, 0.24, 0.12, 0.12, 0.13, 0.13]
 
@@ -54,7 +54,7 @@ func _draw() -> void:
 	var pw := minf(size.x - 32.0 * u, 1060.0 * u)
 	var ph := 92.0 * u + n * row_h + 14.0 * u
 	var r := Rect2(size.x * 0.5 - pw * 0.5, maxf(size.y * 0.5 - ph * 0.5, 70.0 * u) + top_offset, pw, ph)
-	draw_style_box(D.box(Color(0.06, 0.08, 0.10, 0.93), int(10 * u), Color(1, 1, 1, 0.12), 1), r)
+	draw_style_box(D.box(Color(0.06, 0.08, 0.10, 0.97), int(10 * u), Color(1, 1, 1, 0.12), 1), r)
 	var gap := 20.0 * u
 	var tw := (pw - 32.0 * u - gap) * 0.5
 	var x0 := r.position.x + 16.0 * u

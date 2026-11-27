@@ -1,6 +1,8 @@
 extends Control
 ## Прицел, круг наведения, упреждение, маркеры самолётов и наземных целей, рамка захвата ракеты.
 ## Всё рисуется одним _draw каждый кадр.
+## Облака прячут врагов: маркер, стрелка у края, упреждение и рамка захвата гаснут, если цель
+## в облаке или линия взгляда идёт через плотное облако. Союзники видны всегда.
 
 const D = preload("res://scripts/ui/hud_draw.gd")
 const UiStyle = preload("res://scripts/ui/ui_style.gd")
@@ -8,17 +10,30 @@ const UiStyle = preload("res://scripts/ui/ui_style.gd")
 const ENEMY_ARROW_RANGE := 4000.0
 const GROUND_RANGE := 3000.0
 const REALISTIC_ALLY_RANGE := 800.0
-const CLOUD_VISIBLE := 500.0
 const LEAD_RANGE := 1600.0
 const LEAD_CONE := 0.9          # cos ~25°
 const GRAVITY := 9.81
+# облака
+const CLOUD_CLOSE := 300.0      # ближе этого цель видно даже в облаке (как у ботов)
+const LOS_STEP := 110.0         # шаг проверки линии взгляда, м
+const LOS_MAX_SAMPLES := 16
+const LOS_FADE := 40.0          # метров плотного облака на линии — маркер начинает гаснуть
+const LOS_HIDE := 130.0         # метров плотного облака на линии — маркер не виден
+const VIS_REFRESH := 0.1        # как часто пересчитывать видимость, с
+const VIS_SPEED := 4.0          # скорость появления и исчезновения маркера, 1/с
 
 var hud = null
 var battle = null
 var u: float = 1.0
 
 var _ground_cache: Array = []
+var _ground_vis: Dictionary = {}   # instance_id -> 0..1
 var _ground_t: float = 0.0
+var _vis: Dictionary = {}          # instance_id -> сглаженная видимость 0..1
+var _vis_goal: Dictionary = {}     # instance_id -> видимость по последней проверке
+var _vis_t: float = 0.0
+var debug_marks: Array = []        # что нарисовано в последнем кадре: [{uid, team, arrow:bool}] (для тестов)
+var debug_lead: bool = false       # нарисовано ли упреждение
 
 
 func _ready() -> void:
@@ -28,14 +43,80 @@ func _ready() -> void:
 
 func tick(dt: float) -> void:
 	_ground_t -= dt
+	var pl = D.prop(battle, "player")
+	var world = D.prop(battle, "world")
 	if _ground_t <= 0.0:
 		_ground_t = 0.5
 		_ground_cache = []
+		_ground_vis = {}
 		if battle != null and is_instance_valid(battle) and battle.has_method("ground_targets_of"):
-			var pl = battle.player
 			var team := int(D.prop(pl, "team", 0))
 			_ground_cache = battle.ground_targets_of(1 - team)
+			if D.alive_node(pl):
+				var eye: Vector3 = pl.global_position
+				for g in _ground_cache:
+					if D.alive_node(g) and (g.global_position as Vector3).distance_to(eye) <= GROUND_RANGE:
+						_ground_vis[g.get_instance_id()] = cloud_visibility(world, eye, g.global_position, false)
+	_vis_t -= dt
+	if _vis_t <= 0.0:
+		_vis_t = VIS_REFRESH
+		_refresh_visibility(pl, world)
+	for id in _vis_goal:
+		_vis[id] = move_toward(float(_vis.get(id, _vis_goal[id])), float(_vis_goal[id]), dt * VIS_SPEED)
 	queue_redraw()
+
+
+## Пересчёт видимости врагов через облака (союзники всегда 1).
+func _refresh_visibility(pl, world) -> void:
+	var goal: Dictionary = {}
+	if D.alive_node(pl) and battle != null and is_instance_valid(battle):
+		var eye: Vector3 = pl.global_position
+		var my_team := int(pl.team)
+		for ac in battle.aircraft:
+			if ac == pl or not D.alive_node(ac) or int(ac.team) == my_team:
+				continue
+			goal[ac.get_instance_id()] = cloud_visibility(world, eye, ac.global_position, bool(D.prop(ac, "in_cloud", false)))
+	_vis_goal = goal
+	for id in _vis.keys():
+		if not goal.has(id):
+			_vis.erase(id)
+
+
+## Видимость самолёта для игрока 0..1 (для миникарты и тестов). Союзники — всегда 1;
+## враг, которого ещё не проверяли (появился меньше 0,1 с назад), — 0.
+func visibility_of(ac) -> float:
+	if ac == null or not is_instance_valid(ac):
+		return 0.0
+	var pl = D.prop(battle, "player")
+	if D.alive_node(pl) and int(D.prop(ac, "team", -1)) == int(pl.team):
+		return 1.0
+	return float(_vis.get(ac.get_instance_id(), 0.0))
+
+
+## Сколько метров плотного облака на отрезке (плотность × длина).
+static func cloud_depth(world, from: Vector3, to: Vector3) -> float:
+	if world == null or not world.has_method("cloud_density_at"):
+		return 0.0
+	var dist := from.distance_to(to)
+	if dist < 1.0:
+		return 0.0
+	var n := clampi(int(ceil(dist / LOS_STEP)), 3, LOS_MAX_SAMPLES)
+	var seg := dist / float(n)
+	var sum := 0.0
+	for i in n:
+		var t := (float(i) + 0.5) / float(n)
+		sum += clampf(float(world.cloud_density_at(from.lerp(to, t))), 0.0, 1.0) * seg
+	return sum
+
+
+## Видна ли цель из точки from: 1 — видна, 0 — спрятана облаком.
+static func cloud_visibility(world, from: Vector3, to: Vector3, target_in_cloud: bool) -> float:
+	if from.distance_to(to) < CLOUD_CLOSE:
+		return 1.0
+	if target_in_cloud:
+		return 0.0
+	var depth := cloud_depth(world, from, to)
+	return 1.0 - clampf((depth - LOS_FADE) / (LOS_HIDE - LOS_FADE), 0.0, 1.0)
 
 
 func _camera() -> Camera3D:
@@ -55,6 +136,8 @@ func _on_screen(cam: Camera3D, p: Vector3, margin: float) -> bool:
 
 
 func _draw() -> void:
+	debug_marks = []
+	debug_lead = false
 	if battle == null or not is_instance_valid(battle):
 		return
 	var pl = battle.player
@@ -79,12 +162,15 @@ func _draw() -> void:
 			var gp: Vector3 = g.global_position
 			if gp.distance_to(my_pos) > GROUND_RANGE:
 				continue
-			if not _on_screen(cam, gp, 4.0):
+			var gv := float(_ground_vis.get(g.get_instance_id(), 1.0))
+			if gv <= 0.02 or not _on_screen(cam, gp, 4.0):
 				continue
-			_diamond(cam.unproject_position(gp) + Vector2(0, -6.0 * u), 5.0 * u, UiStyle.RED)
+			var gc := UiStyle.RED
+			gc.a = gv
+			_diamond(cam.unproject_position(gp) + Vector2(0, -6.0 * u), 5.0 * u, gc)
 
-	# рамка захвата (под подписями маркеров)
-	if lock_target != null and D.alive_node(lock_target):
+	# рамка захвата (под подписями маркеров); цель за облаком не показываем
+	if lock_target != null and D.alive_node(lock_target) and visibility_of(lock_target) > 0.3:
 		var lp: Vector3 = lock_target.global_position
 		if not cam.is_position_behind(lp):
 			_lock_box(cam.unproject_position(lp), float(D.prop(weapons, "lock_progress", 0.0)))
@@ -100,15 +186,14 @@ func _draw() -> void:
 		var p: Vector3 = ac.global_position
 		var dist := p.distance_to(my_pos)
 		var ally := int(ac.team) == my_team
-		var in_cloud := bool(D.prop(ac, "in_cloud", false))
-		var hidden_by_cloud := in_cloud and dist > CLOUD_VISIBLE
-		if not ally and not hidden_by_cloud and dist < LEAD_RANGE:
+		var vis := 1.0 if ally else visibility_of(ac)
+		if not ally and vis > 0.6 and dist < LEAD_RANGE:
 			var to := (p - my_pos) / maxf(dist, 0.001)
 			var c := fwd.dot(to)
 			if c > LEAD_CONE and dist < lead_best:
 				lead_best = dist
 				lead_target = ac
-		if hidden_by_cloud:
+		if vis <= 0.02:
 			continue
 		var show := arcade or (ally and dist < REALISTIC_ALLY_RANGE)
 		if not show:
@@ -116,18 +201,23 @@ func _draw() -> void:
 		var col := UiStyle.team_color(int(ac.team))
 		if _on_screen(cam, p, 6.0):
 			marks.append({"sp": cam.unproject_position(p), "name": String(D.prop(ac, "callsign", "")), "dist": dist,
-				"col": col, "locked": ac == lock_target})
+				"col": col, "locked": ac == lock_target, "a": vis})
+			debug_marks.append({"uid": int(D.prop(ac, "uid", -1)), "team": int(ac.team), "arrow": false})
 		elif arcade and not ally and dist < ENEMY_ARROW_RANGE:
+			col.a = vis
 			_edge_arrow(cam, p, dist, col)
+			debug_marks.append({"uid": int(D.prop(ac, "uid", -1)), "team": int(ac.team), "arrow": true})
 	# ближние рисуются первыми; подпись, которая налезла бы на уже нарисованную, не выводится
 	marks.sort_custom(func(a, b): return float(a.dist) < float(b.dist))
-	var taken: Array = []
+	var taken: Array = _touch_button_rects()
 	for m in marks:
-		_aircraft_marker(m.sp, String(m.name), float(m.dist), m.col, bool(m.locked), taken)
+		_aircraft_marker(m.sp, String(m.name), float(m.dist), m.col, bool(m.locked), taken, float(m.a))
 
 	# упреждение (аркада)
 	if arcade and weapons != null:
-		var t = lock_target if D.alive_node(lock_target) and lock_target.global_position.distance_to(my_pos) < LEAD_RANGE else lead_target
+		var t = lead_target
+		if D.alive_node(lock_target) and visibility_of(lock_target) > 0.6 and lock_target.global_position.distance_to(my_pos) < LEAD_RANGE:
+			t = lock_target
 		if t != null:
 			_lead(cam, pl, t, weapons)
 
@@ -146,6 +236,19 @@ func _draw() -> void:
 				var ap := cam.global_position + ad.normalized() * 3000.0
 				if not cam.is_position_behind(ap):
 					_aim_circle(cam.unproject_position(ap))
+
+
+## Сенсорные кнопки: подписи маркеров на них не пишутся.
+func _touch_button_rects() -> Array:
+	var out: Array = []
+	if hud == null or not bool(hud.touch_on) or hud.touch == null or not hud.touch.visible:
+		return out
+	for b in hud.touch.buttons:
+		if b is Dictionary and bool(b.get("shown", true)):
+			var c: Vector2 = b.get("c", Vector2.ZERO)
+			var r := float(b.get("r", 0.0))
+			out.append(Rect2(c - Vector2(r, r), Vector2(r, r) * 2.0))
+	return out
 
 
 # ---------------------------------------------------------------- элементы
@@ -172,17 +275,18 @@ func _aim_circle(c: Vector2) -> void:
 
 func _diamond(c: Vector2, r: float, col: Color) -> void:
 	var pts := PackedVector2Array([c + Vector2(0, -r), c + Vector2(r, 0), c + Vector2(0, r), c + Vector2(-r, 0), c + Vector2(0, -r)])
-	draw_polyline(pts, Color(0, 0, 0, 0.6), 3.2 * u, true)
+	draw_polyline(pts, Color(0, 0, 0, 0.6 * col.a), 3.2 * u, true)
 	draw_polyline(pts, col, 1.6 * u, true)
 
 
-func _aircraft_marker(sp: Vector2, callsign: String, dist: float, col: Color, locked: bool, taken: Array) -> void:
+func _aircraft_marker(sp: Vector2, callsign: String, dist: float, col: Color, locked: bool, taken: Array, alpha: float = 1.0) -> void:
+	col.a *= alpha
 	var tip := sp + Vector2(0, -14.0 * u)
 	var w := 6.0 * u
 	var h := 6.0 * u
 	var tri := PackedVector2Array([tip, tip + Vector2(-w, -h), tip + Vector2(w, -h)])
 	var outline := PackedVector2Array([tip, tip + Vector2(-w, -h), tip + Vector2(w, -h), tip])
-	draw_polyline(outline, Color(0, 0, 0, 0.6), 3.0 * u, true)
+	draw_polyline(outline, Color(0, 0, 0, 0.6 * alpha), 3.0 * u, true)
 	draw_colored_polygon(tri, col)
 	if locked:
 		draw_arc(sp, 4.0 * u, 0.0, TAU, 16, col, 1.5 * u, true)
@@ -200,7 +304,7 @@ func _aircraft_marker(sp: Vector2, callsign: String, dist: float, col: Color, lo
 			return
 	taken.append(rect)
 	D.text(self, Vector2(x0, base_y), callsign, fs, col, -1, null, 3)
-	D.text(self, Vector2(x0 + name_w + gap, base_y), dist_s, fs, Color(1, 1, 1, 0.85), -1, null, 3)
+	D.text(self, Vector2(x0 + name_w + gap, base_y), dist_s, fs, Color(1, 1, 1, 0.85 * alpha), -1, null, 3)
 
 
 func _edge_arrow(cam: Camera3D, p: Vector3, dist: float, col: Color) -> void:
@@ -220,14 +324,14 @@ func _edge_arrow(cam: Camera3D, p: Vector3, dist: float, col: Color) -> void:
 	var tip := pos + dir * s
 	var tri := PackedVector2Array([tip, pos - dir * s * 0.6 + perp * s, pos - dir * s * 0.6 - perp * s])
 	var ol := PackedVector2Array([tri[0], tri[1], tri[2], tri[0]])
-	draw_polyline(ol, Color(0, 0, 0, 0.6), 3.0 * u, true)
+	draw_polyline(ol, Color(0, 0, 0, 0.6 * col.a), 3.0 * u, true)
 	draw_colored_polygon(tri, col)
 	var fs := int(round(12.0 * u))
 	var label := D.fmt_dist(dist)
 	var tw := D.text_width(label, fs)
 	# подпись внутрь экрана от стрелки, с учётом ширины текста
 	var off := s * 0.6 + 6.0 * u + absf(dir.x) * tw * 0.5 + absf(dir.y) * fs * 0.6
-	D.text_mid(self, pos - dir * off, label, fs, Color(1, 1, 1, 0.9), 0, null, 3)
+	D.text_mid(self, pos - dir * off, label, fs, Color(1, 1, 1, 0.9 * col.a), 0, null, 3)
 
 
 func _lock_box(c: Vector2, progress: float) -> void:
@@ -244,7 +348,7 @@ func _lock_box(c: Vector2, progress: float) -> void:
 			draw_line(corner, corner - Vector2(sx * arm, 0), col, th)
 			draw_line(corner, corner - Vector2(0, sy * arm), col, th)
 	var fs := int(round(13.0 * u))
-	var txt := "Захват" if locked else "Захват %d%%" % int(progress * 100.0)
+	var txt := "Захват" if locked else "Захват %d %%" % int(progress * 100.0)
 	D.text(self, c + Vector2(0, half + 16.0 * u), txt, fs, col, 0, D.bold(), 3)
 
 
@@ -265,6 +369,7 @@ func _lead(cam: Camera3D, pl, target, weapons) -> void:
 		return
 	var a := cam.unproject_position(tp)
 	var b := cam.unproject_position(lp)
+	debug_lead = true
 	var col := UiStyle.RED
 	col.a = 0.9
 	if a.distance_to(b) > 10.0 * u:

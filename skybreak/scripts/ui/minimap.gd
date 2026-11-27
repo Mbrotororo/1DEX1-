@@ -7,7 +7,7 @@ const UiStyle = preload("res://scripts/ui/ui_style.gd")
 
 const SAMPLES := 96
 const BASE_SIZE := 200.0
-const CLOUD_VISIBLE := 500.0
+const CLOUD_VISIBLE := 300.0
 
 const PALETTES := {
 	"desert": [Color(0.33, 0.25, 0.17), Color(0.80, 0.66, 0.47)],
@@ -207,7 +207,11 @@ func _draw_aircraft(r: Rect2) -> void:
 		if not ally:
 			if not arcade:
 				continue
-			if has_ref and bool(D.prop(ac, "in_cloud", false)) and (ac.global_position as Vector3).distance_to(ref_pos) > CLOUD_VISIBLE:
+			# в полёте — та же видимость через облака, что у маркеров; без игрока — только «в облаке»
+			if has_ref and hud != null and bool(hud.flying) and hud.markers != null:
+				if float(hud.markers.visibility_of(ac)) < 0.5:
+					continue
+			elif has_ref and bool(D.prop(ac, "in_cloud", false)) and (ac.global_position as Vector3).distance_to(ref_pos) > CLOUD_VISIBLE:
 				continue
 		var p: Vector3 = ac.global_position
 		var f: Vector3 = ac.forward() if ac.has_method("forward") else Vector3.FORWARD

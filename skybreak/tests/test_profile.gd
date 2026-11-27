@@ -1,5 +1,5 @@
 extends RefCounted
-## Профиль игрока, исследования, покупки, сетап, камуфляжи, достижения, итог боя,
+## Профиль игрока, исследования, покупки, состав, камуфляжи, достижения, итог боя,
 ## а также дымовая проверка сцен ангара и итогов. Реальный профиль не трогается.
 
 const ProfileScript := preload("res://autoload/profile.gd")
@@ -86,7 +86,7 @@ func test_defaults() -> void:
 	eq(int(p.data.credits), int(Data.ECONOMY.start_credits), "стартовые кредиты")
 	eq(p.data.owned, Data.STARTER_PLANES, "куплены стартовые")
 	eq(p.data.researched, Data.STARTER_PLANES, "исследованы стартовые")
-	eq(p.get_lineup(), Data.STARTER_PLANES, "сетап из стартовых")
+	eq(p.get_lineup(), Data.STARTER_PLANES, "состав из стартовых")
 	eq(int(p.data.total_xp), 0, "опыт 0")
 	eq(p.get_setting("fov"), Data.DEFAULT_SETTINGS.fov, "настройка по умолчанию")
 	eq(p.player_rank().name, "Кадет", "звание новичка")
@@ -177,7 +177,7 @@ func test_buy() -> void:
 	check(p.buy("krechet"), "покупка кречета")
 	eq(int(p.data.credits), c - 3000, "списана цена")
 	check(p.is_owned("krechet"), "кречет куплен")
-	check("krechet" in p.get_lineup(), "куплен — сразу в сетап")
+	check("krechet" in p.get_lineup(), "куплен — сразу в состав")
 	check(not p.buy("krechet"), "второй раз не купить")
 	p.data.researched.append("sokol")
 	p.data.credits = 100
@@ -206,7 +206,7 @@ func test_lineup() -> void:
 	p.set_lineup_slot(4, "mirage")
 	p.set_lineup_slot(-1, "mirage")
 	eq(p.get_lineup().size(), 4, "не больше четырёх")
-	check(not p.add_to_lineup("mirage"), "сетап полон")
+	check(not p.add_to_lineup("mirage"), "состав полон")
 	p.set_lineup_slot(1, "")
 	eq(p.get_lineup(), ["krechet", "strizh", "shmel"], "очистка слота")
 	var lu: Array = p.get_lineup()
@@ -215,7 +215,7 @@ func test_lineup() -> void:
 	check(p.add_to_lineup("mirage"), "add_to_lineup")
 	for i in 4:
 		p.set_lineup_slot(0, "")
-	eq(p.get_lineup(), [], "можно очистить весь сетап")
+	eq(p.get_lineup(), [], "можно очистить весь состав")
 
 
 func test_camos() -> void:
@@ -423,7 +423,7 @@ func test_forward_compat() -> void:
 	check(p.is_owned("strizh") and p.is_owned("shmel"), "стартовые добавлены")
 	check(p.is_owned("krechet") and p.is_researched("krechet"), "купленный считается исследованным")
 	check(not "bad_id" in p.data.owned, "мусорный id убран")
-	eq(p.get_lineup(), ["krechet"], "сетап без повторов и некупленных")
+	eq(p.get_lineup(), ["krechet"], "состав без повторов и некупленных")
 	eq(p.get_setting("fov"), 90.0, "настройка зажата в диапазон")
 	eq(p.get_setting("graphics"), "medium", "неверное значение заменено")
 	eq(p.get_setting("sensitivity"), Data.DEFAULT_SETTINGS.sensitivity, "недостающая настройка из умолчаний")
@@ -495,10 +495,10 @@ func test_ui(tree: SceneTree) -> void:
 	eq(hangar.current_tab, "hangar", "ангар открывается на вкладке «Ангар»")
 	check(hangar.showroom != null and hangar.showroom.is_inside_tree(), "витрина в сцене")
 	var cfg: Dictionary = hangar.battle_config()
-	eq(cfg.lineup, ["strizh", "shmel"], "сетап в конфиге боя")
+	eq(cfg.lineup, ["strizh", "shmel"], "состав в конфиге боя")
 	eq(cfg.mode, "arcade", "режим по умолчанию")
 	eq(int(cfg.size), 4, "размер по умолчанию")
-	check(not hangar._battle_btn.disabled, "«В бой» доступна со стартовым сетапом")
+	check(not hangar._battle_btn.disabled, "«В бой» доступна со стартовым составом")
 	for t in ["research", "logbook", "settings", "hangar"]:
 		hangar.show_tab(t)
 		await tree.process_frame
@@ -528,8 +528,8 @@ func test_ui(tree: SceneTree) -> void:
 	Profile.set_lineup_slot(0, "")
 	await tree.process_frame
 	await tree.process_frame
-	check(hangar._battle_btn.disabled, "пустой сетап блокирует «В бой»")
-	eq(hangar._battle_reason.text, "Добавь самолёт в сетап", "причина блокировки")
+	check(hangar._battle_btn.disabled, "пустой состав блокирует «В бой»")
+	eq(hangar._battle_reason.text, "Добавь самолёт в состав", "причина блокировки")
 	hangar._open_slot_menu(0)
 	await tree.process_frame
 	check(hangar._slot_menu != null and is_instance_valid(hangar._slot_menu), "меню слота открывается")

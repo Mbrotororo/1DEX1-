@@ -1,6 +1,9 @@
 class_name ReplayGhost
 extends Node3D
 ## Модель самолёта в повторе и киллкаме. Ставится по отсчётам трека (ReplayData.sample).
+## Подпись (Label3D) — для киллкама: постоянного размера, с обводкой, поверх всего; размер шрифта
+## подгоняется под экран, чтобы один пиксель шрифта был одним пикселем экрана (текст не мылится).
+## В сцене повтора подписи рисует ReplayUI в 2D и выключает эти.
 
 const PARTS := {"LeftWing": ReplayData.F_LWING, "RightWing": ReplayData.F_RWING, "Tail": ReplayData.F_TAIL}
 
@@ -14,11 +17,13 @@ var size: float = 10.0
 var present: bool = false
 var flags: int = -1
 var show_tag: bool = true
+var tag_range: float = 3000.0      # дальше подпись не показывается
 var last_pos: Vector3 = Vector3.ZERO
 var last_rot: Quaternion = Quaternion.IDENTITY
 
 var _fire: Node3D = null
 var _smoke: Node3D = null
+var _tag_key: Vector2 = Vector2.ZERO
 
 
 func setup(p_uid: int, p_info: Dictionary, p_fx = null) -> void:
@@ -44,9 +49,11 @@ func setup(p_uid: int, p_info: Dictionary, p_fx = null) -> void:
 	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	tag.fixed_size = true
 	tag.no_depth_test = true
-	tag.pixel_size = 0.0009
-	tag.font_size = 30
-	tag.outline_size = 8
+	tag.pixel_size = 0.0019
+	tag.font_size = 15
+	tag.outline_size = 5
+	tag.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
+	tag.double_sided = true
 	tag.modulate = UiStyle.team_color(int(info.get("team", 0))).lightened(0.25)
 	tag.outline_modulate = Color(0, 0, 0, 0.8)
 	tag.render_priority = 2
@@ -78,9 +85,28 @@ func apply(s: Dictionary, dt: float) -> void:
 		_apply_flags(f)
 	var alive := (f & ReplayData.F_ALIVE) != 0
 	AircraftMeshBuilder.spin_props(model, float(s.throttle) if alive else 0.0, dt)
-	tag.visible = show_tag
-	if show_tag:
+	var cam: Camera3D = get_viewport().get_camera_3d() if is_inside_tree() else null
+	var near := cam == null or cam.global_position.distance_to(last_pos) < tag_range
+	tag.visible = show_tag and near
+	if tag.visible:
 		tag.global_position = last_pos + Vector3.UP * (size * 0.45 + 3.0)
+		_fit_tag(cam)
+
+
+## Шрифт под размер окна: 15 px при высоте 720, пиксель шрифта = пиксель экрана.
+func _fit_tag(cam: Camera3D) -> void:
+	if cam == null:
+		return
+	var h := float(get_window().size.y) if get_window() != null else 720.0
+	h = maxf(h, 200.0)
+	var key := Vector2(h, cam.fov)
+	if key == _tag_key:
+		return
+	_tag_key = key
+	var fs := int(round(15.0 * h / 720.0))
+	tag.font_size = fs
+	tag.outline_size = maxi(3, int(round(fs * 0.3)))
+	tag.pixel_size = 2.0 * tan(deg_to_rad(cam.fov) * 0.5) / h
 
 
 func basis_now() -> Basis:

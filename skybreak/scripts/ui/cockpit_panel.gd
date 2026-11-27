@@ -260,7 +260,7 @@ func _gmeter(c: Vector2, R: float) -> void:
 		draw_line(c + d * (R - (10.0 if major else 6.0) * u), c + d * (R - 2.0 * u), TICK, (2.0 if major else 1.0) * u, true)
 		if major:
 			D.text_mid(self, c + d * (R - 20.0 * u), str(v), fs, TICK, 0, null, 0)
-	D.text_mid(self, c + Vector2(0, -R * 0.34), "G", int(round(11.0 * u)), UiStyle.MUTED, 0, null, 0)
+	D.text_mid(self, c + Vector2(0, -R * 0.34), "g", int(round(11.0 * u)), UiStyle.MUTED, 0, null, 0)
 	D.text_mid(self, c + Vector2(0, R * 0.48), D.fmt_dec(g), int(round(13.0 * u)), TICK, 0, D.bold(), 0)
 	var t := clampf((g - vmin) / (vmax - vmin), -0.03, 1.03)
 	_needle(c, a0 + t * sweep, R - 9.0 * u, 3.0 * u, NEEDLE)

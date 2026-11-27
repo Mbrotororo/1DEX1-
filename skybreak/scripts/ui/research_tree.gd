@@ -219,13 +219,13 @@ func _refresh_card(id: String) -> void:
 			xp.text = "Ремонт %s кр." % Game.fmt_int(int(def.repair))
 			var lu := Profile.get_lineup()
 			if id in lu:
-				main.text = "В сетапе"
+				main.text = "В составе"
 				main.disabled = true
 			elif lu.size() >= Profile.LINEUP_MAX:
-				main.text = "Сетап полон"
+				main.text = "Состав полон"
 				main.disabled = true
 			else:
-				main.text = "В сетап"
+				main.text = "В состав"
 		"researched":
 			state.text = "Исследован"
 			state.add_theme_color_override("font_color", C.BLUE)

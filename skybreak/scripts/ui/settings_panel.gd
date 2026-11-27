@@ -25,7 +25,7 @@ func _build() -> void:
 	var g := _column(h, "Графика и звук")
 	_option_row(g, "graphics", "Графика", [["low", "Низкая"], ["medium", "Средняя"], ["high", "Высокая"]])
 	_slider_row(g, "fov", "Поле зрения", 55.0, 90.0, 1.0)
-	_check_row(g, "show_fps", "Показывать FPS")
+	_check_row(g, "show_fps", "Показывать частоту кадров")
 	g.add_child(K.hline())
 	_slider_row(g, "engine_volume", "Громкость двигателя", 0.0, 1.0, 0.05)
 	_slider_row(g, "effects_volume", "Громкость эффектов", 0.0, 1.0, 0.05)
@@ -56,20 +56,24 @@ func _build() -> void:
 	name_row.add_child(_name_edit)
 	g.add_child(name_row)
 
-	var p := _column(h, "Клавиши")
-	var keys := GridContainer.new()
-	keys.columns = 2
-	keys.add_theme_constant_override("h_separation", 16)
-	keys.add_theme_constant_override("v_separation", 3)
-	keys.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	for pair in Game.KEY_HELP:
-		var a := K.label(String(pair[0]), C.FS_SMALL, C.MUTED)
-		a.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		keys.add_child(a)
-		keys.add_child(K.label(String(pair[1]), C.FS_SMALL, C.TEXT))
-	p.add_child(keys)
-	p.add_child(K.spacer(4))
-	p.add_child(K.hline())
+	# на сенсорном экране список клавиш не нужен — остаётся только сброс прогресса
+	var p := _column(h, "Прогресс" if K.touch else "Клавиши")
+	if not K.touch:
+		var keys := GridContainer.new()
+		keys.columns = 2
+		keys.add_theme_constant_override("h_separation", 16)
+		keys.add_theme_constant_override("v_separation", 3)
+		keys.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		for pair in Game.KEY_HELP:
+			var a := K.label(String(pair[0]), C.FS_SMALL, C.MUTED)
+			a.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			keys.add_child(a)
+			keys.add_child(K.label(String(pair[1]), C.FS_SMALL, C.TEXT))
+		p.add_child(keys)
+		p.add_child(K.spacer(4))
+		p.add_child(K.hline())
+	else:
+		p.add_child(K.para("Сброс вернёт кредиты, самолёты, опыт, журнал и достижения к началу.", C.FS_SMALL, C.MUTED))
 	var reset := K.danger_button("Сбросить прогресс")
 	reset.pressed.connect(_on_reset)
 	p.add_child(reset)

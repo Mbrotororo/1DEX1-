@@ -1,6 +1,8 @@
 class_name ReplayUI
 extends CanvasLayer
 ## Интерфейс сцены повтора: панель управления, список сбитых, подписи. Логики времени здесь нет.
+## Подписи самолётов рисуются в 2D (чёткий текст постоянного размера): выбранный самолёт всегда,
+## остальные — ближе TAG_RANGE; подпись, которая налезает на более важную, не выводится.
 
 signal play_toggled
 signal speed_chosen(speed: float)
@@ -12,6 +14,9 @@ signal back_pressed
 signal slider_drag(active: bool)
 
 const SPEEDS := [0.25, 0.5, 1.0, 2.0, 4.0]
+const D = preload("res://scripts/ui/hud_draw.gd")
+const TAG_RANGE := 2500.0        # дальше подписи только у выбранного самолёта
+const TAG_FADE := 600.0          # последние метры перед TAG_RANGE подпись гаснет
 const CAMERAS := [["chase", "Сзади"], ["cockpit", "Кабина"], ["orbit", "Облёт"], ["free", "Свободная"]]
 
 var root: Control
@@ -30,6 +35,10 @@ var kill_times: Array = []
 var speed_buttons: Dictionary = {}     # speed -> Button
 var cam_buttons: Dictionary = {}       # mode -> Button
 
+var tags_layer: Control
+var tags: Array = []                  # [{uid, text, pos:Vector2, color, dist, selected}] — что нарисовано
+var tag_source = null                 # объект с ghosts, camera, selected_uid, cam_mode (по умолчанию — родитель)
+
 var _updating: bool = false
 var _msg_t: float = 0.0
 var _kill_passed: int = -1
@@ -43,9 +52,16 @@ func _init() -> void:
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.theme = UiStyle.make_theme()
 	add_child(root)
+	tags_layer = Control.new()
+	tags_layer.name = "Tags"
+	tags_layer.set_anchors_preset(Control.PRESET_FULL_RECT)
+	tags_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tags_layer.draw.connect(_draw_tags)
+	root.add_child(tags_layer)
 
 
 func _process(delta: float) -> void:
+	_update_tags()
 	if _msg_t > 0.0 and message_label != null:
 		_msg_t -= delta
 		message_label.modulate.a = clampf(_msg_t / 0.6, 0.0, 1.0)
@@ -380,3 +396,114 @@ static func _mark(b: Button, on: bool) -> void:
 	else:
 		b.remove_theme_stylebox_override("normal")
 		b.remove_theme_color_override("font_color")
+
+
+
+# ---------------------------------------------------------------- подписи самолётов
+
+func _source():
+	if tag_source != null and is_instance_valid(tag_source):
+		return tag_source
+	return get_parent()
+
+
+## Собирает подписи на этот кадр. Объёмные подписи призраков (Label3D) выключаются.
+func _update_tags() -> void:
+	var src = _source()
+	if src == null or not ("ghosts" in src) or not ("camera" in src):
+		if not tags.is_empty():
+			tags = []
+			tags_layer.queue_redraw()
+		return
+	var cam: Camera3D = src.camera
+	var ghosts: Dictionary = src.ghosts
+	var sel := int(src.selected_uid) if "selected_uid" in src else -1
+	var mode := String(src.cam_mode) if "cam_mode" in src else "free"
+	tags = collect_tags(ghosts, cam, sel, mode, tags_layer.size)
+	tags_layer.queue_redraw()
+
+
+## Какие подписи показать: выбранный (кроме вида «Сзади» и «Кабина» — там его имя уже сверху)
+## и самолёты ближе TAG_RANGE. Ближние важнее; подпись, налезающая на уже принятую, отбрасывается.
+static func collect_tags(ghosts: Dictionary, cam: Camera3D, selected_uid: int, cam_mode: String, view: Vector2) -> Array:
+	var out: Array = []
+	if cam == null or not is_instance_valid(cam) or not cam.is_inside_tree():
+		return out
+	var eye := cam.global_position
+	var cands: Array = []
+	for uid in ghosts:
+		var g = ghosts[uid]
+		if g == null or not is_instance_valid(g):
+			continue
+		if g.show_tag:
+			g.show_tag = false
+			g.tag.visible = false
+		if not g.present:
+			continue
+		var sel := int(uid) == selected_uid
+		if sel and (cam_mode == "chase" or cam_mode == "cockpit"):
+			continue
+		var p: Vector3 = g.last_pos
+		var dist := eye.distance_to(p)
+		if not sel and dist > TAG_RANGE:
+			continue
+		var top := p + Vector3.UP * (float(g.size) * 0.45 + 2.0)
+		if cam.is_position_behind(top):
+			continue
+		var sp := cam.unproject_position(top)
+		if sp.x < -40.0 or sp.y < -20.0 or sp.x > view.x + 40.0 or sp.y > view.y + 20.0:
+			continue
+		var a := 1.0 if sel else clampf((TAG_RANGE - dist) / TAG_FADE, 0.0, 1.0)
+		var col: Color = UiStyle.team_color(int(g.info.get("team", 0))).lightened(0.3)
+		cands.append({"uid": int(uid), "text": ReplayData.plane_title(g.info), "pos": sp, "dist": dist,
+			"selected": sel, "color": col, "alpha": a})
+	cands.sort_custom(func(x, y):
+		if bool(x.selected) != bool(y.selected):
+			return bool(x.selected)
+		return float(x.dist) < float(y.dist))
+	var taken: Array = []
+	for c in cands:
+		var r := tag_rect(c)
+		var free := true
+		for o in taken:
+			if (o as Rect2).intersects(r):
+				free = false
+				break
+		if not free:
+			continue
+		taken.append(r)
+		out.append(c)
+	return out
+
+
+static func tag_font_size(selected: bool) -> int:
+	return 16 if selected else 14
+
+
+## Прямоугольник подписи на экране (текст над точкой, дистанция справа).
+static func tag_rect(c: Dictionary) -> Rect2:
+	var fs := tag_font_size(bool(c.selected))
+	var w := D.text_width(String(c.text), fs, D.bold() if bool(c.selected) else null)
+	w += 6.0 + D.text_width(D.fmt_dist(float(c.dist)), fs - 2)
+	var p: Vector2 = c.pos
+	return Rect2(p.x - w * 0.5 - 3.0, p.y - fs - 10.0, w + 6.0, fs + 6.0)
+
+
+func _draw_tags() -> void:
+	for c in tags:
+		var sel := bool(c.selected)
+		var fs := tag_font_size(sel)
+		var a := float(c.alpha)
+		var col: Color = c.color
+		col.a = a
+		var p: Vector2 = c.pos
+		var f: Font = D.bold() if sel else D.font()
+		var name_w := D.text_width(String(c.text), fs, f)
+		var dist_s := D.fmt_dist(float(c.dist))
+		var total := name_w + 6.0 + D.text_width(dist_s, fs - 2)
+		var x0 := p.x - total * 0.5
+		var base := p.y - 8.0
+		# короткая черта к самолёту
+		tags_layer.draw_line(Vector2(p.x, base + 2.0), Vector2(p.x, p.y + 4.0), Color(col, 0.7 * a), 1.5)
+		D.text(tags_layer, Vector2(x0, base), String(c.text), fs, col, -1, f, 4)
+		D.text(tags_layer, Vector2(x0 + name_w + 6.0, base), dist_s, fs - 2, Color(1, 1, 1, 0.8 * a), -1, null, 4)

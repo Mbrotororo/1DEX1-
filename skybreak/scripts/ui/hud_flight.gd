@@ -52,7 +52,7 @@ func refresh(pl) -> void:
 		g_col = UiStyle.DANGER
 	elif g > g_lim * 0.8 or g < -1.5:
 		g_col = UiStyle.WARN
-	rows.append({"label": "Перегрузка", "value": D.fmt_dec(g) + " G", "color": g_col})
+	rows.append({"label": "Перегрузка", "value": D.fmt_dec(g) + " g", "color": g_col})
 	if bool(def.get("high_aoa", false)):
 		var aoa := rad_to_deg(float(D.prop(fm, "aoa", 0.0)))
 		var a_col := UiStyle.WARN if absf(aoa) > float(def.get("alpha_crit_deg", 25.0)) else UiStyle.TEXT

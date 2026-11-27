@@ -1,7 +1,8 @@
 extends Node3D
 ## Скриншоты HUD на поддельном бое.
 ## Запуск: xvfb-run ... godot --path skybreak --rendering-driver opengl3 --resolution 1280x720 \
-##   res://tests/harness_hud.tscn -- --shot=all [--out=/tmp/skybreak-shots/hud] [--suffix=_phone]
+##   res://tests/harness_hud.tscn -- --shot=all [--out=/tmp/skybreak-shots/hud] [--suffix=_phone] [--touch]
+## --touch включает сенсорные кнопки на всех снимках (телефон).
 
 const Fakes = preload("res://tests/harness_hud_fakes.gd")
 
@@ -10,6 +11,7 @@ const SHOTS := ["arcade", "realistic", "cockpit", "spawn", "pause", "settings", 
 
 var out_dir := "/tmp/skybreak-shots/hud"
 var suffix := ""
+var force_touch := false
 var shots: Array = []
 var env_root: Node3D
 
@@ -23,6 +25,8 @@ func _ready() -> void:
 			out_dir = a.substr(6)
 		elif a.begins_with("--suffix="):
 			suffix = a.substr(9)
+		elif a == "--touch":
+			force_touch = true
 	shots = SHOTS.duplicate() if want == "all" else want.split(",")
 	DirAccess.make_dir_recursive_absolute(out_dir)
 	_build_env()
@@ -151,7 +155,7 @@ func _shot(name: String) -> void:
 		g.add_child(_ground_mesh())
 	Fakes.chase_camera(b)
 	var hud := BattleHUD.new()
-	hud.set_touch_override(1 if name.begins_with("touch") else 0)
+	hud.set_touch_override(1 if name.begins_with("touch") or force_touch else 0)
 	b.add_child(hud)
 	b.hud = hud
 	b.pause_tree = false

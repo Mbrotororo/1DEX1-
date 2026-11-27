@@ -1,6 +1,7 @@
 extends Control
-## Эффекты поверх картинки: белая пелена в облаке, затемнение от перегрузки (реализм),
-## красная вспышка при попадании.
+## Эффекты поверх картинки: белая пелена в облаке и красная вспышка при попадании (под приборами).
+## Здесь же считается затемнение и покраснение от перегрузки (реализм); рисует их hud_gforce.gd
+## поверх приборов.
 
 const D = preload("res://scripts/ui/hud_draw.gd")
 
@@ -12,7 +13,7 @@ var haze: float = 0.0
 var black: float = 0.0       # 0..1 потемнение от положительной перегрузки
 var red: float = 0.0         # 0..1 покраснение от отрицательной
 var flash: float = 0.0
-var _tunnel: float = 0.0
+var tunnel: float = 0.0       # 0..1 сужение поля зрения перед затемнением
 var _vignette: Texture2D = null
 var _last_hit: float = -100.0
 var _last_player = null
@@ -43,7 +44,7 @@ func reset() -> void:
 	black = 0.0
 	red = 0.0
 	flash = 0.0
-	_tunnel = 0.0
+	tunnel = 0.0
 	_last_hit = -100.0
 
 
@@ -74,11 +75,11 @@ func update(dt: float, battle, pl, cam: Camera3D, realistic: bool) -> void:
 			red = minf(1.0, red + (G_RED - g) * 0.35 * dt)
 		else:
 			red = maxf(0.0, red - 0.6 * dt)
-		_tunnel = lerpf(_tunnel, clampf((g - 5.5) / 1.5, 0.0, 1.0), 1.0 - exp(-3.0 * dt))
+		tunnel = lerpf(tunnel, clampf((g - 5.5) / 1.5, 0.0, 1.0), 1.0 - exp(-3.0 * dt))
 	else:
 		black = maxf(0.0, black - 1.5 * dt)
 		red = maxf(0.0, red - 1.5 * dt)
-		_tunnel = maxf(0.0, _tunnel - 2.0 * dt)
+		tunnel = maxf(0.0, tunnel - 2.0 * dt)
 	# попадание по игроку
 	if pl != _last_player:
 		_last_player = pl
@@ -89,7 +90,7 @@ func update(dt: float, battle, pl, cam: Camera3D, realistic: bool) -> void:
 			_last_hit = lh
 			hit_flash(0.55)
 	flash = maxf(0.0, flash - dt * 2.2)
-	var any := haze > 0.0 or black > 0.0 or red > 0.0 or flash > 0.0 or _tunnel > 0.001
+	var any := haze > 0.0 or flash > 0.0
 	if any or _had_any:
 		queue_redraw()
 	_had_any = any
@@ -101,12 +102,8 @@ func _draw() -> void:
 		draw_rect(r, Color(0.9, 0.93, 0.96, haze * 0.82))
 	if flash > 0.0 and _vignette != null:
 		draw_texture_rect(_vignette, r, false, Color(0.85, 0.05, 0.02, flash * 0.75))
-	var dark := maxf(black, _tunnel * 0.3)
-	if dark > 0.0 and _vignette != null:
-		draw_texture_rect(_vignette, r, false, Color(0.04, 0.04, 0.05, clampf(dark * 1.6, 0.0, 1.0)))
-		if black > 0.55:
-			draw_rect(r, Color(0.12, 0.12, 0.13, clampf((black - 0.55) / 0.45, 0.0, 1.0) * 0.96))
-	if red > 0.0 and _vignette != null:
-		draw_texture_rect(_vignette, r, false, Color(0.6, 0.0, 0.02, clampf(red * 1.6, 0.0, 1.0)))
-		if red > 0.55:
-			draw_rect(r, Color(0.45, 0.0, 0.02, clampf((red - 0.55) / 0.45, 0.0, 1.0) * 0.85))
+
+
+## Есть ли сейчас затемнение или покраснение (для слоя hud_gforce.gd).
+func g_active() -> bool:
+	return black > 0.0 or red > 0.0 or tunnel > 0.001

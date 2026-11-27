@@ -13,6 +13,7 @@ const HudWeapons = preload("res://scripts/ui/hud_weapons.gd")
 const HudScore = preload("res://scripts/ui/hud_score.gd")
 const HudFeed = preload("res://scripts/ui/hud_feed.gd")
 const HudOverlay = preload("res://scripts/ui/hud_overlay.gd")
+const HudGForce = preload("res://scripts/ui/hud_gforce.gd")
 const Minimap = preload("res://scripts/ui/minimap.gd")
 const CockpitPanel = preload("res://scripts/ui/cockpit_panel.gd")
 const TouchControls = preload("res://scripts/ui/touch_controls.gd")
@@ -46,6 +47,7 @@ var feed
 var cockpit
 var touch
 var overlay
+var gfx                          # затемнение от перегрузки поверх приборов
 var scoreboard
 var spawn_menu
 var pause_menu
@@ -58,6 +60,7 @@ var _map_t: float = 0.0
 var _menu_was_open: bool = true
 var _last_state: String = ""
 var _vp_size: Vector2 = Vector2.ZERO
+var _g_was_active: bool = false
 
 
 func _init() -> void:
@@ -92,6 +95,7 @@ func _ensure_built() -> void:
 	score = _part(HudScore, "Score")
 	minimap = _part(Minimap, "Minimap")
 	feed = _part(HudFeed, "Feed")
+	gfx = _part(HudGForce, "GForce")
 	touch = _part(TouchControls, "Touch")
 	overlay = _part(HudOverlay, "Overlay")
 	scoreboard = _part(Scoreboard, "Scoreboard")
@@ -323,7 +327,7 @@ func _layout() -> void:
 		return
 	_vp_size = vs
 	u = clampf(minf(vs.x / 1280.0, vs.y / 720.0), 0.75, 3.0)
-	for c in [effects, markers, cockpit, flight, weapons, warnings, score, minimap, feed, touch, overlay, scoreboard]:
+	for c in [effects, markers, cockpit, flight, weapons, warnings, score, minimap, feed, gfx, touch, overlay, scoreboard]:
 		if "u" in c:
 			c.u = u
 	feed.kill_top = 16.0 * u + MINIMAP_SIZE * u + 14.0 * u
@@ -331,7 +335,7 @@ func _layout() -> void:
 	overlay.touch = touch_on
 	spawn_menu.set_ui_scale(u, touch_on)
 	touch.read_settings()
-	for c in [effects, markers, cockpit, flight, weapons, warnings, score, minimap, feed, touch, overlay, scoreboard]:
+	for c in [effects, markers, cockpit, flight, weapons, warnings, score, minimap, feed, gfx, touch, overlay, scoreboard]:
 		c.queue_redraw()
 
 
@@ -382,6 +386,10 @@ func _process(dt: float) -> void:
 	if root.is_inside_tree():
 		cam = root.get_viewport().get_camera_3d()
 	effects.update(dt, battle, pl if flying else null, cam, String(battle.mode) == "realistic")
+	var g_on: bool = effects.g_active()
+	if g_on or _g_was_active:
+		gfx.queue_redraw()
+	_g_was_active = g_on
 	if flying:
 		markers.tick(dt)
 	feed.tick(dt)
@@ -424,7 +432,7 @@ func _refresh_labels(pl, st: String) -> void:
 			if plane != "":
 				spec += ", " + plane
 	overlay.spectate_text = spec
-	overlay.fps_text = ("%d FPS" % Engine.get_frames_per_second()) if show_fps else ""
+	overlay.fps_text = ("%d кадр/с" % Engine.get_frames_per_second()) if show_fps else ""
 	overlay.queue_redraw()
 
 

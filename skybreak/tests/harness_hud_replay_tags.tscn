@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://tests/harness_hud_replay_tags.gd" id="1"]
+
+[node name="HarnessHudReplayTags" type="Node"]
+script = ExtResource("1")

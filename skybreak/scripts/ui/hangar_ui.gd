@@ -1,5 +1,5 @@
 extends Control
-## Ангар: 3D-витрина самолёта, вкладки (Ангар, Исследование, Журнал, Настройки), сетап и выбор боя.
+## Ангар: 3D-витрина самолёта, вкладки (Ангар, Исследование, Журнал, Настройки), состав и выбор боя.
 
 const C := preload("res://scripts/ui/ui_style.gd")
 const K := preload("res://scripts/ui/menu_kit.gd")
@@ -233,7 +233,7 @@ func _build_hangar_page() -> HBoxContainer:
 	_state_box = K.vbox(8)
 	lv.add_child(_state_box)
 	page.add_child(_left)
-	# по центру — пусто (виден самолёт), снизу сетап
+	# по центру — пусто (виден самолёт), снизу состав
 	var center := K.vbox(10)
 	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	center.add_child(K.spacer(0, true))
@@ -252,7 +252,7 @@ func _build_lineup_bar() -> PanelContainer:
 	var v := K.vbox(8)
 	card.add_child(v)
 	var head := K.hbox(8)
-	_lineup_title = K.bold("Сетап", C.FS_BODY)
+	_lineup_title = K.bold("Состав", C.FS_BODY)
 	head.add_child(_lineup_title)
 	head.add_child(K.spacer(0, true))
 	head.add_child(K.muted("Нажми на слот, чтобы сменить самолёт"))
@@ -588,13 +588,13 @@ func _refresh_state() -> void:
 			row.add_child(bd)
 			row.add_child(K.spacer(0, true))
 			var lu := Profile.get_lineup()
-			var b := K.button("В сетап")
+			var b := K.button("В состав")
 			b.custom_minimum_size.x = 130
 			if id in lu:
-				b.text = "В сетапе"
+				b.text = "В составе"
 				b.disabled = true
 			elif lu.size() >= Profile.LINEUP_MAX:
-				b.text = "Сетап полон"
+				b.text = "Состав полон"
 				b.disabled = true
 			b.pressed.connect(func():
 				_click()
@@ -650,7 +650,7 @@ func _accusative(word: String) -> String:
 
 func _refresh_lineup() -> void:
 	var lu := Profile.get_lineup()
-	_lineup_title.text = "Сетап  %d / %d" % [lu.size(), Profile.LINEUP_MAX]
+	_lineup_title.text = "Состав  %d / %d" % [lu.size(), Profile.LINEUP_MAX]
 	for i in _lineup_row.get_child_count():
 		var b := _lineup_row.get_child(i) as Button
 		var n: Label = b.get_meta("name_label")
@@ -660,7 +660,7 @@ func _refresh_lineup() -> void:
 			var def := Data.plane(String(lu[i]))
 			n.text = String(def.name)
 			n.add_theme_color_override("font_color", C.TEXT)
-			s.text = "%s · %s" % [def.code, Data.level_text(float(def.level))]
+			s.text = "%s · ур. %s" % [def.code, Data.level_text(float(def.level))]
 			sel = String(lu[i]) == selected_plane
 		else:
 			n.text = "+"
@@ -689,7 +689,7 @@ func _refresh_setup() -> void:
 	_select_option(_weather_opt, String(setup.weather))
 	var lu := Profile.get_lineup()
 	_battle_btn.disabled = lu.is_empty()
-	_battle_reason.text = "Добавь самолёт в сетап" if lu.is_empty() else ""
+	_battle_reason.text = "Добавь самолёт в состав" if lu.is_empty() else ""
 	_battle_reason.visible = lu.is_empty()
 
 
@@ -713,19 +713,34 @@ func _on_viewport_resized() -> void:
 	_update_showroom_offset.call_deferred()
 
 
-func _update_showroom_offset() -> void:
-	if showroom == null or not showroom.has_method("set_screen_offset") or _left == null:
-		return
-	var vp := get_viewport_rect().size
-	if vp.x < 1.0 or vp.y < 1.0:
-		return
+## Свободная от панелей часть экрана: между карточкой самолёта и панелью боя, от верхней полосы
+## до карточки состава. Самолёт в витрине вписывается в неё целиком.
+func free_view_rect() -> Rect2:
+	if _left == null or _right == null or _top_bar == null or _lineup_card == null:
+		return Rect2()
 	var left_edge := _left.get_global_rect().end.x
 	var right_edge := _right.get_global_rect().position.x
 	var top := _top_bar.get_global_rect().end.y
 	var bottom := _lineup_card.get_global_rect().position.y
-	var cx := (left_edge + right_edge) * 0.5
-	var cy := (top + bottom) * 0.5
-	showroom.set_screen_offset(Vector2((cx - vp.x * 0.5) / vp.x, (cy - vp.y * 0.5) / vp.y))
+	if right_edge - left_edge < 10.0 or bottom - top < 10.0:
+		return Rect2()
+	return Rect2(left_edge, top, right_edge - left_edge, bottom - top)
+
+
+func _update_showroom_offset() -> void:
+	if showroom == null or _left == null:
+		return
+	var vp := get_viewport_rect().size
+	if vp.x < 1.0 or vp.y < 1.0:
+		return
+	var r := free_view_rect()
+	if r.size.x < 1.0:
+		return
+	if showroom.has_method("set_view_rect"):
+		showroom.set_view_rect(r)
+	elif showroom.has_method("set_screen_offset"):
+		var c := r.get_center()
+		showroom.set_screen_offset(Vector2((c.x - vp.x * 0.5) / vp.x, (c.y - vp.y * 0.5) / vp.y))
 
 
 # ---------------------------------------------------------------- действия
@@ -788,9 +803,9 @@ func _open_slot_menu(slot: int) -> void:
 			continue
 		any = true
 		var def := Data.plane(id)
-		var sub := "%s · %s" % [def.code, Data.level_text(float(def.level))]
+		var sub := "%s · ур. %s" % [def.code, Data.level_text(float(def.level))]
 		if id in lu and id != cur:
-			sub += " · в сетапе"
+			sub += " · в составе"
 		var b := K.list_button(String(def.name), sub, id == cur)
 		b.pressed.connect(_on_slot_pick.bind(slot, id))
 		v.add_child(b)
@@ -803,7 +818,7 @@ func _open_slot_menu(slot: int) -> void:
 	v.add_child(rm)
 	menu.reset_size()
 	var ms := menu.get_combined_minimum_size()
-	# над карточкой сетапа, по левому краю слота
+	# над карточкой состава, по левому краю слота
 	var r := btn.get_global_rect()
 	var top := _lineup_card.get_global_rect().position.y
 	var origin := _ui.get_global_rect().position

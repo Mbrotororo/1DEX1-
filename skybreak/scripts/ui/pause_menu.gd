@@ -11,8 +11,8 @@ const UiStyle = preload("res://scripts/ui/ui_style.gd")
 
 const SETTINGS := [
 	# ключ, подпись, мин, макс, шаг, формат
-	["sensitivity", "Чувствительность", 0.3, 2.0, 0.05, "dec"],
-	["fov", "Поле зрения", 50.0, 100.0, 1.0, "deg"],
+	["sensitivity", "Чувствительность мыши", 0.3, 2.0, 0.05, "dec"],
+	["fov", "Поле зрения", 55.0, 90.0, 1.0, "deg"],
 	["engine_volume", "Громкость двигателя", 0.0, 1.0, 0.05, "pct"],
 	["effects_volume", "Громкость эффектов", 0.0, 1.0, 0.05, "pct"],
 ]
@@ -27,6 +27,8 @@ var _panel: PanelContainer
 var _title: Label
 var _pages: Dictionary = {}
 var _change_btn: Button
+var _controls_btn: Button
+var _sens_label: Label
 var _pending: Dictionary = {}
 var _pending_t: float = 0.0
 var _value_labels: Dictionary = {}
@@ -86,7 +88,8 @@ func _build_main() -> Control:
 	v.add_child(_menu_button("Продолжить", true, func(): resume_requested.emit()))
 	_change_btn = _menu_button("Сменить самолёт", false, func(): change_plane_requested.emit())
 	v.add_child(_change_btn)
-	v.add_child(_menu_button("Управление", false, func(): show_page("controls")))
+	_controls_btn = _menu_button("Управление", false, func(): show_page("controls"))
+	v.add_child(_controls_btn)
 	v.add_child(_menu_button("Настройки", false, func(): show_page("settings")))
 	v.add_child(_menu_button("Выйти в ангар", false, func(): hangar_requested.emit()))
 	return v
@@ -136,6 +139,8 @@ func _build_settings() -> Control:
 		var l := UiStyle.label(String(s[1]), 16, UiStyle.TEXT)
 		l.custom_minimum_size = Vector2(210, 0)
 		g.add_child(l)
+		if key == "sensitivity":
+			_sens_label = l
 		var sl := HSlider.new()
 		sl.min_value = float(s[2])
 		sl.max_value = float(s[3])
@@ -152,7 +157,7 @@ func _build_settings() -> Control:
 		vl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		g.add_child(vl)
 		_value_labels[key] = vl
-	for c in [["invert_y", "Инверсия по вертикали"], ["show_fps", "Показывать FPS"]]:
+	for c in [["invert_y", "Инверсия по вертикали"], ["show_fps", "Показывать частоту кадров"]]:
 		var l := UiStyle.label(String(c[1]), 16, UiStyle.TEXT)
 		g.add_child(l)
 		var tb := Button.new()
@@ -217,6 +222,11 @@ func open() -> void:
 	var can_change: bool = battle != null and is_instance_valid(battle) and String(battle.mode) == "test" \
 		and battle.has_method("return_to_spawn_menu") and String(battle.state) == "flying"
 	_change_btn.visible = can_change
+	# на сенсорном экране список клавиш не нужен
+	var touch: bool = hud != null and bool(hud.touch_on)
+	_controls_btn.visible = not touch
+	if _sens_label != null:
+		_sens_label.text = "Чувствительность" if touch else "Чувствительность мыши"
 	show_page("main")
 	visible = true
 

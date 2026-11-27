@@ -1,6 +1,7 @@
 extends RefCounted
 ## Тест HUD на поддельном бое: привязка, все состояния в обоих режимах, сигналы, меню вылета,
-## пауза, таблица, сенсорные кнопки, кабина, предупреждения, упреждение, миникарта.
+## пауза, таблица, сенсорные кнопки, кабина, предупреждения, упреждение, миникарта,
+## маркеры за облаками, реализм без маркеров врагов, подписи самолётов в повторе.
 
 const Fakes = preload("res://tests/harness_hud_fakes.gd")
 const HudMarkers = preload("res://scripts/ui/hud_markers.gd")
@@ -52,6 +53,9 @@ func run(tree: SceneTree) -> Array:
 	await _test_pause(tree)
 	await _test_touch(tree)
 	await _test_cockpit_and_warnings(tree)
+	await _test_clouds(tree)
+	await _test_realistic_markers(tree)
+	await _test_replay_tags(tree)
 	if tree.paused:
 		tree.paused = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -148,7 +152,7 @@ func _test_signals_and_menus(tree: SceneTree) -> void:
 	_check(hud.feed.kills.is_empty(), "лента не очистилась через 6 с")
 	# меню вылета: карточки и клик
 	hud.spawn_menu.refresh()
-	_check(hud.spawn_menu.cards.size() == b.lineup.size(), "карточек %d, а в сетапе %d" % [hud.spawn_menu.cards.size(), b.lineup.size()])
+	_check(hud.spawn_menu.cards.size() == b.lineup.size(), "карточек %d, а в составе %d" % [hud.spawn_menu.cards.size(), b.lineup.size()])
 	var card: Button = hud.spawn_menu.cards.get("shmel")
 	_check(card != null and not card.disabled, "карточка Шмеля должна быть доступна")
 	if card != null:
@@ -392,13 +396,13 @@ func _test_cockpit_and_warnings(tree: SceneTree) -> void:
 	texts.clear()
 	for it in HudWarnings.collect(pl, b, true):
 		texts.append(String(it.text))
-	_check("Ремонт 45%" in texts and "Пожар" in texts, "ремонт и пожар на сенсорном экране: %s" % str(texts))
+	_check("Ремонт 45 %" in texts and "Пожар" in texts, "ремонт и пожар на сенсорном экране: %s" % str(texts))
 	pl.dmg.ratios["tail"] = 1.0
 	pl.service_progress = 0.8
 	texts.clear()
 	for it in HudWarnings.collect(pl, b, false):
 		texts.append(String(it.text))
-	_check("Перезарядка 80%" in texts, "перезарядка: %s" % str(texts))
+	_check("Перезарядка 80 %" in texts, "перезарядка: %s" % str(texts))
 	# затемнение от перегрузки только в реализме
 	pl.fm.g_load = 9.5
 	for i in 40:
@@ -415,3 +419,143 @@ func _test_cockpit_and_warnings(tree: SceneTree) -> void:
 	_check(hud.effects.flash > 0.3, "нет вспышки при попадании")
 	_free(tree, b)
 	await _frames(tree, 1)
+
+
+## Облака прячут врагов: в облаке дальше 300 м и за плотным облаком; союзники видны всегда.
+func _test_clouds(tree: SceneTree) -> void:
+	# чистая функция видимости
+	var w = Fakes.FakeWorld.new()
+	var a := Vector3(0, 1000, 0)
+	var b := Vector3(0, 1000, -2000)
+	_check(is_equal_approx(HudMarkers.cloud_visibility(w, a, b, false), 1.0), "без облаков цель видна")
+	_check(HudMarkers.cloud_visibility(w, a, b, true) == 0.0, "цель в облаке дальше 300 м не видна")
+	_check(HudMarkers.cloud_visibility(w, a, a + Vector3(0, 0, -200), true) == 1.0, "цель в облаке ближе 300 м видна")
+	w.clouds = [{"pos": Vector3(0, 1000, -1000), "radius": 300.0}]
+	_check(HudMarkers.cloud_depth(w, a, b) > HudMarkers.LOS_HIDE, "плотное облако на линии взгляда: %.0f м" % HudMarkers.cloud_depth(w, a, b))
+	_check(HudMarkers.cloud_visibility(w, a, b, false) == 0.0, "за плотным облаком цель не видна")
+	_check(HudMarkers.cloud_visibility(w, a, Vector3(900, 1000, -2000), false) > 0.99, "облако в стороне не мешает")
+	w.free()
+	# в бою
+	var pair := _make(tree, "arcade")
+	var bt = pair[0]
+	var hud: BattleHUD = pair[1]
+	bt.set_state("flying")
+	await _frames(tree, 2)
+	var pl = bt.player
+	var vihr = _by_name(bt, "Вихрь")
+	var grom = _by_name(bt, "Гром")
+	var korshun = _by_name(bt, "Коршун")
+	var inei = _by_name(bt, "Иней")
+	hud.markers.tick(0.2)
+	_check(hud.markers.visibility_of(vihr) > 0.99 and hud.markers.visibility_of(grom) > 0.99, "без облаков враги видны")
+	# облако между игроком и Вихрем, Коршун сам в облаке, союзник Иней в облаке
+	var mid: Vector3 = (pl.global_position + vihr.global_position) * 0.5
+	bt.world.clouds = [{"pos": mid, "radius": 260.0}]
+	korshun.in_cloud = true
+	inei.in_cloud = true
+	for i in 4:
+		hud.markers.tick(0.2)
+	_check(hud.markers.visibility_of(vihr) < 0.01, "враг за облаком виден: %.2f" % hud.markers.visibility_of(vihr))
+	_check(hud.markers.visibility_of(grom) > 0.99, "враг вне облака спрятан: %.2f" % hud.markers.visibility_of(grom))
+	_check(hud.markers.visibility_of(korshun) < 0.01, "враг в облаке виден")
+	_check(hud.markers.visibility_of(inei) == 1.0, "союзник в облаке должен быть виден")
+	# облако ушло — маркер возвращается плавно
+	bt.world.clouds = []
+	korshun.in_cloud = false
+	hud.markers.tick(0.1)
+	var half: float = hud.markers.visibility_of(vihr)
+	_check(half > 0.0 and half < 1.0, "маркер появляется плавно: %.2f" % half)
+	for i in 4:
+		hud.markers.tick(0.2)
+	_check(hud.markers.visibility_of(vihr) > 0.99 and hud.markers.visibility_of(korshun) > 0.99, "после облака враги снова видны")
+	# плашка «В облаке» у игрока
+	pl.in_cloud = true
+	hud._refresh_labels(pl, "flying")
+	_check(hud.warnings.in_cloud, "нет плашки «В облаке»")
+	pl.in_cloud = false
+	hud._refresh_labels(pl, "flying")
+	_check(not hud.warnings.in_cloud, "плашка «В облаке» не убралась")
+	_free(tree, bt)
+	await _frames(tree, 1)
+
+
+## В реализме маркеров врагов, стрелок и упреждения нет; союзники ближе 800 м подписаны.
+func _test_realistic_markers(tree: SceneTree) -> void:
+	var pair := _make(tree, "realistic")
+	var bt = pair[0]
+	var hud: BattleHUD = pair[1]
+	bt.set_state("flying")
+	await _frames(tree, 3)
+	_check(not bool(bt.markers_enabled), "в реализме маркеры выключены")
+	var drawn: Array = hud.markers.debug_marks
+	var enemies := 0
+	var allies := 0
+	for m in drawn:
+		if int(m.team) == int(bt.player.team):
+			allies += 1
+		else:
+			enemies += 1
+	_check(enemies == 0, "в реализме нарисованы маркеры врагов: %d" % enemies)
+	_check(allies > 0, "в реализме нет подписей союзников рядом")
+	_check(not hud.markers.debug_lead, "в реализме нарисовано упреждение")
+	# затемнение от перегрузки видно поверх HUD
+	bt.player.fm.g_load = 9.0
+	for i in 60:
+		hud.effects.update(0.05, bt, bt.player, null, true)
+	_check(hud.effects.black > 0.55, "нет затемнения при 9 g: %.2f" % hud.effects.black)
+	_check(hud.gfx != null and hud.gfx.get_index() > hud.weapons.get_index(), "затемнение должно быть поверх приборов")
+	_free(tree, bt)
+	await _frames(tree, 1)
+
+
+func _by_name(bt, callsign: String):
+	for ac in bt.aircraft:
+		if String(ac.callsign) == callsign:
+			return ac
+	return null
+
+
+## Подписи в повторе: дальние скрыты (кроме выбранного), налезающие друг на друга отброшены.
+func _test_replay_tags(tree: SceneTree) -> void:
+	var holder := Node3D.new()
+	tree.root.add_child(holder)
+	var cam := Camera3D.new()
+	holder.add_child(cam)
+	cam.look_at_from_position(Vector3(0, 1000, 0), Vector3(0, 1000, -100), Vector3.UP)
+	var ghosts: Dictionary = {}
+	for i in 9:
+		var g := ReplayGhost.new()
+		holder.add_child(g)
+		g.setup(100 + i, {"def_id": "strizh", "team": i % 2, "callsign": String(Data.CALLSIGNS[i]), "camo": "factory"})
+		g.present = true
+		g.visible = true
+		g.last_pos = Vector3(i * 12.0 - 48.0, 1000.0 + (i % 3) * 8.0, -2000.0)
+		ghosts[100 + i] = g
+	var far := ReplayGhost.new()
+	holder.add_child(far)
+	far.setup(200, {"def_id": "flanker", "team": 1, "callsign": "Гром", "camo": "factory"})
+	far.present = true
+	far.last_pos = Vector3(900, 1100, -4000)
+	ghosts[200] = far
+	await tree.process_frame
+	var view := Vector2(1280, 720)
+	var tags := ReplayUI.collect_tags(ghosts, cam, -1, "free", view)
+	_check(tags.size() >= 1 and tags.size() < 9, "кучная группа: подписей %d из 9" % tags.size())
+	for i in tags.size():
+		for j in range(i + 1, tags.size()):
+			_check(not ReplayUI.tag_rect(tags[i]).intersects(ReplayUI.tag_rect(tags[j])), "подписи %d и %d налезают" % [i, j])
+	var uids: Array = []
+	for t in tags:
+		uids.append(int(t.uid))
+	_check(not 200 in uids, "подпись самолёта дальше %.0f м" % ReplayUI.TAG_RANGE)
+	_check(not far.show_tag and not far.tag.visible, "объёмная подпись призрака не выключена")
+	uids.clear()
+	for t in ReplayUI.collect_tags(ghosts, cam, 200, "free", view):
+		uids.append(int(t.uid))
+	_check(200 in uids, "выбранный самолёт подписан на любой дистанции")
+	uids.clear()
+	for t in ReplayUI.collect_tags(ghosts, cam, 200, "chase", view):
+		uids.append(int(t.uid))
+	_check(not 200 in uids, "в виде «Сзади» выбранный не подписывается (его имя сверху)")
+	holder.queue_free()
+	await tree.process_frame

@@ -1,5 +1,5 @@
 extends Node
-## Сохранение игрока: кредиты, опыт, исследования, сетап, камуфляжи, журнал, достижения, настройки.
+## Сохранение игрока: кредиты, опыт, исследования, состав, камуфляжи, журнал, достижения, настройки.
 ## Файл JSON в save_path. Сохраняется сразу после каждого изменения.
 
 signal changed
@@ -363,7 +363,7 @@ func get_lineup() -> Array:
 	return out
 
 
-## slot 0..3. id = "" убирает самолёт из слота. Сетап хранится без пустых мест.
+## slot 0..3. id = "" убирает самолёт из слота. Состав хранится без пустых мест.
 func set_lineup_slot(slot: int, id: String) -> void:
 	if slot < 0 or slot >= LINEUP_MAX:
 		return
@@ -391,7 +391,7 @@ func set_lineup_slot(slot: int, id: String) -> void:
 	_commit()
 
 
-## Добавить в первый свободный слот. false — уже в сетапе, не куплен или мест нет.
+## Добавить в первый свободный слот. false — уже в составе, не куплен или мест нет.
 func add_to_lineup(id: String) -> bool:
 	var lineup := get_lineup()
 	if not is_owned(id) or id in lineup or lineup.size() >= LINEUP_MAX:

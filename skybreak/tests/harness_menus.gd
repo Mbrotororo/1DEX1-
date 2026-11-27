@@ -102,6 +102,20 @@ func _run() -> void:
 	await shot("hangar_research")
 	hangar.select_plane("groza")
 	await shot("hangar_locked")
+	# крупные самолёты целиком между панелями: обычный вид и вид сбоку (худший случай при облёте)
+	hangar.select_plane("flanker")
+	await _frames(30)
+	await shot("hangar_flanker")
+	hangar.showroom._t_yaw = Showroom.DEFAULT_YAW + PI * 0.25
+	hangar.showroom._update_camera(1.0, true)
+	await shot("hangar_flanker_side")
+	hangar.showroom.reset_view()
+	hangar.showroom._update_camera(1.0, true)
+	hangar.select_plane("burevestnik")
+	await _frames(30)
+	hangar.showroom._t_yaw = Showroom.DEFAULT_YAW - PI * 0.25
+	hangar.showroom._update_camera(1.0, true)
+	await shot("hangar_burevestnik_front")
 	hangar.queue_free()
 	await _frames(2)
 

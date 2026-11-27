@@ -106,7 +106,7 @@ func _init() -> void:
 		"shape": {"length": 21.9, "span": 14.7, "fuselage_radius": 1.0, "wing_type": "swept", "sweep_deg": 42.0, "wing_z": 1.5,
 			"chord": 5.0, "tail": "twin", "engines": "twin_jet", "cockpit_z": -6.5, "gear_height": 2.4, "base_color": Color(0.43, 0.60, 0.70)}})
 	_add({"id": "prizrak", "name": "Призрак", "code": "С-5", "rank": 3, "line": "fighter", "kind": "jet", "level": 6.7,
-		"role": "Малозаметный истребитель", "desc": "Боты и ракеты замечают его позже. 6 ракет.", "parent": "flanker", "research_xp": 28000, "price": 42000, "repair": 2400,
+		"role": "Малозаметный истребитель", "desc": "Противники и ракеты замечают его позже. 6 ракет.", "parent": "flanker", "research_xp": 28000, "price": 42000, "repair": 2400,
 		"mass": 25000.0, "wing_area": 78.0, "power_kw": 0.0, "thrust": 160000.0, "afterburner": 100000.0,
 		"cd0": 0.019, "k_induced": 0.09, "cl_slope": 4.0, "cl_max": 1.5, "alpha_crit_deg": 28.0, "mcrit": 0.97,
 		"max_pitch_rate_deg": 32.0, "max_roll_rate_deg": 190.0, "max_yaw_rate_deg": 13.0, "v_ref": 160.0, "vne": 470.0, "g_limit": 9.0,
@@ -203,8 +203,9 @@ func planes_in(line: String, rank: int = 0) -> Array:
 			out.append(pid)
 	return out
 
+## Уровень боя для интерфейса: 1.7 -> "1,7".
 func level_text(level: float) -> String:
-	return "%.1f" % level
+	return ("%.1f" % level).replace(".", ",")
 
 const RANK_ROMAN := ["", "I", "II", "III"]
 const RANK_NAMES := {1: "Поршневые", 2: "Первые реактивные", 3: "Современные"}
@@ -313,7 +314,7 @@ var ACHIEVEMENTS: Dictionary = {
 	"first_win": {"name": "Победа", "desc": "Выиграй бой"},
 	"ace": {"name": "Ас", "desc": "Сбей 5 самолётов за один бой"},
 	"ground_10": {"name": "Штурмовик", "desc": "Уничтожь 10 наземных целей"},
-	"landing": {"name": "Посадка", "desc": "Сядь на свой аэродром и пополни боезапас"},
+	"landing": {"name": "Посадка", "desc": "Сядь на аэродром и перезарядись"},
 	"cobra": {"name": "Кобра", "desc": "Сделай кобру и вернись в горизонт"},
 	"battles_10": {"name": "10 боёв", "desc": "Проведи 10 боёв"},
 	"rank3": {"name": "Третий ранг", "desc": "Исследуй самолёт третьего ранга"},
