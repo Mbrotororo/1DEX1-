@@ -134,6 +134,28 @@ func _check_map(tree: SceneTree, m: Dictionary) -> void:
 			var off: Vector3 = c + f * 100.0
 			var s2: Dictionary = w1.surface_at(off.x, off.z)
 			_check(s2.kind == "deck", "%s: палуба в 100 м от центра не найдена" % id)
+			# для катапульты и тросов: курс палубы и сколько её до носа и до кормы
+			_check(absf(float(s.get("heading", -9.0)) - hd) < 0.001, "%s: у палубы нет курса: %s" % [id, str(s)])
+			_check(absf(float(s.get("bow_dist", 0.0)) + float(s.get("stern_dist", 0.0)) - 298.0) < 1.0, "%s: длина палубы по bow_dist/stern_dist" % id)
+			_check(absf(float(s2.get("bow_dist", 0.0)) - 50.0) < 1.0, "%s: bow_dist в 100 м от центра к носу %.1f" % [id, float(s2.get("bow_dist", 0.0))])
+			# снаряды: палуба и надстройка твёрдые, под палубой вода
+			_check(absf(w1.solid_height_at(c.x, c.z) - float(s.height)) < 0.01, "%s: solid_height_at на палубе" % id)
+			_check(w1.height_at(c.x, c.z) < 0.0, "%s: под палубой не вода" % id)
+			var isl: Rect2 = w1.carrier.island
+			var ip := w1.carrier_world(Vector3(isl.get_center().x, 0.0, isl.get_center().y))
+			var si: Dictionary = w1.surface_at(ip.x, ip.z)
+			_check(si.kind == "deck" and not bool(si.flat) and w1.solid_height_at(ip.x, ip.z) > float(s.height) + 10.0, "%s: надстройка: %s" % [id, str(si)])
+			var beside: Vector3 = c - r * 60.0
+			_check(w1.solid_height_at(beside.x, beside.z) == w1.height_at(beside.x, beside.z), "%s: solid_height_at рядом с бортом" % id)
+			# точка появления: у кормы по оси, носом к носу корабля
+			var dsp: Dictionary = w1.runway_spawn(int(af.team), 0)
+			var dl: Vector3 = w1.carrier_local(dsp.pos)
+			_check(bool(dsp.get("deck", false)), "%s: runway_spawn на палубе без флага deck" % id)
+			_check(absf(dl.x) < 0.5 and dl.z > 100.0 and dl.z < 135.0, "%s: появление на палубе не у кормы по оси: %s" % [id, str(dl)])
+			_check((-(dsp.basis as Basis).z).dot(f) > 0.999, "%s: на палубе нос не к носу корабля" % id)
+		if af.kind == "airfield":
+			_check(absf(w1.solid_height_at(c.x, c.z) - w1.height_at(c.x, c.z)) < 0.001, "%s: solid_height_at на полосе" % id)
+			_check(not w1.runway_spawn(int(af.team), 0).has("deck"), "%s: флаг deck на суше" % id)
 		# появление на полосе
 		for i in 4:
 			var sp: Dictionary = w1.runway_spawn(int(af.team), i)

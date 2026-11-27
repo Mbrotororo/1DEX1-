@@ -53,6 +53,7 @@ var _grid: Dictionary = {}
 
 var _ground_world = null
 var _step_world = null
+var _step_solid: bool = false      # у мира есть solid_height_at (палуба авианосца твёрдая)
 var _ground_key: String = ""
 var _ground_max: float = 0.5
 
@@ -259,6 +260,7 @@ func step(dt: float) -> void:
 	_fx_budget = 8
 	_hit_snd_cd = maxf(0.0, _hit_snd_cd - dt)
 	_step_world = _world()
+	_step_solid = _step_world != null and _step_world.has_method("solid_height_at")
 	_build_targets(dt)
 	if _bn > 0:
 		_step_bullets(dt)
@@ -286,6 +288,8 @@ func _build_targets(_dt: float) -> void:
 		for u in units:
 			if u == null or not is_instance_valid(u) or not _alive(u):
 				continue
+			if "invulnerable" in u and bool(u.get("invulnerable")):
+				continue   # авианосец: попадания ловит палуба (World.solid_height_at), а не сфера
 			_targets.append([u, u.global_position, float(u.radius), 1, int(u.team), int(u.get("uid") if "uid" in u else -1), Vector3.ZERO, bool(u.get("armored") if "armored" in u else false)])
 	for idx in _targets.size():
 		var e: Array = _targets[idx]
@@ -331,12 +335,8 @@ func _step_bullets(dt: float) -> void:
 			var h := _height(np.x, np.z)
 			var surf := maxf(h, 0.0)
 			if np.y <= surf:
-				var hit := np
-				var dy := p.y - np.y
-				if dy > 0.001 and p.y > surf:
-					hit = p.lerp(np, clampf((p.y - surf) / dy, 0.0, 1.0))
-				hit.y = surf
-				_impact_fx(hit, h < 0.0, _btr[i] != 0)
+				var hit := _surface_cross(p, np)
+				_impact_fx(hit, _height(hit.x, hit.z) < 0.0, _btr[i] != 0)
 				removed = true
 		if not removed and age >= BULLET_LIFE:
 			removed = true
@@ -695,12 +695,8 @@ func _ground_hit(s: Shell, np: Vector3, size: float) -> bool:
 	var surf := maxf(h, 0.0)
 	if np.y > surf:
 		return false
-	var hit := np
-	var dy := s.pos.y - np.y
-	if dy > 0.001 and s.pos.y > surf:
-		hit = s.pos.lerp(np, clampf((s.pos.y - surf) / dy, 0.0, 1.0))
-	hit.y = surf
-	_explode(hit, s.damage, s.radius, s.owner, s.team, null, size, h < 0.0)
+	var hit := _surface_cross(s.pos, np)
+	_explode(hit, s.damage, s.radius, s.owner, s.team, null, size, _height(hit.x, hit.z) < 0.0)
 	s.dead = true
 	return true
 
@@ -804,10 +800,35 @@ func _world():
 	return w
 
 
+## Точка входа отрезка a→b в твёрдую поверхность (b уже на ней или ниже). Делением пополам,
+## поэтому верно и для склона, и для борта авианосца, куда снаряд входит сбоку.
+func _surface_cross(a: Vector3, b: Vector3) -> Vector3:
+	var hb := maxf(_height(b.x, b.z), 0.0)
+	if a.y <= maxf(_height(a.x, a.z), 0.0):
+		return Vector3(b.x, maxf(b.y, minf(hb, a.y)), b.z)
+	var t0 := 0.0
+	var t1 := 1.0
+	for k in 8:
+		var tm := 0.5 * (t0 + t1)
+		var pm := a.lerp(b, tm)
+		if pm.y > maxf(_height(pm.x, pm.z), 0.0):
+			t0 = tm
+		else:
+			t1 = tm
+	var hit := a.lerp(b, t1)
+	var hs := maxf(_height(hit.x, hit.z), 0.0)
+	if hit.y < hs and hs - hit.y < 0.5:
+		hit.y = hs
+	return hit
+
+
+## Высота твёрдой поверхности: рельеф, а если мир умеет — ещё палуба и надстройка авианосца.
 func _height(x: float, z: float) -> float:
 	var w = _step_world
 	if w == null or not is_instance_valid(w):
 		return 0.0
+	if _step_solid:
+		return float(w.solid_height_at(x, z))
 	return float(w.height_at(x, z))
 
 
@@ -834,7 +855,8 @@ func _ground_limit() -> float:
 			var x := -hs + 2.0 * hs * float(ix) / n
 			var z := -hs + 2.0 * hs * float(iz) / n
 			mx = maxf(mx, float(w.height_at(x, z)))
-	_ground_max = mx + 120.0
+	# палуба авианосца с надстройкой (~44 м) сеткой может не попасться
+	_ground_max = maxf(mx, 60.0) + 120.0
 	return _ground_max
 
 

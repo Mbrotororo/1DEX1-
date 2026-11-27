@@ -25,6 +25,10 @@ func run(_tree: SceneTree) -> Array:
 	_test_trim_feel()
 	_test_tail_lost()
 	_test_ground_misc()
+	_test_runway_takeoff_all()
+	_test_top_speed_all()
+	_test_catapult_all()
+	_test_arrest()
 	_test_determinism()
 	_test_damage()
 	return errors
@@ -427,6 +431,217 @@ func _test_ground_misc() -> void:
 	fm.step(DT, c, FLAT)
 	if not g1 or fm.gear_down:
 		_fail("шасси: переключение %s, после внешнего %s" % [g1, fm.gear_down])
+
+# ---------------------------------------------------------------- разбег всех самолётов
+
+## Полоса 1400 м: полный газ (у реактивных форсаж), ручка нейтрально, с 1.1 скорости сваливания — на себя.
+func _test_runway_takeoff_all() -> void:
+	var runway := {"height": 0.0, "kind": "runway", "team": 0, "flat": true}
+	print("  разбег по полосе (газ 100 %, форсаж у реактивных, ручка на себя с 1.1 Vs):")
+	print("    %-12s %8s %8s %8s %8s" % ["самолёт", "Vs, м/с", "отрыв, м", "время, с", "V, км/ч"])
+	for id in Data.ORDER:
+		var d := Data.plane(id)
+		var jet := String(d.kind) == "jet"
+		var fm := FlightModel.new()
+		fm.setup(d, Vector3(0.0, float(d.shape.gear_height), 0.0), Basis.IDENTITY, 0.0, true)
+		fm.assist = true
+		var vs := fm.stall_speed()
+		var t_lo := -1.0
+		var x_lo := -1.0
+		var v_lo := 0.0
+		for i in 60 * 60:
+			var p := 1.0 if fm.airspeed > 1.1 * vs else 0.0
+			fm.step(DT, _ctrl(p, 0.0, 0.0, 1.0, jet), runway)
+			if fm.crashed or -fm.pos.z > 1400.0:
+				break
+			if not fm.on_ground:
+				t_lo = (i + 1) * DT
+				x_lo = -fm.pos.z
+				v_lo = fm.airspeed
+				break
+		print("    %-12s %8.1f %8.0f %8.1f %8.0f" % [d.name, vs, x_lo, t_lo, _kmh(v_lo)])
+		if fm.crashed or t_lo < 0.0 or x_lo > 1000.0:
+			_fail("разбег %s: отрыв через %.0f м (нужно ≤ 1000 на полосе 1400 м), разбился=%s %s" % [id, x_lo, fm.crashed, fm.crash_reason])
+
+# ---------------------------------------------------------------- максимальная скорость и vne
+
+## Горизонт на 1000 м, полный газ (и форсаж): установившаяся скорость ниже vne с запасом 5 %.
+func _test_top_speed_all() -> void:
+	print("  максимальная скорость на 1000 м (газ 100 %, форсаж у реактивных):")
+	print("    %-12s %9s %9s %6s" % ["самолёт", "V, км/ч", "vne, км/ч", "V/vne"])
+	for id in Data.ORDER:
+		var d := Data.plane(id)
+		var jet := String(d.kind) == "jet"
+		var vne := float(d.vne)
+		var fm := _mk(id, 1000.0, 0.85 * vne, true)
+		for i in 150 * 60:
+			fm.step(DT, _ctrl(0.0, 0.0, 0.0, 1.0, jet), FLAT)
+		var v := fm.airspeed
+		print("    %-12s %9.0f %9.0f %6.2f" % [d.name, _kmh(v), _kmh(vne), v / vne])
+		if v > 0.95 * vne or absf(fm.pos.y - 1000.0) > 60.0:
+			_fail("макс. скорость %s: %.0f км/ч при vne %.0f км/ч (нужно ≤ 95 %%), высота %.0f" % [id, _kmh(v), _kmh(vne), fm.pos.y])
+
+# ---------------------------------------------------------------- авианосец
+
+## Палуба как у авианосца на рифе: нос на -Z, корма на z = +148, нос на z = -150, ширина 38 м.
+func _deck_at(p: Vector3, team := 0) -> Dictionary:
+	if absf(p.x) <= 19.0 and p.z <= 148.0 and p.z >= -150.0:
+		return {"height": 20.0, "kind": "deck", "team": team, "flat": true, "heading": 0.0,
+			"bow_dist": p.z + 150.0, "stern_dist": 148.0 - p.z}
+	return WATER
+
+## Катапульта: все самолёты, аркада и реализм. С кормы, газ 100 % (форсаж), ручка нейтрально;
+## в воздухе — мягко на себя (держит +3 м/с). Сход до носа, не ниже палубы, через 5 с набор высоты.
+func _test_catapult_all() -> void:
+	print("  катапульта (палуба 300 м, старт в 28 м от кормы):")
+	print("    %-12s %-7s %8s %8s %8s %9s %9s" % ["самолёт", "режим", "Vs, м/с", "сход, м/с", "время, с", "разбег, м", "Vy+5с, м/с"])
+	for id in Data.ORDER:
+		var d := Data.plane(id)
+		var jet := String(d.kind) == "jet"
+		var gh := float(d.shape.gear_height)
+		for assist in [true, false]:
+			var fm := FlightModel.new()
+			fm.team = 0
+			fm.assist = assist
+			fm.setup(d, Vector3(0.0, 20.0 + gh, 120.0), Basis.IDENTITY, 0.0, true)
+			var vs := fm.stall_speed()
+			var t := 0.0
+			var t_rel := -1.0
+			var z_rel := 0.0
+			var v_rel := 0.0
+			var min_y := 1e9
+			var vy5 := -99.0
+			var saw_cat := false
+			for i in 20 * 60:
+				var p := 0.0
+				if not fm.on_ground:
+					p = clampf((3.0 - fm.vertical_speed) * 0.08, 0.0, 0.35)
+				fm.step(DT, _ctrl(p, 0.0, 0.0, 1.0, jet), _deck_at(fm.pos))
+				t += DT
+				saw_cat = saw_cat or fm.catapult
+				if fm.crashed:
+					break
+				if not fm.on_ground and t_rel < 0.0:
+					t_rel = t
+					z_rel = fm.pos.z
+					v_rel = fm.airspeed
+				if t_rel >= 0.0:
+					min_y = minf(min_y, fm.pos.y - gh)
+					if t - t_rel >= 5.0:
+						vy5 = fm.vertical_speed
+						break
+			var mode := "аркада" if assist else "реализм"
+			print("    %-12s %-7s %8.1f %8.1f %8.2f %9.0f %9.1f" % [d.name, mode, vs, v_rel, t_rel, 120.0 - z_rel, vy5])
+			var who := "катапульта %s (%s)" % [id, mode]
+			if fm.crashed:
+				_fail("%s: разбился (%s)" % [who, fm.crash_reason])
+				continue
+			if not saw_cat or t_rel < 0.0:
+				_fail("%s: катапульта не сработала, в воздухе с %.1f с" % [who, t_rel])
+				continue
+			if t_rel < 1.5 or t_rel > 3.0:
+				_fail("%s: разгон %.2f с (нужно 1.5..3)" % [who, t_rel])
+			if v_rel < 1.2 * vs or v_rel > 1.4 * vs:
+				_fail("%s: скорость схода %.1f м/с при Vs %.1f (нужно около 1.25 Vs)" % [who, v_rel, vs])
+			if z_rel < -150.0:
+				_fail("%s: сошёл не с палубы (z %.0f)" % [who, z_rel])
+			if min_y < 18.0:
+				_fail("%s: просел до %.1f м над водой (палуба 20 м)" % [who, min_y])
+			if vy5 <= 0.0:
+				_fail("%s: через 5 с после схода не набирает высоту, Vy %.1f" % [who, vy5])
+	# чужая палуба, газ меньше 0.9 или тормоз — катапульта не срабатывает
+	for kind in ["enemy", "throttle", "brake"]:
+		var fm := FlightModel.new()
+		fm.team = 0
+		fm.setup(Data.plane("strizh"), Vector3(0.0, 21.4, 120.0), Basis.IDENTITY, 0.0, true)
+		var c := _ctrl(0.0, 0.0, 0.0, 0.8 if kind == "throttle" else 1.0)
+		c.brake = kind == "brake"
+		for i in 60:
+			fm.step(DT, c, _deck_at(fm.pos, 1 if kind == "enemy" else 0))
+		if fm.catapult or fm.airspeed > 15.0:
+			_fail("катапульта (%s): сработала, скорость %.1f м/с" % [kind, fm.airspeed])
+
+## Посадка на палубу: заход с кормы на 1.3 Vs, касание — трос, остановка до 100 м и до носа.
+## Слишком быстро (1.8 Vs) — трос не цепляет; на чужой палубе — тоже; ниже палубы — удар о борт.
+func _test_arrest() -> void:
+	for id in ["strizh", "shmel", "sokol", "flanker", "groza"]:
+		var r := _deck_landing(id, 1.3, 0)
+		print("  посадка на палубу %s: касание z=%.0f при %.0f км/ч, остановка через %.0f м (z=%.0f), трос=%s" %
+			[id, r.touch_z, _kmh(r.touch_v), r.run, r.stop_z, r.arrested])
+		if r.crashed or not r.landed:
+			_fail("трос %s: не сел (%s)" % [id, r.reason])
+			continue
+		if not r.arrested:
+			_fail("трос %s: не зацепился, касание на %.0f км/ч" % [id, _kmh(r.touch_v)])
+		if r.run > 100.0 or r.stop_z < -150.0 or not r.stopped:
+			_fail("трос %s: пробег %.0f м, остановка z=%.0f (нос на -150), стоит=%s" % [id, r.run, r.stop_z, r.stopped])
+	var fast := _deck_landing("strizh", 1.8, 0)
+	if fast.arrested:
+		_fail("трос: зацепил на %.0f км/ч (выше 1.6 Vs)" % _kmh(fast.touch_v))
+	var enemy := _deck_landing("strizh", 1.3, 1)
+	if enemy.arrested:
+		_fail("трос: зацепил на чужой палубе")
+	# подлёт ниже уровня палубы — удар о корму
+	var fm := FlightModel.new()
+	fm.team = 0
+	fm.setup(Data.plane("strizh"), Vector3(0.0, 12.0, 200.0), Basis.IDENTITY, 60.0, false)
+	fm.gear_down = true
+	for i in 3 * 60:
+		fm.step(DT, _ctrl(0.0, 0.0, 0.0, 0.6), _deck_at(fm.pos))
+		if fm.crashed or fm.on_ground:
+			break
+	if not fm.crashed:
+		_fail("ниже палубы: не разбился о корму (на земле=%s, высота %.1f)" % [fm.on_ground, fm.pos.y])
+
+## Заход на палубу с кормы и посадка; на палубе газ 0 без тормоза (останавливает трос).
+func _deck_landing(id: String, speed_k: float, deck_team: int) -> Dictionary:
+	var d := Data.plane(id)
+	var gh := float(d.shape.gear_height)
+	var probe := _mk(id, 0.0, 100.0, true)
+	var v0 := speed_k * probe.stall_speed()
+	var aim_z := 100.0
+	var start_z := 148.0 + 420.0
+	var t_fly := (start_z - aim_z) / v0
+	var fm := FlightModel.new()
+	fm.team = 0
+	fm.assist = true
+	var y0 := 20.0 + gh + 2.5 * t_fly
+	fm.setup(d, Vector3(0.0, y0, start_z), Basis(Vector3.RIGHT, -atan(2.5 / v0)), v0, false)
+	fm.gear_down = true
+	var r := {"landed": false, "arrested": false, "crashed": false, "reason": "", "touch_z": 0.0, "touch_v": 0.0,
+		"run": 0.0, "stop_z": 0.0, "stopped": false}
+	for i in 60 * 60:
+		var c := _ctrl(0.0, 0.0, 0.0, 0.5)
+		if fm.on_ground:
+			c.throttle = 0.0
+		else:
+			var h := fm.pos.y - (20.0 + gh)
+			var tt := maxf((fm.pos.z - aim_z) / maxf(fm.airspeed, 10.0), 0.4)
+			var vs_t := clampf(-h / tt, -4.0, -0.8)
+			c.pitch = clampf((vs_t - fm.vertical_speed) * 0.12, -0.3, 0.3)
+			c.throttle = clampf(0.45 + (v0 - fm.airspeed) * 0.08, 0.0, 1.0)
+		var was_air := not fm.on_ground
+		var v_before := fm.airspeed
+		fm.step(DT, c, _deck_at(fm.pos, deck_team))
+		if fm.crashed:
+			r.crashed = true
+			r.reason = fm.crash_reason
+			break
+		if was_air and fm.on_ground and not r.landed:
+			r.landed = true
+			r.touch_z = fm.pos.z
+			r.touch_v = v_before
+			r.arrested = fm.arrested
+		if r.landed and not fm.on_ground:
+			r.reason = "ушёл с палубы"
+			break
+		if r.landed and fm.airspeed < 0.3:
+			r.stopped = true
+			break
+	r.stop_z = fm.pos.z
+	if r.landed:
+		r.run = r.touch_z - fm.pos.z
+	return r
 
 func _test_determinism() -> void:
 	var a := _mk("mirage", 1200.0, 180.0, true)

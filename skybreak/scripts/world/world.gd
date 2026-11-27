@@ -217,11 +217,27 @@ func _carrier_surface(x: float, z: float) -> Dictionary:
 	var local := carrier_local(Vector3(x, 0.0, z))
 	var p2 := Vector2(local.x, local.z)
 	var isl: Rect2 = carrier.island
+	# heading — курс палубы (на нос); bow_dist / stern_dist — сколько палубы до носа / до кормы по оси
+	var hd: float = carrier.heading
+	var bow := local.z + Carrier.BOW_Z
+	var stern := Carrier.STERN_Z - local.z
 	if isl.has_point(p2):
-		return {"height": carrier.deck_h + Carrier.ISLAND_HEIGHT, "kind": "deck", "team": carrier.team, "flat": false}
+		return {"height": carrier.deck_h + Carrier.ISLAND_HEIGHT, "kind": "deck", "team": carrier.team, "flat": false,
+			"heading": hd, "bow_dist": bow, "stern_dist": stern}
 	if Geometry2D.is_point_in_polygon(p2, carrier.outline):
-		return {"height": carrier.deck_h, "kind": "deck", "team": carrier.team, "flat": true}
+		return {"height": carrier.deck_h, "kind": "deck", "team": carrier.team, "flat": true,
+			"heading": hd, "bow_dist": bow, "stern_dist": stern}
 	return {}
+
+## Высота твёрдой поверхности для снарядов: рельеф, палуба и надстройка авианосца.
+## Под водой — как height_at (меньше 0), чтобы по знаку отличать всплеск от взрыва на земле.
+func solid_height_at(x: float, z: float) -> float:
+	var h := height_at(x, z)
+	if not carrier.is_empty():
+		var cs := _carrier_surface(x, z)
+		if not cs.is_empty():
+			h = maxf(h, float(cs.height))
+	return h
 
 ## Перевод мировой точки в локальные координаты авианосца (нос на -Z).
 func carrier_local(p: Vector3) -> Vector3:
@@ -302,11 +318,15 @@ func runway_spawn(team: int, index: int) -> Dictionary:
 	var side := 0.0 if index == 0 else (1.0 if index % 2 == 1 else -1.0)
 	var p: Vector3 = af.runway_start + fwd * (row * 55.0) + right * (side * 12.0)
 	if af.kind == "carrier":
-		# на палубе: три ряда по оси, дальше — левее, подальше от надстройки
+		# на палубе: первый — у кормы по оси носом к носу корабля (катапульта разгоняет вдоль оси),
+		# дальше — три ряда по оси, потом левее, подальше от надстройки
 		p = af.runway_start + fwd * ((index % 3) * 50.0) - right * (9.0 * float((index / 3) % 2))
 	var s := surface_at(p.x, p.z)
 	p.y = float(s.height) + 1.0
-	return {"pos": p, "basis": heading_basis(h), "speed": 0.0, "on_ground": true}
+	var out := {"pos": p, "basis": heading_basis(h), "speed": 0.0, "on_ground": true}
+	if af.kind == "carrier":
+		out["deck"] = true
+	return out
 
 # ---------------------------------------------------------------- наземные цели
 

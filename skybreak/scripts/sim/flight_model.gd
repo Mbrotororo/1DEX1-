@@ -3,6 +3,8 @@ extends RefCounted
 ## Модель полёта по энергии: подъёмная сила, сопротивление, тяга, сваливание, кобра, земля.
 ## Чистая логика без сцены и без случайности. Шаг внутри делится на подшаги по 1/120 с.
 ## Оси самолёта: вперёд = -Z, вверх = +Y, вправо = +X.
+## Палуба своего авианосца: катапульта (газ от 0.9 или форсаж — разгон до 1.25 Vs за 2–2.5 с)
+## и тросы аэрофинишёра (касание с шасси ниже 1.6 Vs — остановка примерно за 80 м).
 
 const G := 9.81
 const RHO0 := 1.225
@@ -29,6 +31,19 @@ const GROUND_PITCH_MIN := -2.0   # град
 const GROUND_PITCH_MAX := 15.0   # град
 const BRAKE_DECEL := 6.0         # м/с²
 const ROLL_FRICTION := 0.02
+# авианосец: катапульта и тросы аэрофинишёра (только на палубе своей команды)
+const CAT_THROTTLE := 0.9        # газ, с которого срабатывает катапульта (или форсаж)
+const CAT_SPEED_K := 1.25        # скорость схода с катапульты, доля скорости сваливания
+const CAT_TIME := 2.7            # с: за сколько катапульта сама разгоняет до скорости схода (с тягой — 2..2.5 с)
+const CAT_MAX_ACC := 50.0        # м/с², предел ускорения катапульты
+const CAT_MIN_RUN := 30.0        # м палубы впереди, меньше — катапульта не срабатывает
+const CAT_LAUNCH_G := 1.2        # на сходе нос ставится на угол атаки для такой перегрузки
+const CAT_LAUNCH_AOA_MAX := 18.0 # град
+const ARREST_SPEED_K := 1.6      # трос цепляет, если скорость касания ниже этой доли скорости сваливания
+const ARREST_RUN := 80.0         # м пробега на тросе
+const ARREST_MAX_DEC := 60.0     # м/с²
+const ARREST_MIN_RUN := 25.0     # м палубы впереди, меньше — трос уже не поймать
+const HULL_STRIKE := 1.5         # м: коснулся палубы ниже её уровня — удар о борт
 
 var def: Dictionary = {}
 var pos: Vector3 = Vector3.ZERO
@@ -69,6 +84,10 @@ var pitch_rate: float = 0.0        # рад/с, + нос вверх
 var roll_rate: float = 0.0         # рад/с, + крен вправо
 var yaw_rate: float = 0.0          # рад/с, + нос вправо
 var spin: float = 0.0              # 0..1, развитость штопора
+var team: int = -1                 # команда владельца: катапульта и тросы работают на своей палубе (-1 — на любой)
+var catapult: bool = false         # идёт разгон катапультой (только чтение)
+var arrested: bool = false         # самолёт держит трос аэрофинишёра (только чтение)
+var catapult_speed: float = 0.0    # скорость схода текущего пуска, м/с (только чтение)
 
 # параметры самолёта (кэш из def)
 var _mass: float = 3000.0
@@ -102,6 +121,10 @@ var _aoa_limit: float = 1.0
 var _gamma_ref: float = 0.0
 var _gamma_valid: bool = false
 var _spin_dir: float = 0.0
+var _cat_heading: float = 0.0
+var _cat_acc: float = 0.0
+var _arrest_dec: float = 0.0
+var _launch_t: float = 100.0       # с после схода с катапульты (сразу после пуска трос не ловит)
 
 # ---------------------------------------------------------------- настройка
 
@@ -121,6 +144,9 @@ func setup(p_def: Dictionary, start_pos: Vector3, start_basis: Basis, start_spee
 	_gamma_valid = false
 	spin = 0.0
 	_spin_dir = 0.0
+	catapult = false
+	arrested = false
+	_launch_t = 100.0
 	if on_ground:
 		gear_down = true
 		var hd := heading()
@@ -273,6 +299,7 @@ func step(dt: float, ctrl: Dictionary, surface: Dictionary) -> void:
 	for i in n:
 		if crashed:
 			break
+		_launch_t += h
 		if on_ground:
 			_ground_substep(h, ctrl, surface)
 		else:
@@ -282,6 +309,8 @@ func step(dt: float, ctrl: Dictionary, surface: Dictionary) -> void:
 	_update_outputs(dt)
 
 func _air_substep(h: float, ctrl: Dictionary, surface: Dictionary) -> void:
+	catapult = false
+	arrested = false
 	var fwd := -basis.z
 	var upv := basis.y
 	var rgt := basis.x
@@ -461,6 +490,10 @@ func _check_contact(surface: Dictionary) -> void:
 	var floor_y := s_h + _gear_h
 	if pos.y > floor_y:
 		return
+	if String(surface.get("kind", "")) == "deck" and pos.y < floor_y - HULL_STRIKE:
+		# подошёл к авианосцу ниже палубы: удар о борт или корму
+		_crash("ground")
+		return
 	if vel.y > 0.0 and pos.y > floor_y - 0.6:
 		pos.y = floor_y   # отрыв или касание на подъёме
 		return
@@ -496,6 +529,84 @@ func _touchdown(surface: Dictionary) -> void:
 	pitch_rate = 0.0
 	roll_rate = 0.0
 	yaw_rate = 0.0
+	catapult = false
+	arrested = false
+	_try_arrest(surface, hd)
+
+## Палуба своей команды (у модели без команды — любая палуба).
+func _own_deck(surface: Dictionary) -> bool:
+	if String(surface.get("kind", "")) != "deck":
+		return false
+	return team < 0 or int(surface.get("team", -1)) == team
+
+## Сколько палубы впереди по курсу hd (по оси палубы), м. Без данных — «много».
+func _deck_ahead(surface: Dictionary, hd: float) -> float:
+	if not surface.has("heading"):
+		return 1e6
+	var toward_bow := cos(hd - float(surface.get("heading", hd))) >= 0.0
+	return float(surface.get("bow_dist" if toward_bow else "stern_dist", 1e6))
+
+## Скорость сваливания у текущей плотности воздуха и с учётом повреждённых крыльев.
+func _stall_here() -> float:
+	var wf := maxf(0.5 * (lift_left + lift_right), 0.3)
+	return stall_speed() * sqrt(RHO0 / air_density_at(pos.y) / wf)
+
+## Касание своей палубы на малой скорости с шасси: трос останавливает самолёт.
+func _try_arrest(surface: Dictionary, hd: float) -> void:
+	if not _own_deck(surface) or not gear_down or _launch_t < 4.0:
+		return
+	if surface.has("heading") and absf(cos(hd - float(surface.heading))) < 0.7:
+		return   # поперёк палубы тросы не поймать
+	var u := vel.length()
+	if u >= ARREST_SPEED_K * _stall_here():
+		return
+	var ahead := _deck_ahead(surface, hd)
+	if ahead < ARREST_MIN_RUN:
+		return
+	var run := clampf(ahead - 15.0, 10.0, ARREST_RUN)
+	_arrest_dec = clampf(u * u / (2.0 * run), 2.0, ARREST_MAX_DEC)
+	arrested = true
+
+## Катапульта готова: своя палуба, газ от 0.9 или форсаж, нос к носу корабля, впереди хватает палубы.
+func _catapult_ready(surface: Dictionary, hd: float, u: float) -> bool:
+	if not _own_deck(surface) or brake or thrust_factor <= 0.0:
+		return false
+	if throttle < CAT_THROTTLE and not afterburner:
+		return false
+	if u >= CAT_SPEED_K * _stall_here():
+		return false
+	if surface.has("heading") and cos(hd - float(surface.heading)) < 0.5:
+		return false
+	return float(surface.get("bow_dist", 1e6)) >= CAT_MIN_RUN
+
+func _start_catapult(surface: Dictionary, hd: float, u: float) -> void:
+	catapult = true
+	_cat_heading = float(surface.get("heading", hd))
+	catapult_speed = CAT_SPEED_K * _stall_here()
+	var ahead := float(surface.get("bow_dist", 1e6))
+	# успеть до носа даже с середины палубы
+	var need := (catapult_speed * catapult_speed - u * u) / (2.0 * maxf(ahead - 15.0, 15.0))
+	_cat_acc = clampf(maxf(catapult_speed / CAT_TIME, need), 0.0, CAT_MAX_ACC)
+	basis = _ground_basis(_cat_heading, _ground_pitch)
+	vel = _flat_forward(_cat_heading) * u
+
+## Конец хода катапульты: нос на угол атаки для CAT_LAUNCH_G, самолёт уже в воздухе.
+func _catapult_release(u: float, s_h: float) -> void:
+	var q := 0.5 * air_density_at(pos.y) * u * u
+	var wf := maxf(0.5 * (lift_left + lift_right), 0.05)
+	var cl_need := CAT_LAUNCH_G * _mass * G / maxf(q * _area * wf, 1.0)
+	var a := clampf(cl_need / _cl_slope, 0.0, minf(0.85 * _a_crit, deg_to_rad(CAT_LAUNCH_AOA_MAX)))
+	catapult = false
+	on_ground = false
+	_launch_t = 0.0
+	_gamma_valid = false
+	_ground_pitch = a
+	basis = _ground_basis(_cat_heading, a)
+	vel = _flat_forward(_cat_heading) * u + Vector3(0.0, 1.0, 0.0)
+	pos.y = s_h + _gear_h + 0.05
+	pitch_rate = 0.0
+	roll_rate = 0.0
+	yaw_rate = 0.0
 
 func _crash(reason: String) -> void:
 	crashed = true
@@ -507,6 +618,8 @@ func _crash(reason: String) -> void:
 	yaw_rate = 0.0
 	thrust = 0.0
 	spin = 0.0
+	catapult = false
+	arrested = false
 
 func _ground_substep(h: float, ctrl: Dictionary, surface: Dictionary) -> void:
 	var s_h: float = float(surface.get("height", 0.0))
@@ -519,13 +632,25 @@ func _ground_substep(h: float, ctrl: Dictionary, surface: Dictionary) -> void:
 	if pos.y - _gear_h > s_h + 0.5:
 		# поверхность ушла вниз: край палубы или обрыв
 		on_ground = false
+		catapult = false
+		arrested = false
 		return
 	if kind == "water":
 		_crash("water")
 		return
+	if kind == "deck" and not flat:
+		_crash("ground")   # въехал в надстройку авианосца
+		return
 	if not flat and u > 15.0:
 		_crash("gear")
 		return
+	if not _own_deck(surface):
+		catapult = false
+		arrested = false
+	elif not catapult and not arrested and _catapult_ready(surface, hd, u):
+		_start_catapult(surface, hd, u)
+		hd = _cat_heading
+		fwd_h = _flat_forward(hd)
 	var gp := _ground_pitch
 	var alt := pos.y
 	var rho := air_density_at(alt)
@@ -537,7 +662,7 @@ func _ground_substep(h: float, ctrl: Dictionary, surface: Dictionary) -> void:
 	thrust = thr
 	var weight := _mass * G
 	var up_force := lift + thr * sin(gp)
-	if up_force > weight and u > 5.0:
+	if up_force > weight and u > 5.0 and not catapult and not arrested:
 		# отрыв
 		_gamma_valid = false
 		on_ground = false
@@ -551,12 +676,24 @@ func _ground_substep(h: float, ctrl: Dictionary, surface: Dictionary) -> void:
 	if brake:
 		resist += BRAKE_DECEL * _mass * clampf(normal / weight, 0.25, 1.0)
 	var net := acc_u - resist / _mass
-	if u > 0.05 or net > 0.0:
+	if arrested:
+		# трос держит, пока самолёт не остановится и газ не убран
+		u = maxf(u - _arrest_dec * h, 0.0)
+		if u <= 0.0 and throttle < CAT_THROTTLE and not afterburner:
+			arrested = false
+	elif catapult:
+		u += (_cat_acc + maxf(acc_u - ROLL_FRICTION * normal / _mass, 0.0)) * h
+		if u >= catapult_speed:
+			_catapult_release(u, s_h)
+			return
+	elif u > 0.05 or net > 0.0:
 		u = maxf(u + net * h, 0.0)
 	else:
 		u = 0.0   # трение покоя
 	# руление рысканием: колесо на малой скорости, руль направления на большой
 	var yin := clampf(float(ctrl.get("yaw", 0.0)), -1.0, 1.0)
+	if catapult or arrested:
+		yin = 0.0
 	var steer := yin * 0.6 * clampf(u / 4.0, 0.0, 1.0) * clampf(20.0 / maxf(u, 1.0), 0.15, 1.0)
 	steer += yin * _yaw_max * clampf(u / _v_ref, 0.0, 1.0) * yaw_authority * 0.5
 	hd += steer * h

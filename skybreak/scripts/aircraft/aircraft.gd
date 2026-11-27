@@ -108,6 +108,7 @@ func setup(p_def_id: String, p_team: int, p_uid: int, p_callsign: String, p_camo
 
 	fm = FlightModel.new()
 	fm.assist = bool(opts.get("assist", true))
+	fm.team = team   # катапульта и тросы — только на палубе своей команды
 	fm.setup(def, pos, bas, spd, on_ground)
 	if on_ground:
 		fm.gear_down = true
@@ -321,8 +322,11 @@ func _cloud_density() -> float:
 	return 0.0
 
 
+## Высота под самолётом: рельеф, а над авианосцем — палуба (для altitude_agl и предупреждений).
 func _ground_height(x: float, z: float) -> float:
 	var w = _world()
+	if w != null and w.has_method("solid_height_at"):
+		return float(w.solid_height_at(x, z))
 	if w != null and w.has_method("height_at"):
 		return float(w.height_at(x, z))
 	return 0.0

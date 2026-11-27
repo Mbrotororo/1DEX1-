@@ -44,6 +44,7 @@ func run(p_tree: SceneTree) -> Array:
 	_test_flares_decoy()
 	_test_flares_drop()
 	_test_flak()
+	_test_carrier_deck()
 	_test_rearm_and_summary()
 	_test_no_battle()
 	_test_performance()
@@ -601,6 +602,83 @@ func _test_flak() -> void:
 	check(friend.splashes.is_empty(), "зенитный разрыв задел своего")
 	check(far.splashes.is_empty(), "зенитный разрыв задел цель в 200 м")
 	check(pm.shell_count(ProjectileManager.FLAK) == 0, "снаряд не удалён после разрыва")
+
+
+# ---------------------------------------------------------------- палуба авианосца
+
+## Настоящий «Дальний риф»: пули, ракеты и бомбы взрываются на палубе и о надстройку,
+## а не проходят насквозь до воды. Рядом с бортом — по-прежнему вода.
+func _test_carrier_deck() -> void:
+	_reset()
+	var w := World.new()
+	w.graphics = "low"
+	w.build(Data.map_def("reef"), "day", "clear", 9, 7000)
+	battle.world = w
+	pm.invalidate_ground()
+	var c: Dictionary = w.carrier
+	var deck_h: float = c.deck_h
+	var deck := w.carrier_world(Vector3(-8.0, 0.0, 60.0))
+	deck.y = deck_h
+	var sea := w.carrier_world(Vector3(-80.0, 0.0, 60.0))
+	sea.y = 0.0
+	check(absf(w.solid_height_at(deck.x, deck.z) - deck_h) < 0.01, "solid_height_at на палубе %.1f (палуба %.1f)" % [w.solid_height_at(deck.x, deck.z), deck_h])
+	check(w.height_at(deck.x, deck.z) < 0.0, "под палубой рельеф не под водой: %.1f" % w.height_at(deck.x, deck.z))
+	check(w.solid_height_at(sea.x, sea.z) < 0.0, "рядом с бортом не вода: %.1f" % w.solid_height_at(sea.x, sea.z))
+	var isl: Rect2 = c.island
+	var isl_c := w.carrier_world(Vector3(isl.get_center().x, 0.0, isl.get_center().y))
+	check(w.solid_height_at(isl_c.x, isl_c.z) > deck_h + 10.0, "надстройка не твёрдая: %.1f" % w.solid_height_at(isl_c.x, isl_c.z))
+	# пули сверху: над палубой гаснут на палубе (через 0.4 с), над водой летят до воды (0.6 с)
+	pm.spawn_bullet(deck + Vector3(0, 40, 0), Vector3(0, -100, 0), 5.0, 12.7, 1, 1, false)
+	pm.spawn_bullet(sea + Vector3(0, deck_h + 40.0, 0), Vector3(0, -100, 0), 5.0, 12.7, 1, 1, false)
+	_sim(0.5)
+	check(pm.bullet_count() == 1, "пуля прошла сквозь палубу: в воздухе %d из 2 (нужно 1 — над водой)" % pm.bullet_count())
+	_sim(0.3)
+	check(pm.bullet_count() == 0, "пуля над водой не упала в воду")
+	# ракета под углом в палубу
+	rec.events.clear()
+	var from := deck + Vector3(0, 60, 120)
+	pm.spawn_rocket(from, (deck - from).normalized() * 500.0, 60.0, 10.0, 1, 1)
+	_sim_until_no_shells(3.0)
+	var e: Dictionary = rec.last("explosion")
+	check(e.has("pos") and absf(float(e.pos[1]) - deck_h) < 1.0 and Vector2(float(e.pos[0]) - deck.x, float(e.pos[2]) - deck.z).length() < 8.0,
+		"ракета в палубу взорвалась не на палубе: %s" % str(e.get("pos")))
+	# бомба на палубу
+	rec.events.clear()
+	pm.spawn_bomb(deck + Vector3(0, 300, 0), Vector3.ZERO, 160.0, 22.0, 1, 1)
+	_sim_until_no_shells(15.0)
+	e = rec.last("explosion")
+	check(e.has("pos") and absf(float(e.pos[1]) - deck_h) < 1.0, "бомба на палубу взорвалась на высоте %s (палуба %.0f)" % [str(e.get("pos")), deck_h])
+	# ракета горизонтально в надстройку с левого борта
+	rec.events.clear()
+	var isl_from := w.carrier_world(Vector3(-60.0, 0.0, isl.get_center().y))
+	isl_from.y = deck_h + 10.0
+	var isl_to := isl_c
+	isl_to.y = deck_h + 10.0
+	pm.spawn_rocket(isl_from, (isl_to - isl_from).normalized() * 500.0, 60.0, 10.0, 1, 1)
+	_sim_until_no_shells(3.0)
+	e = rec.last("explosion")
+	var lx := 999.0
+	if e.has("pos"):
+		lx = w.carrier_local(Vector3(float(e.pos[0]), 0.0, float(e.pos[2]))).x
+	check(e.has("pos") and absf(lx - isl.position.x) < 1.5 and float(e.pos[1]) > deck_h + 5.0,
+		"ракета в надстройку: взрыв %s, x борта надстройки %.1f, получено %.1f" % [str(e.get("pos")), isl.position.x, lx])
+	# ракета в борт ниже палубы: взрыв у борта, а не в воде за ним
+	rec.events.clear()
+	var hull_from := w.carrier_world(Vector3(-70.0, 0.0, 0.0))
+	hull_from.y = 10.0
+	var hull_to := w.carrier_world(Vector3(0.0, 0.0, 0.0))
+	hull_to.y = 10.0
+	pm.spawn_rocket(hull_from, (hull_to - hull_from).normalized() * 500.0, 60.0, 10.0, 1, 1)
+	_sim_until_no_shells(3.0)
+	e = rec.last("explosion")
+	if e.has("pos"):
+		lx = w.carrier_local(Vector3(float(e.pos[0]), 0.0, float(e.pos[2]))).x
+	check(e.has("pos") and absf(lx + 19.0) < 1.5 and float(e.pos[1]) > 5.0,
+		"ракета в борт: взрыв %s, ожидался у левого борта (x -19), получено %.1f" % [str(e.get("pos")), lx])
+	_reset()
+	battle.world = world
+	pm.invalidate_ground()
+	w.free()
 
 
 func _test_rearm_and_summary() -> void:

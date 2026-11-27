@@ -28,6 +28,40 @@ class HoldPilot:
 		return c
 
 
+## Взлёт с катапульты и посадка на палубу по сценарию: газ, ручка по вертикальной скорости.
+class DeckPilot:
+	extends RefCounted
+	var landing := false
+	var jet := false
+	var v0 := 60.0                   # скорость захода
+	var aim := Vector3.ZERO          # точка касания на палубе (y — палуба)
+	var fwd := Vector3.FORWARD       # курс палубы
+	var gh := 1.5
+	func get_controls(ac, _dt: float) -> Dictionary:
+		var c := Data.empty_controls()
+		var f = ac.fm
+		if not landing:
+			# полный газ, на палубе ручка нейтрально, в воздухе мягко на себя (+3 м/с)
+			c.throttle = 1.0
+			c.afterburner = jet
+			if not bool(f.on_ground):
+				c.pitch = clampf((3.0 - float(f.vertical_speed)) * 0.08, 0.0, 0.35)
+			return c
+		if bool(f.on_ground):
+			c.throttle = 0.0
+			return c
+		var to_aim: float = (aim - f.pos).dot(fwd)
+		var h: float = f.pos.y - (aim.y + gh)
+		var tt := maxf(to_aim / maxf(float(f.airspeed), 10.0), 0.4)
+		var vs_t := clampf(-h / tt, -4.0, -0.8)
+		c.pitch = clampf((vs_t - float(f.vertical_speed)) * 0.12, -0.3, 0.3)
+		c.throttle = clampf(0.45 + (v0 - float(f.airspeed)) * 0.08, 0.0, 1.0)
+		return c
+
+
+var reef: World = null
+
+
 func run(tree: SceneTree) -> Array:
 	stub_fm = _is_stub("res://scripts/sim/flight_model.gd")
 	stub_dmg = _is_stub("res://scripts/sim/damage_model.gd")
@@ -35,13 +69,25 @@ func run(tree: SceneTree) -> Array:
 	print("  test_aircraft: модель полёта ", "упрощённая" if stub_fm else "настоящая",
 		", повреждения ", "упрощённые" if stub_dmg else "настоящие", ", оружие ", "упрощённое" if stub_ws else "настоящее")
 	var tests := ["_t_setup_all", "_t_ray_hit", "_t_destroyed_once", "_t_border_kill", "_t_bots_duel",
-		"_t_attacker", "_t_mouse_instructor", "_t_servicing", "_t_terrain_avoid"]
+		"_t_attacker", "_t_mouse_instructor", "_t_servicing", "_t_terrain_avoid", "_t_carrier_launch", "_t_carrier_landing"]
 	for t in tests:
 		await _new_battle(tree)
 		await call(t, tree)
 		_end_battle()
 		await tree.process_frame
+	if reef != null:
+		reef.free()
+		reef = null
 	return errors
+
+
+## Настоящий мир «Дальний риф» с авианосцем синих (вне дерева: нужны только запросы поверхности).
+func _reef_world() -> World:
+	if reef == null:
+		reef = World.new()
+		reef.graphics = "low"
+		reef.build(Data.map_def("reef"), "day", "clear", 5, 5000)
+	return reef
 
 
 func _check(cond: bool, msg: String) -> void:
@@ -435,3 +481,130 @@ func _t_terrain_avoid(_tree: SceneTree) -> void:
 	print("  облёт горы: минимум %.0f м над рельефом" % m.min_agl)
 	_check(ac.alive, "облёт горы: бот разбился (%s)" % ac.death_reason)
 	_check(m.min_agl > 25.0, "облёт горы: прошёл в %.0f м над склоном" % m.min_agl)
+
+
+# ---------------------------------------------------------------- авианосец: катапульта
+
+## Все самолёты, аркада и реализм: с точки появления на палубе, полный газ (форсаж), ручка нейтрально,
+## в воздухе мягко на себя. Никто не касается воды, через 5 с после схода все набирают высоту.
+func _t_carrier_launch(_tree: SceneTree) -> void:
+	var w := _reef_world()
+	battle.world = w
+	var sp: Dictionary = w.runway_spawn(0, 0)
+	var af := w.airfield_of(0)
+	_check(bool(sp.get("deck", false)) and af.kind == "carrier", "риф: точка появления синих не на палубе")
+	var s0: Dictionary = w.surface_at(sp.pos.x, sp.pos.z)
+	_check(s0.kind == "deck" and float(s0.stern_dist) < 40.0 and absf(w.carrier_local(sp.pos).x) < 0.5,
+		"точка появления не у кормы по оси: %s" % str(s0))
+	print("  катапульта на рифе (сход / через 5 с):")
+	var uid := 300
+	for id in Data.ORDER:
+		for assist in [true, false]:
+			uid += 1
+			var ac := Aircraft.new()
+			battle.add_aircraft(ac)
+			ac.setup(id, 0, uid, "Палуба", "factory", sp, {"assist": assist, "hardcore": not assist, "is_player": false})
+			var pilot := DeckPilot.new()
+			pilot.jet = String(ac.def.kind) == "jet"
+			ac.set_pilot(pilot)
+			var gh := float(ac.def.shape.gear_height)
+			var m := {"t": 0.0, "t_rel": -1.0, "min_h": INF, "vy5": -99.0, "cat": false, "v_rel": 0.0}
+			_step([ac], 15.0, func(_i: int) -> bool:
+				m.t += DT
+				if not ac.alive:
+					return true
+				m.cat = m.cat or ac.fm.catapult
+				if not ac.fm.on_ground and m.t_rel < 0.0:
+					m.t_rel = m.t
+					m.v_rel = ac.fm.airspeed
+				if m.t_rel >= 0.0:
+					var ground := maxf(w.height_at(ac.fm.pos.x, ac.fm.pos.z), 0.0)
+					m.min_h = minf(m.min_h, ac.fm.pos.y - gh - ground)
+					if m.t - m.t_rel >= 5.0:
+						m.vy5 = ac.fm.vertical_speed
+						return true
+				return false)
+			var mode := "аркада" if assist else "реализм"
+			print("    %-12s %-7s сход через %.2f с на %.0f км/ч, мин. %.0f м над водой, Vy %.1f м/с" %
+				[ac.def.name, mode, m.t_rel, m.v_rel * 3.6, m.min_h, m.vy5])
+			var who := "палуба %s (%s)" % [id, mode]
+			_check(ac.alive, "%s: погиб (%s)" % [who, ac.death_reason])
+			_check(m.cat, "%s: катапульта не сработала" % who)
+			_check(m.t_rel > 0.0 and m.t_rel < 3.5, "%s: сход через %.2f с" % [who, m.t_rel])
+			_check(m.min_h > 2.0, "%s: опустился до %.1f м над водой" % [who, m.min_h])
+			_check(m.vy5 > 0.0, "%s: через 5 с после схода Vy %.1f м/с" % [who, m.vy5])
+			battle.aircraft.erase(ac)
+			ac.queue_free()
+
+
+# ---------------------------------------------------------------- авианосец: посадка и обслуживание
+
+## Заход с кормы на 1.3 Vs с выпущенным шасси: трос останавливает до 100 м и до носа,
+## потом на палубе идёт ремонт и перезарядка.
+func _t_carrier_landing(_tree: SceneTree) -> void:
+	var w := _reef_world()
+	battle.world = w
+	var c: Dictionary = w.carrier
+	var hd: float = c.heading
+	var fwd := World.heading_dir(hd)
+	var deck_h: float = c.deck_h
+	var uid := 400
+	for id in ["krechet", "flanker"]:
+		uid += 1
+		var d := Data.plane(id)
+		var gh := float(d.shape.gear_height)
+		var probe := FlightModel.new()
+		probe.setup(d, Vector3.ZERO, Basis.IDENTITY, 100.0, false)
+		var v0 := 1.3 * probe.stall_speed()
+		var aim: Vector3 = w.carrier_world(Vector3(0.0, 0.0, 100.0))
+		aim.y = deck_h
+		var start: Vector3 = aim - fwd * 470.0
+		var t_fly := 470.0 / v0
+		start.y = deck_h + gh + 2.5 * t_fly
+		var bas := World.heading_basis(hd) * Basis(Vector3.RIGHT, -atan(2.5 / v0))
+		var ac := _spawn(id, 0, uid, start, bas, v0)
+		ac.fm.gear_down = true
+		var pilot := DeckPilot.new()
+		pilot.landing = true
+		pilot.v0 = v0
+		pilot.aim = aim
+		pilot.fwd = fwd
+		pilot.gh = gh
+		ac.set_pilot(pilot)
+		# вернулся с повреждениями и без части боезапаса
+		ac.take_hit(Vector3(0.0, -0.3, 0.25 * float(d.shape.length)), 20.0, 77)
+		var g: Array = ac.weapons.ammo.get("guns", [])
+		if g.size() > 0:
+			g[0] = 0
+		var done: Array = []
+		ac.serviced.connect(func(a) -> void: done.append(a))
+		var m := {"landed": false, "arrested": false, "touch": Vector3.ZERO, "touch_v": 0.0, "stop": Vector3.ZERO,
+			"stopped": false, "svc": false, "t": 0.0, "t_stop": -1.0}
+		_step([ac], 90.0, func(_i: int) -> bool:
+			m.t += DT
+			if not ac.alive:
+				return true
+			if ac.fm.on_ground and not m.landed:
+				m.landed = true
+				m.touch = ac.fm.pos
+				m.touch_v = ac.speed()
+				m.arrested = ac.fm.arrested
+			if m.landed and not m.stopped and ac.speed() < 0.3:
+				m.stopped = true
+				m.stop = ac.fm.pos
+				m.t_stop = m.t
+			m.svc = m.svc or ac.servicing
+			return not done.is_empty())
+		var run_m: float = (m.stop - m.touch).dot(fwd) if m.stopped else -1.0
+		var bow_left: float = w.carrier_local(m.stop).z + 150.0 if m.stopped else -1.0
+		print("  посадка на авианосец %s: касание на %.0f км/ч, трос=%s, пробег %.0f м, до носа %.0f м, обслужен через %.0f с" %
+			[id, m.touch_v * 3.6, m.arrested, run_m, bow_left, m.t - m.t_stop if m.t_stop >= 0.0 else -1.0])
+		_check(ac.alive, "авианосец %s: погиб (%s)" % [id, ac.death_reason])
+		_check(m.landed and m.arrested, "авианосец %s: трос не зацепил (сел=%s)" % [id, m.landed])
+		_check(m.stopped and run_m <= 100.0 and bow_left > 0.0, "авианосец %s: пробег %.0f м, до носа %.0f м" % [id, run_m, bow_left])
+		var s_end: Dictionary = w.surface_at(ac.fm.pos.x, ac.fm.pos.z)
+		_check(s_end.kind == "deck", "авианосец %s: стоит не на палубе (%s)" % [id, s_end.kind])
+		_check(m.svc and done.size() == 1, "авианосец %s: обслуживание на палубе не прошло (шло=%s)" % [id, m.svc])
+		_check(not ac.dmg.is_damaged() and ac._ammo_frac() > 0.999, "авианосец %s: после обслуживания не отремонтирован или не перезаряжен" % id)
+		battle.aircraft.erase(ac)
+		ac.queue_free()

@@ -9,6 +9,11 @@ const WIDTH := 38.0
 const DECK_HEIGHT := 20.0
 const ISLAND_HEIGHT := 24.0
 const STERN_Z := 148.0
+const BOW_Z := 150.0           # нос — на z = -BOW_Z
+const CAT_Z0 := 128.0          # начало прорези катапульты (у кормы, по оси)
+const CAT_LENGTH := 110.0
+const WIRE_Z := [108.0, 96.0, 84.0, 72.0]   # тросы аэрофинишёра
+const WIRE_HALF := 13.0
 
 ## Контур палубы (x, z) в локальных координатах.
 static func deck_outline() -> PackedVector2Array:
@@ -67,6 +72,15 @@ static func build_model(night: bool) -> Dictionary:
 		var sp: Vector3 = s
 		b.box(Vector3(sp.x, -2.2, sp.z), Vector3(7.5, 1.2, 8.0), hull.darkened(0.1))
 		b.frustum(Vector3(sp.x, -6.0, sp.z), Vector2(2.0, 4.0), Vector2(7.0, 8.0), 3.2, hull.darkened(0.15))
+	# катапульта: прорезь по оси от точки старта у кормы
+	var dark := Color(0.13, 0.13, 0.14)
+	b.box(Vector3(0.0, 0.03, CAT_Z0 - CAT_LENGTH * 0.5), Vector3(0.7, 0.06, CAT_LENGTH), dark)
+	b.box(Vector3(0.0, 0.05, CAT_Z0 + 1.5), Vector3(2.4, 0.1, 1.2), Color(0.55, 0.5, 0.2))
+	# тросы аэрофинишёра поперёк кормовой части и блоки по краям
+	for wz in WIRE_Z:
+		b.box(Vector3(0.0, 0.07, wz), Vector3(WIRE_HALF * 2.0, 0.1, 0.14), Color(0.2, 0.2, 0.2))
+		for sx in [-1.0, 1.0]:
+			b.box(Vector3(sx * (WIRE_HALF + 0.4), 0.15, wz), Vector3(0.8, 0.3, 0.8), Color(0.32, 0.33, 0.33))
 	# окна
 	var glass := MeshB.new()
 	glass.box(ic + Vector3(-isl.size.x * 0.5 - 0.45, 16.3, -8.0), Vector3(0.1, 1.4, 20.0), Color.WHITE)
