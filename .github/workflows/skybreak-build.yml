@@ -1,5 +1,5 @@
 # Tests and exports the SKYBREAK Godot project (folder skybreak/).
-# Builds are uploaded as workflow artifacts: SKYBREAK-windows, SKYBREAK-linux, SKYBREAK-web.
+# Builds are uploaded as workflow artifacts: SKYBREAK-windows, SKYBREAK-linux, SKYBREAK-web, SKYBREAK-android.
 # This workflow does not publish anything (no GitHub Pages, no releases).
 name: SKYBREAK build
 
@@ -44,7 +44,7 @@ jobs:
           path: |
             ~/godot
             ~/.local/share/godot/export_templates/${{ env.GODOT_VERSION }}.stable
-          key: godot-${{ env.GODOT_TAG }}-linux-editor-templates-win64-linux64-web-v1
+          key: godot-${{ env.GODOT_TAG }}-linux-editor-templates-win64-linux64-web-android-v1
 
       - name: Download Godot and export templates
         if: steps.godot-cache.outputs.cache-hit != 'true'
@@ -71,6 +71,7 @@ jobs:
             templates/windows_release_x86_64.exe \
             templates/linux_release.x86_64 \
             templates/web_nothreads_release.zip \
+            templates/android_release.apk \
             -d "$templates_dir"
           cd "$RUNNER_TEMP"
           rm -rf "$work"
@@ -83,6 +84,34 @@ jobs:
           "$godot" --headless --version
           ls -la "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
 
+      - name: Set up Android signing
+        env:
+          KEYSTORE_B64: ${{ secrets.SKYBREAK_KEYSTORE_B64 }}
+        run: |
+          set -euo pipefail
+          ks="$RUNNER_TEMP/skybreak.keystore"
+          # With the secret set, every APK has the same signature and installs over the old one.
+          # Without it a new key is made for each run, so the old app has to be removed first.
+          if [ -n "${KEYSTORE_B64:-}" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$ks"
+          else
+            keytool -genkeypair -keystore "$ks" -alias skybreak -keyalg RSA -keysize 2048 \
+              -validity 10000 -storepass skybreak -keypass skybreak -dname "CN=SKYBREAK"
+          fi
+          sdk="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          ls "$sdk/build-tools"
+          "$GODOT" --headless --quit >/dev/null 2>&1 || true
+          settings="$(ls "$HOME"/.config/godot/editor_settings-4*.tres | head -1)"
+          {
+            echo "export/android/android_sdk_path = \"$sdk\""
+            echo "export/android/java_sdk_path = \"$JAVA_HOME\""
+          } >> "$settings"
+          {
+            echo "GODOT_ANDROID_KEYSTORE_RELEASE_PATH=$ks"
+            echo "GODOT_ANDROID_KEYSTORE_RELEASE_USER=skybreak"
+            echo "GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD=skybreak"
+          } >> "$GITHUB_ENV"
+
       - name: Import project
         run: timeout 600 "$GODOT" --headless --path skybreak --import
 
@@ -92,17 +121,19 @@ jobs:
           TEST_LOG: ${{ github.workspace }}/skybreak/tests/logs/test_run.log
         run: bash skybreak/tests/run_tests.sh
 
-      - name: Export Windows, Linux and Web
+      - name: Export Windows, Linux, Web and Android
         working-directory: skybreak
         run: |
           set -euo pipefail
           rm -rf export
-          mkdir -p export/windows export/linux export/web
+          mkdir -p export/windows export/linux export/web export/android
           # Keeps Godot from importing the exported files as project resources.
           touch export/.gdignore
           "$GODOT" --headless --path . --export-release "Windows" export/windows/SKYBREAK.exe
           "$GODOT" --headless --path . --export-release "Linux" export/linux/SKYBREAK.x86_64
           "$GODOT" --headless --path . --export-release "Web" export/web/index.html
+          "$GODOT" --headless --path . --export-release "Android" export/android/SKYBREAK.apk
+          test -s export/android/SKYBREAK.apk
           test -s export/windows/SKYBREAK.exe
           test -s export/linux/SKYBREAK.x86_64
           test -s export/web/index.html
@@ -119,6 +150,7 @@ jobs:
             echo "|---|---|"
             echo "| Windows: SKYBREAK.exe | $(du -h export/windows/SKYBREAK.exe | cut -f1) |"
             echo "| Linux: SKYBREAK.x86_64 | $(du -h export/linux/SKYBREAK.x86_64 | cut -f1) |"
+            echo "| Android: SKYBREAK.apk | $(du -h export/android/SKYBREAK.apk | cut -f1) |"
             echo "| Web: папка web | $(du -sh export/web | cut -f1) |"
             echo ""
             echo "Скачай архив внизу страницы в разделе Artifacts."
@@ -145,6 +177,14 @@ jobs:
         with:
           name: SKYBREAK-web
           path: skybreak/export/web/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Android build
+        uses: actions/upload-artifact@v4
+        with:
+          name: SKYBREAK-android
+          path: skybreak/export/android/SKYBREAK.apk
           if-no-files-found: error
           retention-days: 14
 
