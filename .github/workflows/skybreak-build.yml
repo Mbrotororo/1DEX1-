@@ -1,0 +1,158 @@
+# Tests and exports the SKYBREAK Godot project (folder skybreak/).
+# Builds are uploaded as workflow artifacts: SKYBREAK-windows, SKYBREAK-linux, SKYBREAK-web.
+# This workflow does not publish anything (no GitHub Pages, no releases).
+name: SKYBREAK build
+
+on:
+  push:
+    branches:
+      - main
+      - ccr-b3b11eb6-6ovk2d
+    paths:
+      - "skybreak/**"
+      - ".github/workflows/skybreak-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: skybreak-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: "4.4.1"
+  GODOT_TAG: "4.4.1-stable"
+
+jobs:
+  build:
+    name: Test and export
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache Godot editor and export templates
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/godot
+            ~/.local/share/godot/export_templates/${{ env.GODOT_VERSION }}.stable
+          key: godot-${{ env.GODOT_TAG }}-linux-editor-templates-win64-linux64-web-v1
+
+      - name: Download Godot and export templates
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_TAG}"
+          editor_zip="Godot_v${GODOT_TAG}_linux.x86_64.zip"
+          templates_tpz="Godot_v${GODOT_TAG}_export_templates.tpz"
+          templates_dir="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          work="$RUNNER_TEMP/godot-download"
+          mkdir -p "$work" "$HOME/godot" "$templates_dir"
+          cd "$work"
+          curl -fsSL --retry 3 -o SHA512-SUMS.txt "$base/SHA512-SUMS.txt"
+          curl -fsSL --retry 3 -o "$editor_zip" "$base/$editor_zip"
+          curl -fsSL --retry 3 -o "$templates_tpz" "$base/$templates_tpz"
+          grep -e "  ${editor_zip}\$" -e "  ${templates_tpz}\$" SHA512-SUMS.txt > sums.txt
+          test "$(wc -l < sums.txt)" -eq 2
+          sha512sum -c sums.txt
+          unzip -o -q "$editor_zip" -d "$HOME/godot"
+          chmod +x "$HOME/godot/Godot_v${GODOT_TAG}_linux.x86_64"
+          # The archive is 1.2 GB; keep only the release templates the presets use.
+          unzip -o -j -q "$templates_tpz" \
+            templates/version.txt \
+            templates/windows_release_x86_64.exe \
+            templates/linux_release.x86_64 \
+            templates/web_nothreads_release.zip \
+            -d "$templates_dir"
+          cd "$RUNNER_TEMP"
+          rm -rf "$work"
+
+      - name: Set up Godot
+        run: |
+          set -euo pipefail
+          godot="$HOME/godot/Godot_v${GODOT_TAG}_linux.x86_64"
+          echo "GODOT=$godot" >> "$GITHUB_ENV"
+          "$godot" --headless --version
+          ls -la "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+
+      - name: Import project
+        run: timeout 600 "$GODOT" --headless --path skybreak --import
+
+      - name: Run tests
+        env:
+          SKIP_IMPORT: "1"
+          TEST_LOG: ${{ github.workspace }}/skybreak/tests/logs/test_run.log
+        run: bash skybreak/tests/run_tests.sh
+
+      - name: Export Windows, Linux and Web
+        working-directory: skybreak
+        run: |
+          set -euo pipefail
+          rm -rf export
+          mkdir -p export/windows export/linux export/web
+          # Keeps Godot from importing the exported files as project resources.
+          touch export/.gdignore
+          "$GODOT" --headless --path . --export-release "Windows" export/windows/SKYBREAK.exe
+          "$GODOT" --headless --path . --export-release "Linux" export/linux/SKYBREAK.x86_64
+          "$GODOT" --headless --path . --export-release "Web" export/web/index.html
+          test -s export/windows/SKYBREAK.exe
+          test -s export/linux/SKYBREAK.x86_64
+          test -s export/web/index.html
+          test -s export/web/index.pck
+          test -s export/web/index.wasm
+          # Artifacts are zipped without file permissions, so the Linux build goes in a tarball.
+          chmod +x export/linux/SKYBREAK.x86_64
+          tar -C export/linux -czf export/SKYBREAK-linux.tar.gz SKYBREAK.x86_64
+          ls -la export export/windows export/linux export/web
+          {
+            echo "### SKYBREAK"
+            echo ""
+            echo "| Сборка | Размер |"
+            echo "|---|---|"
+            echo "| Windows: SKYBREAK.exe | $(du -h export/windows/SKYBREAK.exe | cut -f1) |"
+            echo "| Linux: SKYBREAK.x86_64 | $(du -h export/linux/SKYBREAK.x86_64 | cut -f1) |"
+            echo "| Web: папка web | $(du -sh export/web | cut -f1) |"
+            echo ""
+            echo "Скачай архив внизу страницы в разделе Artifacts."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: SKYBREAK-windows
+          path: skybreak/export/windows/SKYBREAK.exe
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Linux build
+        uses: actions/upload-artifact@v4
+        with:
+          name: SKYBREAK-linux
+          path: skybreak/export/SKYBREAK-linux.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Web build
+        uses: actions/upload-artifact@v4
+        with:
+          name: SKYBREAK-web
+          path: skybreak/export/web/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload test log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SKYBREAK-test-log
+          path: skybreak/tests/logs/
+          if-no-files-found: ignore
+          retention-days: 14

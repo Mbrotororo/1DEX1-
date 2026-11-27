@@ -1,3 +1,6 @@
 .godot/
 *.import.tmp
+# builds from export_presets.cfg
 export/
+# logs from tests/run_tests.sh
+tests/logs/
