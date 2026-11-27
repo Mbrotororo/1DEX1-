@@ -24,6 +24,7 @@ const SHIP_RANGE := 3000.0
 const AA_MARGIN := 500.0
 const BEACON_RADIUS := 7.0
 const BEACON_HEIGHT := 900.0
+const BOMB_REFILL_DELAY := 5.0      # шаг с бомбой: бомбы кончились, а цель цела — через столько пополнить
 
 var battle = null
 var step: int = 0                  # 1..7 в обучении; 0 — шагов нет
@@ -41,9 +42,9 @@ var _target_alt: float = 1500.0
 var _step_ready: bool = false
 var _airborne: bool = false
 var _landed: bool = false
-var _ordnance_warned: bool = false
 var _takeoff_hint: bool = false
 var _done_t: float = -1.0
+var _refill_t: float = -1.0
 var _beacon: MeshInstance3D = null
 var _drone_queue: Array = []       # [{t, slot}] — мишени, которые надо вернуть
 var _test_slots: Array = []
@@ -125,11 +126,8 @@ func tick(dt: float) -> void:
 		STEP_BOMB:
 			if objective == null or not is_instance_valid(objective) or not bool(objective.alive):
 				_enter(STEP_LAND)
-			elif not _ordnance_warned and _step_t > 3.0:
-				var w = ac.get("weapons")
-				if w != null and _bomb_weapon(ac) != "guns" and not bool(w.has_ordnance()):
-					_ordnance_warned = true
-					_say("Добей цель из пушек")
+			else:
+				_update_bomb_refill(ac, dt)
 		STEP_LAND:
 			_update_landing(ac, fm)
 
@@ -162,18 +160,36 @@ func _prepare_step(ac, fm) -> void:
 			if not af.is_empty():
 				_place_beacon(af.pos, Color(0.35, 0.85, 0.5, 0.45))
 
+## Шаг с бомбой: если бомбы (ракеты) ушли мимо, через пару секунд даём новые.
+## Самолёт без бомб и ракет добивает цель из пушек.
+func _update_bomb_refill(ac, dt: float) -> void:
+	var w = ac.get("weapons")
+	if w == null or _bomb_weapon(ac) == "guns":
+		return
+	if bool(w.has_ordnance()):
+		_refill_t = -1.0
+		return
+	if _refill_t < 0.0:
+		_refill_t = BOMB_REFILL_DELAY
+		return
+	_refill_t -= dt
+	if _refill_t <= 0.0:
+		_refill_t = -1.0
+		w.rearm_full()
+		_say(("Бомбы пополнены. " if _bomb_weapon(ac) == "bombs" else "Ракеты пополнены. ") + _bomb_text(ac))
+
 func _enter(n: int) -> void:
 	step = n
 	_step_t = 0.0
+	_refill_t = -1.0
 	_throttle_t = 0.0
 	_step_ready = false
-	_ordnance_warned = false
 	_takeoff_hint = false
 	if n != STEP_BOMB and n != STEP_LAND:
 		_remove_beacon()
 	match n:
 		STEP_THROTTLE:
-			_say("Набери скорость: W")
+			_say(_key("Дай полный газ", "W"))
 		STEP_TURN:
 			_say(_turn_text())
 		STEP_CLIMB:
@@ -181,15 +197,18 @@ func _enter(n: int) -> void:
 			_repeat_t = 0.0
 		STEP_TARGETS:
 			drone_kills = 0
-			_say("Сбей мишени")
+			_say("Сбей %d %s" % [drones_needed, _plural(drones_needed, "мишень", "мишени", "мишеней")])
 		STEP_BOMB:
 			_remove_beacon()
 			hint = "Уничтожь цель бомбой: B"
 			_repeat_t = 0.0
+			var pl = battle.player
+			if pl != null and is_instance_valid(pl):
+				hint = _bomb_text(pl)
 		STEP_LAND:
 			_remove_beacon()
 			objective = null
-			_say("Сядь на аэродром: выпусти шасси (G), сбавь газ, коснись полосы")
+			_say("Сядь на свой аэродром. " + _key("Выпусти шасси", "G"))
 		STEP_DONE:
 			_remove_beacon()
 			hint = "Обучение пройдено"
@@ -209,10 +228,25 @@ func _say(text: String) -> void:
 func _turn_text() -> String:
 	var ctl = Profile.get_setting("control") if Profile.has_method("get_setting") else "mouse"
 	if Game.is_touch():
-		return "Поверни: веди пальцем по экрану"
+		return "Поверни на 90°: веди пальцем по экрану"
 	if String(ctl) == "keyboard":
-		return "Поверни: стрелки влево и вправо"
-	return "Поверни: веди мышью"
+		return "Поверни на 90°: стрелки влево и вправо"
+	return "Поверни на 90°: веди мышью"
+
+## «Выпусти шасси: G» на клавиатуре; на сенсорном экране клавиши нет, там своя кнопка.
+func _key(text: String, key: String) -> String:
+	if Game.is_touch():
+		return text
+	return "%s: %s" % [text, key]
+
+static func _plural(n: int, one: String, few: String, many: String) -> String:
+	var n10 := n % 10
+	var n100 := n % 100
+	if n10 == 1 and n100 != 11:
+		return one
+	if n10 >= 2 and n10 <= 4 and (n100 < 10 or n100 >= 20):
+		return few
+	return many
 
 func _bomb_weapon(ac) -> String:
 	var d = ac.get("def")
@@ -226,9 +260,9 @@ func _bomb_weapon(ac) -> String:
 func _bomb_text(ac) -> String:
 	match _bomb_weapon(ac):
 		"bombs":
-			return "Уничтожь цель бомбой: B"
+			return _key("Уничтожь цель бомбой", "B")
 		"rockets":
-			return "Уничтожь цель ракетами: R"
+			return _key("Уничтожь цель ракетами", "R")
 	return "Уничтожь цель из пушек"
 
 func _update_landing(ac, fm) -> void:
@@ -239,7 +273,7 @@ func _update_landing(ac, fm) -> void:
 	if not _airborne:
 		if on_ground and not _takeoff_hint and _step_t > 0.5:
 			_takeoff_hint = true
-			_say("Взлети: полный газ W, на разбеге потяни на себя")
+			_say(_key("Дай полный газ", "W") + ", на разбеге потяни на себя")
 		return
 	if _landed:
 		_enter(STEP_DONE)

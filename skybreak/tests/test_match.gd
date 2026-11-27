@@ -19,6 +19,8 @@ func run(tree: SceneTree) -> Array:
 	await _test_build_realistic_8(tree)
 	await _test_kills(tree)
 	await _test_zones(tree)
+	await _test_duty(tree)
+	await _test_bot_landing(tree)
 	await _test_end(tree)
 	_test_matchmaker()
 	await _test_spawn_rules(tree)
@@ -140,7 +142,7 @@ func _test_build_realistic_8(tree: SceneTree) -> void:
 	var mm = await _make(tree, {"mode": "realistic", "size": 8})
 	_check(mm.aircraft.size() == 15, "realistic 8x8: ботов %d, ждали 15" % mm.aircraft.size())
 	_check(not mm.markers_enabled, "realistic: маркеров быть не должно")
-	_check(is_equal_approx(mm.max_tickets, 1000.0), "realistic 8x8: очков команды не 1000")
+	_check(is_equal_approx(mm.max_tickets, float(Data.ECONOMY.tickets[8])), "realistic 8x8: очков команды не %d" % int(Data.ECONOMY.tickets[8]))
 	_check(mm.state == "spawn", "realistic: ждали меню вылета")
 	_check(mm.request_spawn("strizh"), "realistic: вылет не удался")
 	_check(mm.aircraft.size() == 16, "realistic 8x8: с игроком не 16")
@@ -276,7 +278,11 @@ func _test_zones(tree: SceneTree) -> void:
 	var ta := float(mm.tickets[0])
 	for i in 4:
 		mm._zone_tick(0.25)
-	_check(is_equal_approx(float(mm.tickets[1]), tb - 3.0), "zones: стекание очков красных %.2f -> %.2f" % [tb, float(mm.tickets[1])])
+	# перевес в одну зону снимает всю полосу за ECONOMY.zone_drain_seconds: 700 / 600 очка в секунду
+	var rate: float = mm.max_tickets / float(Data.ECONOMY.zone_drain_seconds)
+	_check(is_equal_approx(mm.zone_drain_rate(), rate), "zones: zone_drain_rate %.3f, ждали %.3f" % [mm.zone_drain_rate(), rate])
+	_check(is_equal_approx(float(mm.tickets[1]), tb - rate), "zones: стекание очков красных %.2f -> %.2f" % [tb, float(mm.tickets[1])])
+	_check(is_equal_approx(float(mm.ticket_log.zones[1]), tb - float(mm.tickets[1]) + (t1 - tb)), "zones: учёт потерь от зон")
 	_check(is_equal_approx(float(mm.tickets[0]), ta), "zones: очки синих не должны стекать")
 	_check(float(mm.tickets[1]) < t1, "zones: очки красных не уменьшились")
 
@@ -315,6 +321,99 @@ func _test_zones(tree: SceneTree) -> void:
 	_check(int(mm.zones_state[1].owner) == 0, "zones: игрок не захватил зону B")
 	_check(mm.player_stats().captures == 1, "zones: захват игрока не засчитан")
 	_check(mm.spawn_points == sp + 100, "zones: очки вылета за захват")
+	await _free(tree, mm)
+
+# ---------------------------------------------------------------- 3а. боты на захвате зон
+
+func _duty_count(mm, team: int) -> Array:
+	var n := 0
+	var duty := 0
+	for ac in mm.aircraft:
+		if not is_instance_valid(ac) or not bool(ac.alive) or int(ac.team) != team:
+			continue
+		var p = ac.get("pilot")
+		if p == null or not ("capture_duty" in p):
+			continue
+		n += 1
+		if bool(p.capture_duty):
+			duty += 1
+			_check(String(p.duty_zone) != "", "duty: бот на захвате без зоны")
+	return [duty, n]
+
+func _test_duty(tree: SceneTree) -> void:
+	var mm = await _make(tree, {"mode": "arcade", "size": 8})
+	mm._duty_t = 0.0
+	mm._update_duties(0.1)
+	for team in 2:
+		var dc: Array = _duty_count(mm, team)
+		_check(int(dc[1]) > 0, "duty: нет ботов в команде %d" % team)
+		var want := maxi(1, int(round(float(dc[1]) / 3.0)))
+		_check(int(dc[0]) == want, "duty: команда %d — на захвате %d из %d, ждали %d" % [team, int(dc[0]), int(dc[1]), want])
+	# у синих все зоны и в них нет красных — синим захват не нужен, красным нужен
+	for zs in mm.zones_state:
+		zs.owner = 0
+	for i in mm._zone_inside.size():
+		mm._zone_inside[i] = [0, 0]
+	mm._duty_t = 0.0
+	mm._update_duties(0.1)
+	_check(int(_duty_count(mm, 0)[0]) == 0, "duty: синие держат захват при всех своих зонах")
+	_check(int(_duty_count(mm, 1)[0]) >= 1, "duty: у красных никого на захвате")
+	# в свою зону зашёл враг — снова нужен захват
+	mm._zone_inside[0] = [0, 1]
+	mm._duty_t = 0.0
+	mm._update_duties(0.1)
+	_check(int(_duty_count(mm, 0)[0]) >= 1, "duty: свою зону с врагом никто не отбивает")
+	# бот на захвате бросает зону только ради близкого врага
+	var red = null
+	for ac in _team(mm, 1):
+		if bool(ac.pilot.capture_duty):
+			red = ac
+			break
+	var blue = _team(mm, 0)[0]
+	if red != null and blue != null:
+		var p = red.pilot
+		var fwd: Vector3 = red.fm.forward()
+		for d in [1500.0, 600.0]:
+			var bp: Vector3 = red.fm.pos + fwd * d
+			blue.fm.pos = bp
+			blue.global_position = bp
+			blue.in_cloud = false
+			red.in_cloud = false
+			p._think(red)
+			if d > 1000.0:
+				_check(p.state == "capture", "duty: бросил зону ради врага в %d м (%s)" % [int(d), p.state])
+			else:
+				_check(p.state == "engage" and p.target == blue, "duty: не атаковал врага в %d м (%s)" % [int(d), p.state])
+	await _free(tree, mm)
+
+# ---------------------------------------------------------------- 3б. посадки ботов
+
+func _test_bot_landing(tree: SceneTree) -> void:
+	var mm = await _make(tree, {"mode": "arcade"})
+	var reds := _team(mm, 1)
+	var red = reds[0]
+	var rec: Dictionary = mm.record_of(red.uid)
+	var lives := int(rec.lives)
+	var t1 := float(mm.tickets[1])
+	# посадка по-настоящему: бой считает её по сигналу serviced
+	var red2 = reds[1]
+	red2.serviced.emit(red2)
+	_check(int(mm.record_of(red2.uid).landings) == 1 and int(mm.bot_log.landings[1]) == 1, "landing: посадка бота не засчитана")
+	# проход над полосой засчитывается посадкой: самолёт убран без потери жизни и очков, потом новый
+	_check(mm.bot_fake_landing(red), "landing: проход над полосой не принят")
+	_check(not red in mm.aircraft and not bool(rec.alive), "landing: самолёт не убран")
+	_check(int(rec.lives) == lives and is_equal_approx(float(mm.tickets[1]), t1), "landing: потеряна жизнь или очки")
+	_check(int(rec.deaths) == 0 and _kills.is_empty(), "landing: посадка засчитана как гибель")
+	_check(int(mm.bot_log.fake_landings[1]) == 1 and int(rec.landings) == 1, "landing: счётчик посадок")
+	mm._step(MatchManager.BOT_SERVICE_DELAY + 0.1)
+	var back := false
+	for ac in _team(mm, 1):
+		if ac.callsign == red.callsign and ac.uid != red.uid:
+			back = true
+	_check(back, "landing: бот не вернулся после обслуживания")
+	# самолёт игрока так не убирается
+	_check(mm.request_spawn("strizh"), "landing: вылет игрока")
+	_check(not mm.bot_fake_landing(mm.player), "landing: самолёт игрока убран проходом над полосой")
 	await _free(tree, mm)
 
 # ---------------------------------------------------------------- 4. конец боя и награды
@@ -441,17 +540,26 @@ func _test_spawn_rules(tree: SceneTree) -> void:
 
 	mm = await _make(tree, {"mode": "arcade"})
 	_check(mm.lineup_uses == {"strizh": 2, "shmel": 2}, "arcade: вылеты " + str(mm.lineup_uses))
+	_check(mm.spawn_cost("strizh") == 0 and mm.spawn_cost("shmel") == 0, "arcade: первые вылеты не бесплатные")
 	_check(mm.request_spawn("strizh"), "arcade: первый вылет")
 	_check(int(mm.lineup_uses.strizh) == 1 and mm.spawn_points == 0, "arcade: после первого вылета")
 	_check(not mm.can_spawn("shmel"), "arcade: второй вылет в полёте")
+	var cost: int = int(Data.ECONOMY.spawn_cost_by_rank[1])
+	_check(mm.spawn_cost("strizh") == cost, "arcade: повторный вылет на Стриже бесплатный")
+	_check(mm.spawn_cost("shmel") == 0, "arcade: первый вылет на Шмеле не бесплатный")
+	# новичок разбился без очков: второй самолёт сетапа всё равно доступен
+	_kill(mm.player, -1, "ground")
+	mm._step(0.05)
+	_check(mm.state == "spawn", "arcade: после первой гибели ждали spawn, а " + mm.state)
+	_check(mm.can_spawn("shmel") and not mm.can_spawn("strizh"), "arcade: без очков доступен только Шмель")
+	_check(mm.request_spawn("shmel"), "arcade: вылет на Шмеле")
+	_check(mm.spawn_points == 0 and int(mm.lineup_uses.shmel) == 1, "arcade: вылет на Шмеле не бесплатный")
 	mm.spawn_points = 1000
 	_kill(mm.player, -1, "ground")
 	mm._step(0.05)
-	_check(mm.state == "spawn", "arcade: после гибели ждали spawn, а " + mm.state)
-	var cost: int = int(Data.ECONOMY.spawn_cost_by_rank[1])
-	_check(mm.spawn_cost("strizh") == cost, "arcade: стоимость второго вылета")
-	_check(mm.request_spawn("strizh"), "arcade: второй вылет")
-	_check(int(mm.lineup_uses.strizh) == 0 and mm.spawn_points == 1000 - cost, "arcade: вылет не списан")
+	_check(mm.state == "spawn", "arcade: с очками ждали spawn, а " + mm.state)
+	_check(mm.request_spawn("strizh"), "arcade: повторный вылет на Стриже")
+	_check(int(mm.lineup_uses.strizh) == 0 and mm.spawn_points == 1000 - cost, "arcade: повторный вылет не списан")
 	_kill(mm.player, -1, "ground")
 	mm._step(0.05)
 	_check(not mm.can_spawn("strizh"), "arcade: третий вылет на Стриже")
@@ -462,8 +570,11 @@ func _test_spawn_rules(tree: SceneTree) -> void:
 	mm.request_spawn("strizh")
 	_kill(mm.player, -1, "ground")
 	mm._step(0.05)
+	mm.request_spawn("shmel")
+	_kill(mm.player, -1, "ground")
+	mm._step(0.05)
 	_check(mm.state == "dead", "arcade: без очков вылета ждали dead, а " + mm.state)
-	_check("Вылетов не осталось" in _messages, "arcade: нет сообщения о вылетах")
+	_check("Не хватает очков вылета" in _messages, "arcade: нет сообщения об очках вылета " + str(_messages))
 	await _free(tree, mm)
 
 # ---------------------------------------------------------------- 7. выход в ангар
@@ -492,7 +603,7 @@ func _test_training(tree: SceneTree) -> void:
 	if mm.player == null or tr == null:
 		await _free(tree, mm)
 		return
-	_check("Набери скорость: W" in _messages, "training: нет подсказки газа")
+	_check("Дай полный газ: W" in _messages, "training: нет подсказки газа " + str(_messages))
 	var pl = mm.player
 	pl.fm.throttle = 1.0
 	for i in 31:

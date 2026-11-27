@@ -289,10 +289,10 @@ var ECONOMY: Dictionary = {
 	"rank_mult": [1.0, 1.0, 1.4, 1.8],              # по рангу самолёта
 	"spawn_cost_by_rank": [0, 150, 250, 400],
 	"spawn_points": {"kill": 150, "assist": 50, "ground_min": 40, "ground_max": 100, "capture": 100},
-	"tickets": {4: 700, 8: 1000},
+	"tickets": {4: 700, 8: 1300},                   # 8×8: больше самолётов — больше потерь, полоса длиннее
 	"ticket_loss_aircraft": 30,
 	"ticket_loss_base": 150,
-	"zone_drain_per_sec": 3.0,
+	"zone_drain_seconds": 900.0,                    # перевес в одну зону снимает всю полосу очков за это время
 	"match_seconds": 900,
 	"arcade_uses_per_plane": 2,
 	"bot_lives_arcade": 3,

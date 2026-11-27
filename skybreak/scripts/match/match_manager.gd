@@ -18,6 +18,9 @@ const FIGHTER_ALT := 1500.0
 const ATTACKER_ALT := 800.0
 const RESULTS_DELAY := 4.0
 const INFINITE_USES := 99
+const DUTY_INTERVAL := 2.0           # как часто пересматривать, кто из ботов держит зоны
+const DUTY_SHARE := 1.0 / 3.0        # доля живых ботов команды на захвате зон
+const BOT_SERVICE_DELAY := 20.0      # «посадка» бота над авианосцем: через столько он снова в воздухе
 
 # винительный падеж для «… уничтожил танк»
 const UNIT_ACC := {"tank": "танк", "truck": "грузовик", "aa": "зенитку", "ship": "корабль",
@@ -74,6 +77,9 @@ var winner: int = -2                 # 0/1 — победившая команд
 var result: Dictionary = {}
 var cobra_done: bool = false
 var spectate_target = null
+# учёт для баланса: сколько очков команда потеряла и от чего, посадки ботов
+var ticket_log: Dictionary = {"zones": [0.0, 0.0], "aircraft": [0.0, 0.0], "ground": [0.0, 0.0], "bases": [0.0, 0.0]}
+var bot_log: Dictionary = {"landings": [0, 0], "fake_landings": [0, 0], "landing_crashes": [0, 0]}
 
 var _uid: int = 1
 var _pilots: Array = []              # записи участников (боты и игрок)
@@ -98,6 +104,9 @@ var _airborne: bool = false
 var _minute_warned: bool = false
 var _ready_done: bool = false
 var _rec_started: bool = false
+var _duty_t: float = 0.0
+var _zone_inside: Array = []         # [[синих, красных] в каждой зоне] на последнем тике
+var _zone_was: Dictionary = {}       # id зоны -> чья была до того, как стала нейтральной
 
 func _enter_tree() -> void:
 	Game.battle = self
@@ -300,6 +309,9 @@ func _init_zones() -> void:
 		return
 	for z in world.zones:
 		zones_state.append({"id": String(z.id), "owner": -1, "progress": 0.0})
+	_zone_inside = []
+	for i in zones_state.size():
+		_zone_inside.append([0, 0])
 
 # ---------------------------------------------------------------- API
 
@@ -342,8 +354,9 @@ func ground_targets_of(team: int) -> Array:
 		out.append(u)
 	return out
 
+## Аркада: первый вылет на каждом самолёте сетапа бесплатный, повторный — за очки вылета по рангу.
 func spawn_cost(def_id: String) -> int:
-	if infinite_uses or _spawn_count == 0:
+	if infinite_uses or mode != "arcade" or not def_id in _planes_used:
 		return 0
 	var rank := int(Data.plane(def_id).get("rank", 1))
 	var costs: Array = Data.ECONOMY.spawn_cost_by_rank
@@ -402,7 +415,10 @@ func request_spawn(def_id: String) -> bool:
 	player_spawned.emit(ac)
 	_record_spawn(ac)
 	if bool(sp.get("on_ground", false)) and mode != "training":
-		message.emit("Дай полный газ: W. После взлёта убери шасси: G", 6.0)
+		if Game.is_touch():
+			message.emit("Дай полный газ. После взлёта убери шасси", 6.0)
+		else:
+			message.emit("Дай полный газ: W. После взлёта убери шасси: G", 6.0)
 	return true
 
 func get_scoreboard() -> Array:
@@ -654,6 +670,7 @@ func _step(dt: float) -> void:
 			_minute_warned = true
 			message.emit("Осталась 1 минута", 4.0)
 	_update_bots(dt)
+	_update_duties(dt)
 	_update_player(dt)
 	_update_post_death(dt)
 	_update_autospawn(dt)
@@ -865,7 +882,9 @@ func _on_aircraft_destroyed(ac, killer_uid: int, reason: String) -> void:
 
 	_count_assists(vuid, vteam, krec, killer_uid)
 	if show_score:
-		tickets[vteam] = maxf(0.0, float(tickets[vteam]) - float(Data.ECONOMY.ticket_loss_aircraft))
+		_lose_tickets(vteam, float(Data.ECONOMY.ticket_loss_aircraft), "aircraft")
+	if not bool(vrec.is_player) and killer_uid < 0 and reason in ["ground", "water", "gear"] and _was_landing(ac):
+		bot_log.landing_crashes[clampi(vteam, 0, 1)] += 1
 	kill_event.emit(text, kteam, vteam)
 	recorder.event("kill", {"killer_uid": killer_ref, "victim_uid": vuid, "text": text, "reason": reason,
 		"killer_team": kteam, "victim_team": vteam})
@@ -938,7 +957,11 @@ func _after_death() -> void:
 	if mode == "realistic" or not _player_can_spawn_any():
 		_set_state("dead")
 		if mode == "arcade":
-			message.emit("Вылетов не осталось", 4.0)
+			var uses_left := false
+			for id in lineup:
+				if int(lineup_uses.get(id, 0)) > 0:
+					uses_left = true
+			message.emit("Не хватает очков вылета" if uses_left else "Вылетов не осталось", 4.0)
 	else:
 		_set_state("spawn")
 	spectate_target = null
@@ -949,7 +972,11 @@ func _on_aircraft_serviced(ac) -> void:
 	if ac == null or not is_instance_valid(ac) or state == "ended":
 		return
 	var rec: Dictionary = _ac_rec.get(int(ac.uid), {})
-	if rec.is_empty() or not bool(rec.is_player):
+	if rec.is_empty():
+		return
+	if not bool(rec.is_player):
+		rec.landings = int(rec.landings) + 1
+		bot_log.landings[clampi(int(ac.team), 0, 1)] += 1
 		return
 	# обслуживание сразу после старта с полосы — не посадка
 	if not _airborne:
@@ -958,6 +985,141 @@ func _on_aircraft_serviced(ac) -> void:
 	rec.landings = int(rec.landings) + 1
 	_reward("landing", String(ac.def_id))
 	message.emit("Ремонт и перезарядка закончены", 3.0)
+
+## Бот, который не может сесть по-настоящему (палуба авианосца, несколько уходов на второй круг),
+## прошёл низко над своей полосой: убираем самолёт без потери жизни и очков и через BOT_SERVICE_DELAY
+## выпускаем того же бота заново, как после ремонта и перезарядки.
+func bot_fake_landing(ac) -> bool:
+	if ac == null or not is_instance_valid(ac) or not _is_alive(ac) or state == "ended":
+		return false
+	var rec: Dictionary = _ac_rec.get(int(ac.uid), {})
+	if rec.is_empty() or bool(rec.is_player) or bool(rec.external):
+		return false
+	_remove_aircraft_quietly(ac)
+	rec.landings = int(rec.landings) + 1
+	rec.respawn_t = BOT_SERVICE_DELAY
+	bot_log.fake_landings[clampi(int(rec.team), 0, 1)] += 1
+	if ac == spectate_target:
+		_spectate_t = 0.0
+	return true
+
+func _was_landing(ac) -> bool:
+	var p = ac.get("pilot")
+	if p == null or not is_instance_valid(p) or not ("land_phase" in p):
+		return false
+	return String(p.get("land_phase")) in ["approach", "final", "rollout", "taxi", "service", "lineup", "takeoff"]
+
+# ---------------------------------------------------------------- захват зон ботами
+
+## Около трети живых ботов каждой команды (не меньше одного) держат зоны, пока у команды не все зоны
+## или свою зону захватывают. Остальные воюют как обычно. Назначения устойчивые: бот остаётся на захвате,
+## пока он нужен и может лететь.
+func _update_duties(dt: float) -> void:
+	if zones_state.is_empty() or world == null:
+		return
+	_duty_t -= dt
+	if _duty_t > 0.0:
+		return
+	_duty_t = DUTY_INTERVAL
+	for team in 2:
+		_assign_duty(team)
+
+func _duty_pilot(ac):
+	if not _is_alive(ac):
+		return null
+	var p = ac.get("pilot")
+	if p == null or not is_instance_valid(p) or not ("capture_duty" in p):
+		return null
+	var rec: Dictionary = _ac_rec.get(int(ac.uid), {})
+	if rec.is_empty() or bool(rec.external):
+		return null
+	return p
+
+## Зоны, куда нужно лететь команде: не свои и свои, в которых сейчас чужие.
+func zones_wanted(team: int) -> Array:
+	var out: Array = []
+	for i in mini(zones_state.size(), world.zones.size()):
+		var zs: Dictionary = zones_state[i]
+		var foes := 0
+		if i < _zone_inside.size():
+			foes = int(_zone_inside[i][1 - team])
+		if int(zs.owner) != team or foes > 0:
+			out.append(world.zones[i])
+	return out
+
+func _assign_duty(team: int) -> void:
+	var bots: Array = []
+	for ac in aircraft:
+		if int(ac.team) == team and _duty_pilot(ac) != null:
+			bots.append(ac)
+	var wanted := zones_wanted(team)
+	var need := 0
+	if not wanted.is_empty() and not bots.is_empty():
+		need = maxi(1, int(round(bots.size() * DUTY_SHARE)))
+	var holders: Array = []
+	for ac in bots:
+		var p = ac.pilot
+		if bool(p.capture_duty) and holders.size() < need and _duty_ok(ac, p):
+			holders.append(ac)
+		else:
+			p.capture_duty = false
+			p.duty_zone = ""
+	if holders.size() < need:
+		var cands: Array = []
+		for ac in bots:
+			if not ac in holders and _duty_ok(ac, ac.pilot):
+				cands.append([_duty_score(ac, wanted), ac])
+		cands.sort_custom(func(a, b): return float(a[0]) < float(b[0]))
+		for c in cands:
+			if holders.size() >= need:
+				break
+			holders.append(c[1])
+	# разводим по зонам: ближняя нужная зона, но не все в одну
+	var load := {}
+	for ac in holders:
+		var best := ""
+		var best_s := INF
+		for z in wanted:
+			var zp: Vector3 = z.pos
+			var p: Vector3 = ac.global_position
+			var d := Vector2(zp.x - p.x, zp.z - p.z).length()
+			d += 1800.0 * float(load.get(String(z.id), 0))
+			if String(z.id) == String(ac.pilot.duty_zone):
+				d -= 600.0
+			if _zone_owner(String(z.id)) == team:
+				d -= 800.0   # свою зону отбивают в первую очередь
+			if d < best_s:
+				best_s = d
+				best = String(z.id)
+		ac.pilot.capture_duty = best != ""
+		ac.pilot.duty_zone = best
+		load[best] = int(load.get(best, 0)) + 1
+
+func _duty_ok(ac, p) -> bool:
+	if p.has_method("can_take_duty"):
+		return bool(p.can_take_duty(ac))
+	return true
+
+## Кого отправить на захват: ближе к нужной зоне, лучше истребитель или штурмовик без бомб.
+func _duty_score(ac, wanted: Array) -> float:
+	var p: Vector3 = ac.global_position
+	var best := INF
+	for z in wanted:
+		var zp: Vector3 = z.pos
+		best = minf(best, Vector2(zp.x - p.x, zp.z - p.z).length())
+	var pilot = ac.pilot
+	if String(pilot.get("state")) == "engage":
+		best += 1500.0
+	var w = ac.get("weapons")
+	if w != null and String(ac.def.get("line", "fighter")) == "attacker" and bool(w.has_ordnance()):
+		best += 1000.0
+	return best
+
+func _zone_owner(id: String) -> int:
+	for zs in zones_state:
+		if String(zs.id) == id:
+			return int(zs.owner)
+	return -1
 
 # ---------------------------------------------------------------- наземные цели
 
@@ -974,7 +1136,7 @@ func _on_ground_destroyed(unit, killer_uid: int) -> void:
 	var tv := int(unit.ticket_value)
 	var kind := String(unit.kind)
 	if show_score:
-		tickets[team] = maxf(0.0, float(tickets[team]) - float(tv))
+		_lose_tickets(team, float(tv), "ground")
 	var krec: Dictionary = _ac_rec.get(killer_uid, {}) if killer_uid >= 0 else {}
 	if not krec.is_empty() and int(krec.team) == team:
 		krec = {}
@@ -1019,7 +1181,7 @@ func _check_base(base_id: int) -> void:
 		_bases_dead[base_id] = true
 		var team := int(b.team)
 		if show_score:
-			tickets[team] = maxf(0.0, float(tickets[team]) - float(Data.ECONOMY.ticket_loss_base))
+			_lose_tickets(team, float(Data.ECONOMY.ticket_loss_base), "bases")
 		message.emit("База синих уничтожена" if team == 0 else "База красных уничтожена", 4.0)
 		return
 
@@ -1034,13 +1196,26 @@ func _zone_tick(dt: float) -> void:
 		for ac in aircraft:
 			if _is_alive(ac) and _in_zone(ac, z):
 				inside[clampi(int(ac.team), 0, 1)].append(ac)
+		if i < _zone_inside.size():
+			_zone_inside[i] = [inside[0].size(), inside[1].size()]
 		_advance_zone(zones_state[i], inside, dt)
 	var owned := [zone_owned_count(0), zone_owned_count(1)]
 	var diff: int = owned[0] - owned[1]
 	if diff != 0:
 		var loser := 1 if diff > 0 else 0
-		var drain := float(Data.ECONOMY.zone_drain_per_sec) * absi(diff) * dt
-		tickets[loser] = maxf(0.0, float(tickets[loser]) - drain)
+		_lose_tickets(loser, zone_drain_rate() * absi(diff) * dt, "zones")
+
+## Сколько очков в секунду теряет команда за каждую зону перевеса у соперника.
+## Перевес в одну зону снимает всю полосу за ECONOMY.zone_drain_seconds.
+func zone_drain_rate() -> float:
+	return max_tickets / maxf(float(Data.ECONOMY.get("zone_drain_seconds", 600.0)), 1.0)
+
+func _lose_tickets(team: int, amount: float, why: String) -> void:
+	var t := clampi(team, 0, 1)
+	var before := float(tickets[t])
+	tickets[t] = maxf(0.0, before - amount)
+	if ticket_log.has(why):
+		ticket_log[why][t] = float(ticket_log[why][t]) + (before - float(tickets[t]))
 
 func _in_zone(ac, z: Dictionary) -> bool:
 	var p: Vector3 = ac.global_position
@@ -1073,8 +1248,10 @@ func _advance_zone(zs: Dictionary, inside: Array, dt: float) -> void:
 		p = move_toward(p, rest, rate * 0.5)
 	if owner == 1 and p >= 0.0:
 		owner = -1
+		_zone_was[String(zs.id)] = 1
 	elif owner == 0 and p <= 0.0:
 		owner = -1
+		_zone_was[String(zs.id)] = 0
 	var captured_by := -1
 	if p >= 1.0 - 1e-6 and owner != 0:
 		p = 1.0
@@ -1091,7 +1268,14 @@ func _advance_zone(zs: Dictionary, inside: Array, dt: float) -> void:
 
 func _on_zone_captured(zs: Dictionary, team: int, members: Array) -> void:
 	var zid := String(zs.id)
-	message.emit(("Зона %s захвачена" if team == 0 else "Зона %s потеряна") % zid, 3.0)
+	var was := int(_zone_was.get(zid, -1))
+	_zone_was.erase(zid)
+	if team == 0:
+		message.emit("Зона %s захвачена" % zid, 3.0)
+	elif was == 0:
+		message.emit("Зона %s потеряна" % zid, 3.0)
+	else:
+		message.emit("Красные заняли зону %s" % zid, 3.0)
 	if team == 0:
 		Sfx.play("capture")
 	var pts := int(Data.ECONOMY.spawn_points.capture)
