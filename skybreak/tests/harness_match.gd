@@ -55,7 +55,7 @@ func _ready() -> void:
 	_mm = load("res://scenes/battle.tscn").instantiate()
 	_mm.leave_scene = false
 	_mm.message.connect(func(t: String, _s: float): print("[message] ", t))
-	_mm.kill_event.connect(func(t: String, _a: int, _b: int): print("[kill] ", t))
+	_mm.kill_event.connect(func(t: String, _a: int, _b: int): print("[kill] t=%.0f " % _mm.elapsed, t))
 	_mm.state_changed.connect(func(s: String): print("[state] ", s))
 	get_tree().root.add_child(_mm)
 
